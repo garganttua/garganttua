@@ -1,0 +1,287 @@
+<!-- Copyright (c) 2022 Jérémy COLOMBET -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.garganttua</groupId>
+	<version>3.0.0-ALPHA04</version>
+
+	<artifactId>garganttua-events</artifactId>
+	<packaging>pom</packaging>
+
+	<licenses>
+		<license>
+			<name>The Apache License, Version 2.0</name>
+			<url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<name>Jérémy Colombet</name>
+			<email>jeremy.colombet@garganttua.com</email>
+		</developer>
+	</developers>
+
+	<distributionManagement>
+		<snapshotRepository>
+			<id>github garganttua events</id>
+			<name>github garganttua events</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua-events</url>
+		</snapshotRepository>
+		<repository>
+			<id>github garganttua events</id>
+			<name>github garganttua events</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua-events</url>
+		</repository>
+	</distributionManagement>
+
+	<repositories>
+		<repository>
+			<id>mulesoft</id>
+			<name>mulesoft</name>
+			<url>https://repository.mulesoft.org/nexus/content/repositories/public</url>
+		</repository>
+	</repositories>
+
+	<modules>
+		<module>garganttua-events-api</module>
+		<module>garganttua-events-expressions</module>
+		<module>garganttua-events-core</module>
+		<module>garganttua-events-connector-kafka</module>
+		<module>garganttua-events-connector-bus</module>
+		<module>garganttua-events-connector-mail</module>
+	</modules>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<maven.compiler.source>25</maven.compiler.source>
+		<maven.compiler.target>25</maven.compiler.target>
+		<garganttua.core.version>3.0.0-ALPHA04</garganttua.core.version>
+		<jackson.version>2.15.2</jackson.version>
+		<lombok.version>1.18.36</lombok.version>
+		<junit.version>5.9.0</junit.version>
+		<slf4j.version>2.0.9</slf4j.version>
+		<kafka.version>3.9.0</kafka.version>
+		<bigqueue.version>0.7.0</bigqueue.version>
+		<angus.mail.version>2.0.2</angus.mail.version>
+		<jsonpath.version>2.7.0</jsonpath.version>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<!-- Garganttua Events Internal -->
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-events-api</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-events-expressions</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-events-core</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+
+			<!-- Garganttua Core -->
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-commons</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-lifecycle</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-dsl</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-expression</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-workflow</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-injection</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-script</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+
+			<!-- External -->
+			<dependency>
+				<groupId>com.fasterxml.jackson.core</groupId>
+				<artifactId>jackson-databind</artifactId>
+				<version>${jackson.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.jayway.jsonpath</groupId>
+				<artifactId>json-path</artifactId>
+				<version>${jsonpath.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>org.slf4j</groupId>
+						<artifactId>slf4j-api</artifactId>
+					</exclusion>
+				</exclusions>
+			</dependency>
+			<dependency>
+				<groupId>org.projectlombok</groupId>
+				<artifactId>lombok</artifactId>
+				<version>${lombok.version}</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.slf4j</groupId>
+				<artifactId>slf4j-api</artifactId>
+				<version>${slf4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.kafka</groupId>
+				<artifactId>kafka-clients</artifactId>
+				<version>${kafka.version}</version>
+				<exclusions>
+					<exclusion>
+						<groupId>org.slf4j</groupId>
+						<artifactId>slf4j-api</artifactId>
+					</exclusion>
+				</exclusions>
+			</dependency>
+			<dependency>
+				<groupId>com.leansoft</groupId>
+				<artifactId>bigqueue</artifactId>
+				<version>${bigqueue.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.angus</groupId>
+				<artifactId>angus-mail</artifactId>
+				<version>${angus.mail.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.junit.jupiter</groupId>
+				<artifactId>junit-jupiter-api</artifactId>
+				<version>${junit.version}</version>
+				<scope>test</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.11.0</version>
+				<configuration>
+					<source>21</source>
+					<target>21</target>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<version>3.3.0</version>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+	<profiles>
+		<!-- Opt-in code-size / bug-finder gate (WARNING ONLY — never fails the
+		     build). Kept out of the default build so offline builds don't need the
+		     analysis artifacts. Imported from garganttua-core. Activate with
+		     `-Pquality`:
+		       mvn -Pquality checkstyle:checkstyle   # human-readable worklist
+		       mvn -Pquality verify                  # passive gate, writes XML
+		     See .claude/rules/code-quality.md. -->
+		<profile>
+			<id>quality</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-checkstyle-plugin</artifactId>
+						<version>3.6.0</version>
+						<dependencies>
+							<dependency>
+								<groupId>com.puppycrawl.tools</groupId>
+								<artifactId>checkstyle</artifactId>
+								<version>10.21.0</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
+							<includeTestSourceDirectory>false</includeTestSourceDirectory>
+							<failOnViolation>false</failOnViolation>
+							<violationSeverity>ignore</violationSeverity>
+							<consoleOutput>false</consoleOutput>
+						</configuration>
+						<executions>
+							<execution>
+								<id>checkstyle-size-gate</id>
+								<phase>verify</phase>
+								<goals><goal>check</goal></goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>com.github.spotbugs</groupId>
+						<artifactId>spotbugs-maven-plugin</artifactId>
+						<version>4.9.8.3</version>
+						<dependencies>
+							<dependency>
+								<groupId>com.github.spotbugs</groupId>
+								<artifactId>spotbugs</artifactId>
+								<version>4.9.8</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<effort>Max</effort>
+							<threshold>Low</threshold>
+							<failOnError>false</failOnError>
+							<includeTests>false</includeTests>
+							<xmlOutput>true</xmlOutput>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-pmd-plugin</artifactId>
+						<version>3.28.0</version>
+						<configuration>
+							<failOnViolation>false</failOnViolation>
+							<includeTests>false</includeTests>
+							<rulesets>
+								<ruleset>category/java/errorprone.xml</ruleset>
+								<ruleset>category/java/bestpractices.xml</ruleset>
+							</rulesets>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
+</project>

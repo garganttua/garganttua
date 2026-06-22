@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+      <modelVersion>4.0.0</modelVersion>
+      <parent>
+            <groupId>com.garganttua</groupId>
+            <artifactId>garganttua-core</artifactId>
+            <version>3.0.0-ALPHA04</version>
+      </parent>
+
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-bootstrap</artifactId>
+      <description>Bootstrap and application initialization framework.</description>
+
+      <build>
+            <resources>
+                  <resource>
+                        <directory>src/main/resources</directory>
+                        <filtering>true</filtering>
+                  </resource>
+            </resources>
+      </build>
+
+      <dependencies>
+            <dependency>
+                  <groupId>com.garganttua.core</groupId>
+                  <artifactId>garganttua-commons</artifactId>
+            </dependency>
+            <dependency>
+                  <groupId>com.garganttua.core</groupId>
+                  <artifactId>garganttua-injection</artifactId>
+            </dependency>
+            <dependency>
+                  <groupId>com.garganttua.core</groupId>
+                  <artifactId>garganttua-reflection</artifactId>
+            </dependency>
+            <dependency>
+                  <groupId>javax.inject</groupId>
+                  <artifactId>javax.inject</artifactId>
+            </dependency>
+            <dependency>
+                  <groupId>jakarta.annotation</groupId>
+                  <artifactId>jakarta.annotation-api</artifactId>
+            </dependency>
+            <dependency>
+                  <groupId>com.garganttua.core</groupId>
+                  <artifactId>garganttua-reflections</artifactId>
+                  <scope>test</scope>
+            </dependency>
+            <!-- Reflection provider used by Bootstrap's test suite to exercise the
+                 SPI cold-start path. NOT pulled in transitively by consumers:
+                 downstream apps pick exactly one provider to ship — typically
+                 garganttua-runtime-reflection for plain JVM apps, or
+                 garganttua-aot-reflection for GraalVM native-image / pure-AOT. -->
+            <dependency>
+                  <groupId>com.garganttua.core</groupId>
+                  <artifactId>garganttua-runtime-reflection</artifactId>
+                  <scope>test</scope>
+            </dependency>
+            <!-- Test-only: exercise the optional garganttua-configuration contributor
+                 (IBootstrapConfigurationContributor SPI) auto-wiring config files at the
+                 CONFIGURATION stage. Not a runtime dependency of bootstrap. -->
+            <dependency>
+                  <groupId>com.garganttua.core</groupId>
+                  <artifactId>garganttua-configuration</artifactId>
+                  <scope>test</scope>
+            </dependency>
+      </dependencies>
+
+</project>

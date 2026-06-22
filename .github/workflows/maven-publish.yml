@@ -1,0 +1,86 @@
+# This workflow will build a package using Maven on every push
+# and then publish it to GitHub Packages when a push occurs on 'dev' or a tag is created on 'main'
+
+name: Maven Package
+
+on:
+  push:
+    branches: 
+      - "*"  # Build on any branch push
+    tags:
+      - "*"  # Trigger on any tag creation
+
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v4
+      with:
+        java-version: '25'
+        distribution: 'temurin'
+
+    # The AOT annotation processor is part of this reactor yet every module
+    # declares it on its annotationProcessorPath, so a clean one-pass build is
+    # circular. First pass installs all artifacts (incl. the processor) with
+    # annotation processing disabled; the second pass runs processing normally.
+    - name: Bootstrap local repo (no annotation processing)
+      run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
+    - name: Build with Maven
+      run: mvn -B -ntp package --file pom.xml
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: |
+      startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v4
+      with:
+        java-version: '25'
+        distribution: 'temurin'
+
+    - name: Generate Maven settings
+      run: |
+        mkdir -p ~/.m2
+        cat > ~/.m2/settings.xml << 'SETTINGS'
+        <settings>
+          <servers>
+            <server>
+              <id>garganttua_core_github_repository</id>
+              <username>${env.GITHUB_ACTOR}</username>
+              <password>${env.GITHUB_TOKEN}</password>
+            </server>
+            <server>
+              <id>garganttua_core_github_snapshot_repository</id>
+              <username>${env.GITHUB_ACTOR}</username>
+              <password>${env.GITHUB_TOKEN}</password>
+            </server>
+          </servers>
+        </settings>
+        SETTINGS
+
+    - name: Bootstrap local repo (no annotation processing)
+      run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Deploy to GitHub Packages Apache Maven
+      run: mvn -B -ntp deploy
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

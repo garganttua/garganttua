@@ -1,0 +1,94 @@
+# =============================
+# Maven & Java
+# =============================
+
+# Compiled class files
+*.class
+
+# Maven target directories
+**/target/
+
+# Maven specific generated files
+dependency-reduced-pom.xml
+release.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+
+# Log files
+*.log
+
+# Eclipse / IntelliJ
+*.iml
+*.ipr
+*.iws
+.idea/
+*.classpath
+*.project
+*.settings/
+
+# =============================
+# VS Code
+# =============================
+.vscode/
+.history/
+*.code-workspace
+
+# =============================
+# Test & Coverage
+# =============================
+# Surefire & Failsafe reports
+**/target/surefire-reports/
+**/target/failsafe-reports/
+
+# Jacoco / Coverage
+**/target/site/jacoco/
+**/target/jacoco.exec
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*.lst
+
+# =============================
+# OS-specific
+# =============================
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# =============================
+# Others / IDE Plugins
+# =============================
+# NetBeans
+nbproject/private/
+
+# Gradle wrapper (if present in multimodule project)
+.gradle/
+build/
+!gradle-wrapper.jar
+
+# Node / Frontend modules (if any)
+node_modules/
+
+**/.VSCodeCounter/
+
+# Claude Code — ignore local agent state, but TRACK the shared .claude/rules/
+# (referenced by CLAUDE.md) and per-project settings stay local.
+**/.claude/settings.local.json
+**/.claude/plans/
+bin/
+
+garganttua-core-web-page-plan.txt
+
+AOT-GRAALVM-ROADMAP.md
+
+docs/aot-implementation-plan.md

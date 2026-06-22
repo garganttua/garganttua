@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.garganttua</groupId>
+  <artifactId>garganttua</artifactId>
+  <version>3.0.0-ALPHA04</version>
+  <packaging>pom</packaging>
+  <name>garganttua</name>
+
+  <properties>
+    <maven.exec.plugin.version>3.1.0</maven.exec.plugin.version>
+  </properties>
+
+  <modules>
+    <module>core</module>
+    <module>api</module>
+    <module>events</module>
+  </modules>
+
+  <build>
+    <plugins>
+      <!-- Regenerate the README auto-blocks (architecture, dependency graph,
+           installation) on every build so the docs never drift from the poms.
+           inherited=false → runs once, on the reactor root only; the python
+           scripts recurse through every module (core, api, events). -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${maven.exec.plugin.version}</version>
+        <inherited>false</inherited>
+        <executions>
+          <execution>
+            <id>update-documentation</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>python3</executable>
+              <workingDirectory>${project.basedir}/scripts</workingDirectory>
+              <arguments>
+                <argument>run_all.py</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,389 @@
+package com.garganttua.core.configuration.populator;
+
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import com.garganttua.core.observability.Logger;
+import com.garganttua.core.configuration.ConfigurationException;
+import com.garganttua.core.configuration.IConfigurationFormat;
+import com.garganttua.core.configuration.IConfigurationNode;
+import com.garganttua.core.configuration.IConfigurationNode.NodeType;
+import com.garganttua.core.configuration.IConfigurationPopulator;
+import com.garganttua.core.configuration.IConfigurationSource;
+import com.garganttua.core.dsl.IBuilder;
+import com.garganttua.core.dsl.ILinkedBuilder;
+
+/**
+ * {@link IConfigurationPopulator} that recursively maps a configuration tree onto a fluent
+ * {@link IBuilder}, resolving builder methods via {@link MethodMapping}, converting scalar
+ * values with {@link TypeConverter}, and descending into child {@link ILinkedBuilder}s.
+ */
+public class BuilderPopulator implements IConfigurationPopulator {
+    private static final Logger log = Logger.getLogger(BuilderPopulator.class);
+
+    private final List<IConfigurationFormat> formats;
+    private final MethodMapping methodMapping;
+    private final TypeConverter typeConverter;
+    private final boolean strict;
+
+    /**
+     * Creates a populator.
+     *
+     * @param formats  the configuration formats available for parsing sources
+     * @param strategy the method mapping strategy used to match config keys to builder methods
+     * @param strict   when {@code true}, unknown configuration keys raise errors instead of warnings
+     */
+    public BuilderPopulator(List<IConfigurationFormat> formats, MethodMappingStrategy strategy, boolean strict) {
+        this.formats = formats;
+        this.methodMapping = new MethodMapping(strategy);
+        this.typeConverter = new TypeConverter();
+        this.strict = strict;
+    }
+
+    @Override
+    public <B extends IBuilder<?>> B populate(B builder, IConfigurationNode node) throws ConfigurationException {
+        var context = new PopulationContext(this.strict);
+        populateBuilder(builder, node, context);
+
+        if (context.hasErrors()) {
+            throw new ConfigurationException("Configuration errors: " + String.join("; ", context.getErrors()));
+        }
+
+        for (var warning : context.getWarnings()) {
+            log.warn("{}", warning);
+        }
+
+        return builder;
+    }
+
+    @Override
+    public <B extends IBuilder<?>> B populate(B builder, IConfigurationSource source) throws ConfigurationException {
+        var format = resolveFormat(source);
+        return populate(builder, source, format);
+    }
+
+    @Override
+    public <B extends IBuilder<?>> B populate(B builder, IConfigurationSource source, IConfigurationFormat format)
+            throws ConfigurationException {
+        log.debug("Populating builder {} from {}", builder.getClass().getSimpleName(), source.getDescription());
+        var node = format.parse(source.getInputStream());
+        return populate(builder, node);
+    }
+
+    private void populateBuilder(Object builder, IConfigurationNode node, PopulationContext context)
+            throws ConfigurationException {
+        if (!node.isObject()) {
+            throw new ConfigurationException("Expected OBJECT node at " + context.getCurrentPath()
+                    + ", got " + node.type());
+        }
+
+        for (var entry : node.children().entrySet()) {
+            var key = entry.getKey();
+            var childNode = entry.getValue();
+
+            // Keys prefixed with '$' are reserved framework metadata (e.g. the
+            // "$module" target shebang in JSON), not builder methods — skip them.
+            if (key.startsWith("$")) {
+                continue;
+            }
+
+            context.pushPath(key);
+            try {
+                var method = this.methodMapping.resolve(builder.getClass(), key);
+
+                if (method.isEmpty()) {
+                    if (this.strict) {
+                        context.addError("Unknown configuration key '" + key + "'");
+                    } else {
+                        context.addWarning("Unknown configuration key '" + key + "', ignoring");
+                    }
+                    continue;
+                }
+
+                invokeMethod(builder, method.get(), childNode, context);
+            } finally {
+                context.popPath();
+            }
+        }
+    }
+
+    private void invokeMethod(Object builder, Method method, IConfigurationNode node, PopulationContext context)
+            throws ConfigurationException {
+        try {
+            if (node.type() == NodeType.OBJECT) {
+                handleObjectNode(builder, method, node, context);
+            } else if (node.type() == NodeType.ARRAY) {
+                handleArrayNode(builder, method, node, context);
+            } else if (node.type() == NodeType.VALUE) {
+                handleValueNode(builder, method, node);
+            } else {
+                // NULL node - skip
+                log.debug("Skipping null node at {}", context.getCurrentPath());
+            }
+        } catch (ConfigurationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ConfigurationException("Failed to invoke " + method.getName() + " at "
+                    + context.getCurrentPath(), e);
+        }
+    }
+
+    private void handleObjectNode(Object builder, Method method, IConfigurationNode node,
+            PopulationContext context) throws Exception {
+        var returnType = method.getReturnType();
+
+        // Keyed child-builder: a method taking the entry KEY as its single argument and
+        // returning a child builder — e.g. beanProvider(String scope) -> IBeanProviderBuilder
+        // or withBean(IClass<?> type) -> IBeanFactoryBuilder. The object node is then a map
+        // of {argValue -> child configuration}, mirroring the fluent DSL nesting.
+        var keyed = findKeyedChildMethod(builder.getClass(), method.getName());
+        if (keyed != null) {
+            for (var entry : node.children().entrySet()) {
+                var arg = this.typeConverter.convert(entry.getKey(), keyed.getParameterTypes()[0]);
+                var child = keyed.invoke(builder, arg);
+                if (child != null) {
+                    context.pushPath(entry.getKey());
+                    try {
+                        populateBuilder(child, entry.getValue(), context);
+                        ascend(child);
+                    } finally {
+                        context.popPath();
+                    }
+                }
+            }
+            return;
+        }
+
+        // Keyed scalar setter: a fluent method (String key, V value) fed an object of scalar
+        // entries — invoked once per entry, e.g. withProperty(String, String) declaring
+        // properties from config: { "app.port": "8080", "db.url": "..." }.
+        var keyedScalar = findKeyedScalarMethod(builder.getClass(), method.getName());
+        if (keyedScalar != null && allChildrenAreValues(node)) {
+            var valueType = keyedScalar.getParameterTypes()[1];
+            for (var entry : node.children().entrySet()) {
+                var value = entry.getValue().asText()
+                        .map(t -> this.typeConverter.convert(t, valueType))
+                        .orElse(null);
+                keyedScalar.invoke(builder, entry.getKey(), value);
+            }
+            return;
+        }
+
+        // Check if return type is a child builder (IBuilder or ILinkedBuilder)
+        if (isChildBuilder(returnType, builder.getClass())) {
+            // Call the method to get the child builder, then populate recursively
+            var childBuilder = method.invoke(builder);
+            if (childBuilder != null) {
+                populateBuilder(childBuilder, node, context);
+                ascend(childBuilder);
+            }
+        } else if (method.getParameterCount() == 1 && Map.class.isAssignableFrom(method.getParameterTypes()[0])) {
+            // Pass as Map
+            var map = nodeToMap(node);
+            method.invoke(builder, map);
+        } else {
+            // Try to pass the text representation
+            var text = node.asText();
+            if (text.isPresent() && method.getParameterCount() == 1) {
+                var paramType = method.getParameterTypes()[0];
+                var converted = this.typeConverter.convert(text.get(), paramType);
+                method.invoke(builder, converted);
+            }
+        }
+    }
+
+    private void handleArrayNode(Object builder, Method method, IConfigurationNode node,
+            PopulationContext context) throws Exception {
+        var elements = node.elements();
+
+        if (method.getParameterCount() == 1) {
+            var paramType = method.getParameterTypes()[0];
+
+            // If method accepts List
+            if (List.class.isAssignableFrom(paramType)) {
+                var list = new ArrayList<>();
+                for (var element : elements) {
+                    if (element.isValue()) {
+                        list.add(element.asText().orElse(null));
+                    } else {
+                        list.add(element);
+                    }
+                }
+                method.invoke(builder, list);
+                return;
+            }
+
+            // If method accepts array
+            if (paramType.isArray()) {
+                var componentType = paramType.getComponentType();
+                var array = java.lang.reflect.Array.newInstance(componentType, elements.size());
+                for (int i = 0; i < elements.size(); i++) {
+                    var element = elements.get(i);
+                    if (element.isValue()) {
+                        var text = element.asText().orElse(null);
+                        java.lang.reflect.Array.set(array, i, this.typeConverter.convert(text, componentType));
+                    }
+                }
+                method.invoke(builder, array);
+                return;
+            }
+        }
+
+        // Repeated calls for each element
+        for (var element : elements) {
+            if (element.isValue()) {
+                if (method.getParameterCount() == 1) {
+                    var paramType = method.getParameterTypes()[0];
+                    var text = element.asText().orElse(null);
+                    var converted = this.typeConverter.convert(text, paramType);
+                    method.invoke(builder, converted);
+                }
+            } else if (element.isObject()) {
+                var returnType = method.getReturnType();
+                if (isChildBuilder(returnType, builder.getClass())) {
+                    var childBuilder = method.invoke(builder);
+                    if (childBuilder != null) {
+                        populateBuilder(childBuilder, element, context);
+                        if (childBuilder instanceof ILinkedBuilder<?, ?> linked) {
+                            linked.up();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void handleValueNode(Object builder, Method method, IConfigurationNode node)
+            throws Exception {
+        var text = node.asText().orElse(null);
+        if (text == null) {
+            return;
+        }
+
+        if (method.getParameterCount() == 0) {
+            // No-arg method (flag-style), call if value is true
+            if ("true".equalsIgnoreCase(text)) {
+                method.invoke(builder);
+            }
+            return;
+        }
+
+        if (method.getParameterCount() == 1) {
+            var paramType = method.getParameterTypes()[0];
+            var converted = this.typeConverter.convert(text, paramType);
+            method.invoke(builder, converted);
+            return;
+        }
+
+        log.warn("Cannot map value '{}' to method {} with {} parameters",
+                text, method.getName(), method.getParameterCount());
+    }
+
+    /**
+     * Finds a same-named method that takes a single non-builder (scalar/IClass) argument and
+     * returns a child builder — the signature used to open a keyed child scope from config
+     * (e.g. {@code beanProvider(String)}, {@code withBean(IClass)}). Returns {@code null} when
+     * no such method exists (so the caller falls back to the regular object handling).
+     */
+    private Method findKeyedChildMethod(Class<?> builderClass, String name) {
+        for (var m : builderClass.getMethods()) {
+            if (!m.getName().equals(name) || m.getParameterCount() != 1) {
+                continue;
+            }
+            var param = m.getParameterTypes()[0];
+            if (IBuilder.class.isAssignableFrom(param)) {
+                continue; // the (scope, providerBuilder) register overload — not a keyed opener
+            }
+            if (isChildBuilder(m.getReturnType(), builderClass)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds a fluent method shaped {@code (String key, V value)} where {@code V} is a scalar
+     * (non-builder) type — the signature used to declare keyed scalar entries from config,
+     * e.g. {@code withProperty(String, String)}. Returns {@code null} when no such method
+     * exists (so the caller falls back to the regular object handling).
+     */
+    private Method findKeyedScalarMethod(Class<?> builderClass, String name) {
+        for (var m : builderClass.getMethods()) {
+            if (!m.getName().equals(name) || m.getParameterCount() != 2) {
+                continue;
+            }
+            if (m.getParameterTypes()[0] != String.class) {
+                continue;
+            }
+            if (IBuilder.class.isAssignableFrom(m.getParameterTypes()[1])) {
+                continue;
+            }
+            var rt = m.getReturnType();
+            if (IBuilder.class.isAssignableFrom(rt) || ILinkedBuilder.class.isAssignableFrom(rt)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /** {@return {@code true} if every child of the given object node is a scalar VALUE node} */
+    private boolean allChildrenAreValues(IConfigurationNode node) {
+        return node.children().values().stream().allMatch(IConfigurationNode::isValue);
+    }
+
+    /**
+     * Returns from a configured child builder to its parent: {@code up()} for an
+     * {@link ILinkedBuilder}, else a no-arg {@code and()} method when present (the bean DSL
+     * uses {@code and()}), else a no-op (the child was registered eagerly).
+     */
+    private void ascend(Object childBuilder) {
+        if (childBuilder instanceof ILinkedBuilder<?, ?> linked) {
+            linked.up();
+            return;
+        }
+        try {
+            childBuilder.getClass().getMethod("and").invoke(childBuilder);
+        } catch (NoSuchMethodException e) {
+            // no ascend method — nothing to close
+        } catch (Exception e) {
+            log.debug("Could not ascend from {} via and(): {}",
+                    childBuilder.getClass().getSimpleName(), e.getMessage());
+        }
+    }
+
+    private boolean isChildBuilder(Class<?> returnType, Class<?> builderClass) {
+        if (returnType == null || returnType == void.class || returnType == Void.class) {
+            return false;
+        }
+        // If return type is the same as the builder class, it's a setter returning this
+        if (returnType.isAssignableFrom(builderClass)) {
+            return false;
+        }
+        // If return type implements IBuilder or ILinkedBuilder, it's a child builder
+        return IBuilder.class.isAssignableFrom(returnType)
+                || ILinkedBuilder.class.isAssignableFrom(returnType);
+    }
+
+    private Map<String, String> nodeToMap(IConfigurationNode node) {
+        var map = new java.util.LinkedHashMap<String, String>();
+        for (var entry : node.children().entrySet()) {
+            entry.getValue().asText().ifPresent(v -> map.put(entry.getKey(), v));
+        }
+        return map;
+    }
+
+    private IConfigurationFormat resolveFormat(IConfigurationSource source) throws ConfigurationException {
+        var hint = source.getFormatHint();
+        if (hint.isPresent()) {
+            for (var format : this.formats) {
+                if (format.isAvailable() && format.supports(hint.get())) {
+                    return format;
+                }
+            }
+        }
+        throw new ConfigurationException("No format found for source: " + source.getDescription()
+                + (hint.isPresent() ? " (hint: " + hint.get() + ")" : ""));
+    }
+}

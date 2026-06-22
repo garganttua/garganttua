@@ -1,0 +1,238 @@
+package com.garganttua.core.script.context;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.misc.Interval;
+
+import com.garganttua.core.expression.IExpression;
+import com.garganttua.core.expression.context.IExpressionContext;
+import com.garganttua.core.script.antlr4.ScriptBaseVisitor;
+import com.garganttua.core.script.antlr4.ScriptParser;
+import com.garganttua.core.script.nodes.CatchClause;
+import com.garganttua.core.script.nodes.FunctionDefNode;
+import com.garganttua.core.script.nodes.IScriptNode;
+import com.garganttua.core.script.nodes.PipeClause;
+import com.garganttua.core.script.nodes.StatementGroupNode;
+import com.garganttua.core.script.nodes.StatementNode;
+import com.garganttua.core.supply.ISupplier;
+
+/**
+ * ANTLR4 visitor that walks a parsed script tree and builds the
+ * {@link IScriptNode} AST — statements, statement groups, function definitions
+ * and their catch / downstream-catch / pipe clauses. Expression text is handed
+ * to the {@link IExpressionContext} to produce {@link IExpression} nodes.
+ */
+public class ScriptNodeVisitor extends ScriptBaseVisitor<Object> {
+
+    private final IExpressionContext expressionContext;
+    private final List<IScriptNode> statements = new ArrayList<>();
+
+    /**
+     * @param expressionContext context used to compile expression fragments
+     *                          embedded in the script
+     */
+    public ScriptNodeVisitor(IExpressionContext expressionContext) {
+        this.expressionContext = expressionContext;
+    }
+
+    /**
+     * @return the AST nodes collected so far, in source order
+     */
+    public List<IScriptNode> getStatements() {
+        return this.statements;
+    }
+
+    @Override
+    public Object visitScript(ScriptParser.ScriptContext ctx) {
+        for (ScriptParser.StatementContext stmt : ctx.statement()) {
+            visit(stmt);
+        }
+        return null;
+    }
+
+    @Override
+    public Object visitResultAssignStatement(ScriptParser.ResultAssignStatementContext ctx) {
+        List<CatchClause> catchClauses = buildCatchClauses(ctx.catchClause());
+        List<CatchClause> downstreamCatchClauses = buildCatchClauses(ctx.downstreamCatchClause());
+        List<PipeClause> pipeClauses = buildPipeClauses(ctx.pipeClause());
+        String exprText = ctx.expression().getText();
+        return buildStatement(ctx.IDENTIFIER() != null ? ctx.IDENTIFIER().getText() : null,
+                false, exprText,
+                ctx.INT_LITERAL() != null ? Integer.parseInt(ctx.INT_LITERAL().getText()) : null,
+                catchClauses, downstreamCatchClauses, pipeClauses, ctx);
+    }
+
+    @Override
+    public Object visitExpressionAssignStatement(ScriptParser.ExpressionAssignStatementContext ctx) {
+        List<CatchClause> catchClauses = buildCatchClauses(ctx.catchClause());
+        List<CatchClause> downstreamCatchClauses = buildCatchClauses(ctx.downstreamCatchClause());
+        List<PipeClause> pipeClauses = buildPipeClauses(ctx.pipeClause());
+        String exprText = ctx.expression().getText();
+        return buildStatement(ctx.IDENTIFIER() != null ? ctx.IDENTIFIER().getText() : null,
+                true, exprText,
+                ctx.INT_LITERAL() != null ? Integer.parseInt(ctx.INT_LITERAL().getText()) : null,
+                catchClauses, downstreamCatchClauses, pipeClauses, ctx);
+    }
+
+    @Override
+    public Object visitGroupStatement(ScriptParser.GroupStatementContext ctx) {
+        List<IScriptNode> groupStatements = new ArrayList<>();
+        ScriptNodeVisitor groupVisitor = new ScriptNodeVisitor(this.expressionContext);
+        for (ScriptParser.StatementContext stmt : ctx.statementGroup().statement()) {
+            groupVisitor.visit(stmt);
+        }
+        groupStatements.addAll(groupVisitor.getStatements());
+
+        List<CatchClause> catchClauses = buildCatchClauses(ctx.catchClause());
+        List<CatchClause> downstreamCatchClauses = buildCatchClauses(ctx.downstreamCatchClause());
+        List<PipeClause> pipeClauses = buildPipeClauses(ctx.pipeClause());
+
+        String variableName = ctx.IDENTIFIER() != null ? ctx.IDENTIFIER().getText() : null;
+        Integer code = ctx.INT_LITERAL() != null ? Integer.parseInt(ctx.INT_LITERAL().getText()) : null;
+
+        StatementGroupNode groupNode = new StatementGroupNode(
+                groupStatements, variableName, code,
+                catchClauses, downstreamCatchClauses, pipeClauses,
+                ctx.start.getLine(), extractSourceText(ctx));
+        this.statements.add(groupNode);
+        return null;
+    }
+
+    @Override
+    public Object visitFunctionDefStatement(ScriptParser.FunctionDefStatementContext ctx) {
+        String funcName = ctx.IDENTIFIER().getText();
+
+        // Extract parameter names
+        List<String> params = new ArrayList<>();
+        if (ctx.functionDef().parameterList() != null) {
+            for (org.antlr.v4.runtime.tree.TerminalNode id : ctx.functionDef().parameterList().IDENTIFIER()) {
+                params.add(id.getText());
+            }
+        }
+
+        // The body is a block reference like @__blkN (extracted by BlockExpressionPreprocessor)
+        String bodyRef = ctx.functionDef().expression().getText();
+        if (bodyRef.startsWith("@")) {
+            bodyRef = bodyRef.substring(1);
+        }
+
+        this.statements.add(new FunctionDefNode(funcName, params, bodyRef,
+                ctx.start.getLine(), extractSourceText(ctx)));
+        return null;
+    }
+
+    // ========== Catch / Pipe / Handler builders ==========
+
+    private List<CatchClause> buildCatchClauses(List<? extends org.antlr.v4.runtime.ParserRuleContext> clauses) {
+        if (clauses == null || clauses.isEmpty()) {
+            return List.of();
+        }
+        List<CatchClause> result = new ArrayList<>();
+        for (org.antlr.v4.runtime.ParserRuleContext clause : clauses) {
+            ScriptParser.ExceptionListContext exList;
+            ScriptParser.CatchHandlerContext handler;
+            org.antlr.v4.runtime.tree.TerminalNode intLiteral;
+            if (clause instanceof ScriptParser.CatchClauseContext cc) {
+                exList = cc.exceptionList();
+                handler = cc.catchHandler();
+                intLiteral = cc.INT_LITERAL();
+            } else if (clause instanceof ScriptParser.DownstreamCatchClauseContext dc) {
+                exList = dc.exceptionList();
+                handler = dc.catchHandler();
+                intLiteral = dc.INT_LITERAL();
+            } else {
+                continue;
+            }
+            List<String> exceptionTypes = new ArrayList<>();
+            if (exList != null) {
+                for (ScriptParser.ExceptionTypeContext et : exList.exceptionType()) {
+                    exceptionTypes.add(et.getText().replace(".Class", ""));
+                }
+            }
+            if (handler != null) {
+                IScriptNode handlerNode = buildHandlerNode(handler);
+                result.add(new CatchClause(exceptionTypes, handlerNode));
+            } else {
+                Integer code = intLiteral != null ? Integer.parseInt(intLiteral.getText()) : null;
+                result.add(new CatchClause(exceptionTypes, null, code));
+            }
+        }
+        return result;
+    }
+
+    private List<PipeClause> buildPipeClauses(List<ScriptParser.PipeClauseContext> clauses) {
+        if (clauses == null || clauses.isEmpty()) {
+            return List.of();
+        }
+        List<PipeClause> result = new ArrayList<>();
+        for (ScriptParser.PipeClauseContext clause : clauses) {
+            IExpression<?, ? extends ISupplier<?>> condition = null;
+            if (clause.expression() != null) {
+                condition = this.expressionContext.expression(clause.expression().getText());
+            }
+            if (clause.pipeHandler() != null) {
+                IScriptNode handlerNode = buildPipeHandlerNode(clause.pipeHandler());
+                result.add(new PipeClause(condition, handlerNode));
+            } else {
+                Integer code = clause.INT_LITERAL() != null ? Integer.parseInt(clause.INT_LITERAL().getText()) : null;
+                result.add(new PipeClause(condition, null, code));
+            }
+        }
+        return result;
+    }
+
+    private IScriptNode buildHandlerNode(ScriptParser.CatchHandlerContext handler) {
+        if (handler instanceof ScriptParser.ResultAssignHandlerContext ctx) {
+            String varName = ctx.IDENTIFIER() != null ? ctx.IDENTIFIER().getText() : null;
+            String exprText = ctx.expression().getText();
+            Integer code = ctx.INT_LITERAL() != null ? Integer.parseInt(ctx.INT_LITERAL().getText()) : null;
+            IExpression<?, ? extends ISupplier<?>> expression = this.expressionContext.expression(exprText);
+            return new StatementNode(expression, varName, false, code, List.of(), List.of(), List.of());
+        } else if (handler instanceof ScriptParser.ExpressionAssignHandlerContext ctx) {
+            String varName = ctx.IDENTIFIER() != null ? ctx.IDENTIFIER().getText() : null;
+            String exprText = ctx.expression().getText();
+            Integer code = ctx.INT_LITERAL() != null ? Integer.parseInt(ctx.INT_LITERAL().getText()) : null;
+            IExpression<?, ? extends ISupplier<?>> expression = this.expressionContext.expression(exprText);
+            return new StatementNode(expression, varName, true, code, List.of(), List.of(), List.of());
+        }
+        throw new IllegalStateException("Unknown handler type: " + handler.getClass());
+    }
+
+    private IScriptNode buildPipeHandlerNode(ScriptParser.PipeHandlerContext handler) {
+        if (handler instanceof ScriptParser.ResultAssignPipeHandlerContext ctx) {
+            String varName = ctx.IDENTIFIER() != null ? ctx.IDENTIFIER().getText() : null;
+            String exprText = ctx.expression().getText();
+            Integer code = ctx.INT_LITERAL() != null ? Integer.parseInt(ctx.INT_LITERAL().getText()) : null;
+            IExpression<?, ? extends ISupplier<?>> expression = this.expressionContext.expression(exprText);
+            return new StatementNode(expression, varName, false, code, List.of(), List.of(), List.of());
+        } else if (handler instanceof ScriptParser.ExpressionAssignPipeHandlerContext ctx) {
+            String varName = ctx.IDENTIFIER() != null ? ctx.IDENTIFIER().getText() : null;
+            String exprText = ctx.expression().getText();
+            Integer code = ctx.INT_LITERAL() != null ? Integer.parseInt(ctx.INT_LITERAL().getText()) : null;
+            IExpression<?, ? extends ISupplier<?>> expression = this.expressionContext.expression(exprText);
+            return new StatementNode(expression, varName, true, code, List.of(), List.of(), List.of());
+        }
+        throw new IllegalStateException("Unknown pipe handler type: " + handler.getClass());
+    }
+
+    private Object buildStatement(String variableName, boolean assignExpression, String exprText,
+                                  Integer code, List<CatchClause> catchClauses,
+                                  List<CatchClause> downstreamCatchClauses, List<PipeClause> pipeClauses,
+                                  ParserRuleContext ctx) {
+        IExpression<?, ? extends ISupplier<?>> expression = this.expressionContext.expression(exprText);
+        this.statements.add(new StatementNode(expression, variableName, assignExpression, code,
+                catchClauses, downstreamCatchClauses, pipeClauses,
+                ctx.start.getLine(), extractSourceText(ctx)));
+        return null;
+    }
+
+    private String extractSourceText(ParserRuleContext ctx) {
+        if (ctx.start != null && ctx.stop != null && ctx.start.getInputStream() != null) {
+            return ctx.start.getInputStream().getText(
+                    new Interval(ctx.start.getStartIndex(), ctx.stop.getStopIndex()));
+        }
+        return ctx.getText();
+    }
+}

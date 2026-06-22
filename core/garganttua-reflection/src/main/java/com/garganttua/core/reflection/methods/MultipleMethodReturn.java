@@ -1,0 +1,188 @@
+package com.garganttua.core.reflection.methods;
+
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IMethodReturn;
+
+/**
+ * Implementation of {@link IMethodReturn} for multiple values.
+ *
+ * <p>
+ * This class represents the result of a method invocation on a collection,
+ * array, or map, where the method was invoked on each element.
+ * </p>
+ *
+ * @param <R> the type of the return values
+ * @since 2.0.0-ALPHA01
+ */
+public final class MultipleMethodReturn<R> implements IMethodReturn<R> {
+
+    private final List<SingleMethodReturn<R>> returns;
+    private final IClass<R> type;
+
+    /**
+     * Creates a multiple-value method return with explicit type.
+     *
+     * @param values the list of return values (must not be null)
+     * @param type the runtime type of the values
+     * @throws NullPointerException if values is null
+     */
+    MultipleMethodReturn(List<R> values, IClass<R> type) {
+        Objects.requireNonNull(values, "Values list cannot be null");
+        this.type = Objects.requireNonNull(type, "Type cannot be null");
+        // Wrap each value in a SingleMethodReturn with the provided type
+        List<SingleMethodReturn<R>> wrapped = new ArrayList<>(values.size());
+        for (R value : values) {
+            wrapped.add(new SingleMethodReturn<>(value, type));
+        }
+        this.returns = Collections.unmodifiableList(wrapped);
+    }
+
+
+    MultipleMethodReturn(IClass<R> type, List<SingleMethodReturn<R>> values) {
+        Objects.requireNonNull(values, "Values list cannot be null");
+        this.returns = Collections.unmodifiableList(values);
+        this.type = Objects.requireNonNull(type, "Type cannot be null");
+    }
+
+    /**
+     * Creates a multiple-value method return from a list of values with explicit type.
+     *
+     * @param <R> the type of the return values
+     * @param values the list of return values (must not be null)
+     * @param type the runtime type of the values
+     * @return a new MultipleMethodReturn containing the values
+     */
+    public static <R> MultipleMethodReturn<R> of(List<R> values, IClass<R> type) {
+        return new MultipleMethodReturn<>(values, type);
+    }
+
+    /**
+     * Creates a multiple-value method return from a list of SingleMethodReturn instances.
+     *
+     * @param <R> the type of the return values
+     * @param type the runtime type of the values
+     * @param returns the list of SingleMethodReturn instances (must not be null)
+     * @return a new MultipleMethodReturn containing the returns
+     */
+    public static <R> MultipleMethodReturn<R> ofReturns(IClass<R> type, List<SingleMethodReturn<R>> returns) {
+        return new MultipleMethodReturn<>(type, returns);
+    }
+
+    /**
+     * Creates a multiple-value method return from a list of IMethodReturn instances.
+     * Each IMethodReturn is flattened into SingleMethodReturn instances.
+     *
+     * @param <R> the type of the return values
+     * @param returns the list of IMethodReturn instances (must not be null)
+     * @param type the runtime type of the values
+     * @return a new MultipleMethodReturn containing all the values
+     */
+    public static <R> MultipleMethodReturn<R> ofMethodReturns(List<IMethodReturn<R>> returns, IClass<?> type) {
+        Objects.requireNonNull(returns, "Returns list cannot be null");
+        List<SingleMethodReturn<R>> collected = new ArrayList<>();
+        for (IMethodReturn<R> ret : returns) {
+            if (ret.hasException()) {
+                collected.add(SingleMethodReturn.ofException(ret.getException(), (IClass<R>) type));
+            } else if (ret.isSingle()) {
+                collected.add(SingleMethodReturn.of(ret.single(), (IClass<R>) type));
+            } else if (ret instanceof MultipleMethodReturn<R> multiple) {
+                collected.addAll(multiple.getReturns());
+            } else {
+                for (R value : ret.multiple()) {
+                    collected.add(SingleMethodReturn.of(value, (IClass<R>) type));
+                }
+            }
+        }
+        return new MultipleMethodReturn<>((IClass<R>) type, collected);
+    }
+
+    @Override
+    public boolean isSingle() {
+        return false;
+    }
+
+    @Override
+    public R single() {
+        throw new IllegalStateException(
+            "Cannot call single() on multiple values. Use multiple() or first() instead. " +
+            "Value count: " + returns.size()
+        );
+    }
+
+    @Override
+    public List<R> multiple() {
+        // Extract values from SingleMethodReturn wrappers
+        return returns.stream()
+            .map(SingleMethodReturn::single)
+            .toList();
+    }
+
+    @Override
+    public <U> IMethodReturn<U> map(Function<? super R, ? extends U> mapper, IClass<U> targetType) {
+        List<U> mapped = returns.stream()
+            .map(SingleMethodReturn::single)
+            .map(mapper)
+            .collect(Collectors.toList());
+        return new MultipleMethodReturn<>(mapped, targetType);
+    }
+
+    @Override
+    public Type getSuppliedType() {
+        return this.type.getType();
+    }
+
+    @Override
+    public IClass<R> getSuppliedClass() {
+        return this.type;
+    }
+
+    @Override
+    public boolean hasException() {
+        return returns.stream().anyMatch(SingleMethodReturn::hasException);
+    }
+
+    @Override
+    public Throwable getException() {
+        return returns.stream()
+            .filter(SingleMethodReturn::hasException)
+            .map(SingleMethodReturn::getException)
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * Returns the list of SingleMethodReturn instances.
+     *
+     * @return unmodifiable list of SingleMethodReturn instances
+     */
+    public List<SingleMethodReturn<R>> getReturns() {
+        return returns;
+    }
+
+    @Override
+    public String toString() {
+        return "MultipleMethodReturn[count=" + returns.size() + ", type=" + type + ", values=" + multiple() + "]";
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof MultipleMethodReturn)) return false;
+        MultipleMethodReturn<?> other = (MultipleMethodReturn<?>) obj;
+        return returns.equals(other.returns);
+    }
+
+    @Override
+    public int hashCode() {
+        return returns.hashCode();
+    }
+
+}

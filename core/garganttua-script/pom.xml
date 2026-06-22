@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.garganttua</groupId>
+    <artifactId>garganttua-core</artifactId>
+    <version>3.0.0-ALPHA04</version>
+  </parent>
+  <groupId>com.garganttua.core</groupId>
+  <artifactId>garganttua-script</artifactId>
+  <description>Scripting language engine with variables, control flow, and expression evaluation.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-commons</artifactId>
+    </dependency>
+    <!-- AOT seed SPI (IAOTInfrastructureSeed): lets the script module register
+         its AST node classes for native reflection without depending on the
+         heavy aot-reflection. Same pattern as garganttua-runtime. -->
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-aot-commons</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-expression</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-injection</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-runtime-reflection</artifactId>
+      <!-- runtime + optional: the executable fat-JAR / linux-installer must bundle a
+           reflection provider so the CLI cold-starts; it is loaded via Class.forName
+           (no compile-time symbol reference). 'optional' stops it leaking transitively
+           onto every downstream consumer's classpath: full-AOT / native consumers get
+           their provider from the AOT starter, JVM consumers from the runtime/hybrid
+           starter. The fat-JAR still bundles it (shade includes optional runtime deps).
+           Mirrors the garganttua-reflections treatment below. -->
+      <scope>runtime</scope>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-bootstrap</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-classloader</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-reflections</artifactId>
+      <!-- runtime + optional: Main loads ReflectionsAnnotationScanner via Class.forName
+           (no compile-time symbol reference), so this is only needed at runtime — to
+           bundle a scanner in the executable fat-JAR / linux-installer for the JVM CLI.
+           'optional' stops it (and org.reflections) leaking transitively onto every
+           downstream consumer's classpath: full-AOT / native consumers get their scanner
+           from the AOT starter, JVM consumers from the runtime/hybrid starter. Same
+           treatment as garganttua-runtime-reflection above. -->
+      <scope>runtime</scope>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.antlr</groupId>
+      <artifactId>antlr4-runtime</artifactId>
+      <version>${antlr4.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-condition</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.garganttua.core</groupId>
+      <artifactId>garganttua-mutex</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.antlr</groupId>
+        <artifactId>antlr4-maven-plugin</artifactId>
+        <version>${antlr4.version}</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>antlr4</goal>
+            </goals>
+            <configuration>
+              <sourceDirectory>${project.basedir}/src/main/resources/antlr4</sourceDirectory>
+              <outputDirectory>
+                ${project.build.directory}/generated-sources/antlr4/com/garganttua/core/script/antlr4
+              </outputDirectory>
+              <visitor>true</visitor>
+              <listener>true</listener>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>${build.helper.maven.plugin.version}</version>
+        <executions>
+          <execution>
+            <id>add-source</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/antlr4</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Create executable fat JAR -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>${maven.shade.plugin.version}</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>com.garganttua.core.script.Main</mainClass>
+                </transformer>
+                <!-- Merge META-INF/services from every JAR (SPI providers like
+                     IReflectionProvider, IAnnotationScanner). Without this the
+                     fat JAR sees only the services file from the last shaded
+                     JAR and Bootstrap.builder().autoDetect(true).build() silently
+                     finds no provider. Critical for native-image too. -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/garganttua/index/com.garganttua.core.expression.annotations.Expression</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/garganttua/index/com.garganttua.core.injection.annotations.Prototype</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/garganttua/generated-binders</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/garganttua/generated-constructor-binders</resource>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <shadedArtifactAttached>true</shadedArtifactAttached>
+              <shadedClassifierName>executable</shadedClassifierName>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Linux installer profile -->
+    <profile>
+      <id>linux-installer</id>
+      <build>
+        <plugins>
+          <!-- Copy dependencies to target/dependency -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <version>3.6.1</version>
+            <executions>
+              <execution>
+                <id>copy-dependencies</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>copy-dependencies</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                  <includeScope>runtime</includeScope>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Create distribution archive -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>${maven.assembly.plugin.version}</version>
+            <executions>
+              <execution>
+                <id>create-linux-installer</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+                <configuration>
+                  <descriptors>
+                    <descriptor>src/main/resources/assembly/linux-installer.xml</descriptor>
+                  </descriptors>
+                  <finalName>garganttua-script-${project.version}</finalName>
+                  <appendAssemblyId>true</appendAssemblyId>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

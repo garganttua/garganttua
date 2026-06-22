@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-core</artifactId>
+		<version>3.0.0-ALPHA04</version>
+	</parent>
+	<groupId>com.garganttua.core</groupId>
+	<artifactId>garganttua-workflow</artifactId>
+	<name>garganttua-workflow</name>
+	<description>Workflow orchestration module - DSL builder for chaining scripts with dynamic script generation</description>
+
+	<properties>
+		<!-- Opt-in to the empty-jar safety net (declared in the parent pom).
+		     This module has suffered from periodic m2-cache corruption where
+		     a build that bypassed compile produced a 3 KB stub jar instead
+		     of the proper ~60 KB one. The verify-phase rule fails the build
+		     before install can replace a good jar with an empty one. -->
+		<enforce.jar.size.skip>false</enforce.jar.size.skip>
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-commons</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-script</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-dsl</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-expression</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-injection</artifactId>
+		</dependency>
+		<!-- Optional: provides the script-side observe(...) function. When absent,
+		     ScriptGenerator emits no timing instrumentation (graceful degradation).
+		     Not propagated transitively — consumers opt in explicitly. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-observability</artifactId>
+			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-runtime-reflection</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-reflections</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Pure-AOT integration test deps. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-reflection</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-annotation-scanner</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-mapper</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Cross-builder config-population coverage: drives every @ConfigurableBuilder from a file. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-configuration</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+</project>

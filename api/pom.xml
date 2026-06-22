@@ -1,0 +1,562 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.garganttua</groupId>
+	<artifactId>garganttua-api</artifactId>
+	<packaging>pom</packaging>
+	<description>Declarative, annotation-driven REST API framework — multi-tenancy, pluggable security, AOT/native-ready — built on garganttua-core.</description>
+	<version>3.0.0-ALPHA04</version>
+
+	<licenses>
+		<license>
+			<name>MIT License</name>
+			<url>https://opensource.org/licenses/MIT</url>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<name>Jérémy Colombet</name>
+			<email>jeremy.colombet@garganttua.com</email>
+		</developer>
+	</developers>
+
+	<repositories>
+		<repository>
+			<id>github garganttua core</id>
+			<name>github garganttua core</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua-core</url>
+		</repository>
+	</repositories>
+
+	<distributionManagement>
+		<snapshotRepository>
+			<id>github garganttua api</id>
+			<name>github garganttua api</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua-api</url>
+		</snapshotRepository>
+		<repository>
+			<id>github garganttua api</id>
+			<name>github garganttua api</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua-api</url>
+		</repository>
+	</distributionManagement>
+
+	<properties>
+		<!-- Encoding -->
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<java.version>25</java.version>
+
+		<!-- Garganttua Core -->
+		<garganttua.core.version>3.0.0-ALPHA04</garganttua.core.version>
+
+		<!-- Binding library versions — each binding sub-module wraps
+		     ONE external library, and these properties pin its version
+		     here so a single edit propagates everywhere. -->
+		<jackson.version>2.18.6</jackson.version>
+		<geojson-jackson.version>1.14</geojson-jackson.version>
+		<slf4j.version>2.0.13</slf4j.version>
+		<json-path.version>2.9.0</json-path.version>
+		<mongodb-driver.version>5.1.1</mongodb-driver.version>
+		<javalin.version>6.6.0</javalin.version>
+
+		<!-- Standalone deps reintroduced directly (no binding wrapper). -->
+		<javatuples.version>1.2</javatuples.version>
+		<jakarta-inject.version>2.0.1</jakarta-inject.version>
+		<!-- YAML parser for the bootstrap starter's application.yaml loader.
+		     Single jar, zero transitive deps — keeps the bootstrap core free
+		     of jackson/databind. -->
+		<snakeyaml.version>2.3</snakeyaml.version>
+		<junit.version>5.11.4</junit.version>
+		<mockito.version>5.14.2</mockito.version>
+
+		<!-- Plugin versions -->
+		<maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
+		<maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
+		<maven-source-plugin.version>3.3.1</maven-source-plugin.version>
+		<maven-javadoc-plugin.version>3.6.3</maven-javadoc-plugin.version>
+		<jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
+		<maven-jar-plugin.version>3.4.1</maven-jar-plugin.version>
+		<maven-exec-plugin.version>3.1.0</maven-exec-plugin.version>
+		<maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+		<spotbugs-maven-plugin.version>4.9.8.3</spotbugs-maven-plugin.version>
+		<spotbugs.version>4.9.8</spotbugs.version>
+		<maven-pmd-plugin.version>3.28.0</maven-pmd-plugin.version>
+		<!-- Empty-jar guard (mirrors core): dormant by default, opt-in per module. -->
+		<enforce.jar.size.skip>true</enforce.jar.size.skip>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<!-- Garganttua API modules -->
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-commons</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-core</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-native-image-config</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-dao-mongodb</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-starter-bootstrap</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-starter-mongodb</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-starter-javalin</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+
+			<!-- Garganttua Core dependencies -->
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-script</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-execution</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-runtime</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-injection</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-mapper</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-native</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-commons</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-observability</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-reflection</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-bootstrap</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-workflow</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-reflections</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-runtime-reflection</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<!-- Runtime reflection aggregator (runtime-reflection + reflections):
+			     brought by the JVM starter, never by the bootstrap socle. -->
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-starter-runtime</artifactId>
+				<version>${garganttua.core.version}</version>
+				<type>pom</type>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-aot-commons</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-aot-reflection</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-aot-annotation-scanner</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-crypto</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+
+			<!-- Garganttua API bindings — each wraps one external lib. -->
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-binding-jackson</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-binding-slf4j</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-binding-jsonpath</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-binding-mongodb</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-binding-javalin</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+
+			<!-- Standalone third-party deps reintroduced directly (kept
+			     outside bindings on user's instruction). -->
+			<dependency>
+				<groupId>org.javatuples</groupId>
+				<artifactId>javatuples</artifactId>
+				<version>${javatuples.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>jakarta.inject</groupId>
+				<artifactId>jakarta.inject-api</artifactId>
+				<version>${jakarta-inject.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.yaml</groupId>
+				<artifactId>snakeyaml</artifactId>
+				<version>${snakeyaml.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.junit.jupiter</groupId>
+				<artifactId>junit-jupiter-engine</artifactId>
+				<version>${junit.version}</version>
+				<scope>test</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.mockito</groupId>
+				<artifactId>mockito-core</artifactId>
+				<version>${mockito.version}</version>
+				<scope>test</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.mockito</groupId>
+				<artifactId>mockito-junit-jupiter</artifactId>
+				<version>${mockito.version}</version>
+				<scope>test</scope>
+			</dependency>
+
+			<!-- Third-party dependencies intentionally absent.
+			     The api restricts itself to the garganttua ecosystem
+			     (com.garganttua / com.garganttua.core). Every external
+			     binding — lombok, slf4j-*, jackson-*, json-path,
+			     javatuples, reflections, geojson, javax.inject, junit,
+			     mockito, etc. — is delegated to dedicated binding
+			     sub-modules to be introduced later. Until those bindings
+			     land, downstream consumers must declare third-party deps
+			     themselves. -->
+		</dependencies>
+	</dependencyManagement>
+
+	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>${maven-compiler-plugin.version}</version>
+					<configuration>
+						<source>${java.version}</source>
+						<target>${java.version}</target>
+						<compilerArgs>
+							<arg>-parameters</arg>
+							<!-- Level 2 AOT: instructs garganttua-aot-annotation-processor's
+								 DirectBinderGenerator to emit AOTClass_*/AOTField_*/AOTMethod_*
+								 source files for every @Reflected type, registered into
+								 AOTRegistry via static initialisers. Pairs with the
+								 Level 1 @Indexed APT below — both processors live in the
+								 same jar, but DirectBinderGenerator is gated by this
+								 option whereas IndexedAnnotationProcessor always runs. -->
+							<arg>-Agarganttua.direct.binders=true</arg>
+						</compilerArgs>
+						<annotationProcessorPaths>
+							<!-- Lombok APT path removed alongside the rest of the
+							     third-party purge — to be reintroduced as part of a
+							     lombok binding sub-module. -->
+
+							<!-- Level 1: @Indexed annotation index generation.
+								 Level 2: @Reflected direct binder generation
+								 (gated by -Agarganttua.direct.binders=true above). -->
+							<path>
+								<groupId>com.garganttua.core</groupId>
+								<artifactId>garganttua-aot-annotation-processor</artifactId>
+								<version>${garganttua.core.version}</version>
+							</path>
+						</annotationProcessorPaths>
+					</configuration>
+				</plugin>
+				<plugin>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<version>${maven-surefire-plugin.version}</version>
+					<configuration>
+						<!-- Mockito's ByteBuddy doesn't yet officially recognise the
+						     Java 25 (class file v69) runtime the project now builds on;
+						     enable ByteBuddy's experimental mode so mock generation works.
+						     NOTE: Mockito 5.14.2 / ByteBuddy still flake intermittently on
+						     full runs under JDK 25 (inline mock-maker self-attach). Durable
+						     fix = bump Mockito + ByteBuddy to JDK-25-native versions (needs
+						     online resolution); then this flag can be dropped. -->
+						<!-- @{argLine} is the late-bound property JaCoCo's prepare-agent
+						     sets; prepend it so the coverage agent loads alongside the
+						     ByteBuddy flag (without it our literal argLine would clobber
+						     JaCoCo and every report would read 0%). -->
+						<argLine>@{argLine} -Dnet.bytebuddy.experimental=true</argLine>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-source-plugin</artifactId>
+					<version>${maven-source-plugin.version}</version>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<artifactId>maven-surefire-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>attach-sources</id>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Attach a -javadoc.jar to every module (parity with garganttua-core).
+			     doclint=none + failOnError=false: partial javadoc never fails the
+			     release build; the jar ships whatever exists. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<version>${maven-javadoc-plugin.version}</version>
+				<configuration>
+					<source>${java.version}</source>
+					<failOnError>false</failOnError>
+					<doclint>none</doclint>
+				</configuration>
+				<executions>
+					<execution>
+						<id>attach-javadocs</id>
+						<phase>package</phase>
+						<goals>
+							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Code coverage (parity with garganttua-core). prepare-agent before
+			     tests, report bound to the test phase → target/site/jacoco/ per module. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco-maven-plugin.version}</version>
+				<executions>
+					<execution>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Stamp each jar's MANIFEST.MF so the module self-identifies at runtime
+			     (parity with core; Implementation-Vendor=com.garganttua lets a module
+			     scan discover the framework jars on the classpath). -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>${maven-jar-plugin.version}</version>
+				<configuration>
+					<archive>
+						<manifestEntries>
+							<Implementation-Title>${project.name}</Implementation-Title>
+							<Implementation-Version>${project.version}</Implementation-Version>
+							<Implementation-Vendor>${project.groupId}</Implementation-Vendor>
+							<Garganttua-Module>${project.artifactId}</Garganttua-Module>
+						</manifestEntries>
+					</archive>
+				</configuration>
+			</plugin>
+			<!-- Refuse to install a stub jar (only META-INF, no .class) — the empty
+			     jar an IDE-driven partial build can leave behind, which corrupts every
+			     downstream consumer. Dormant by default (enforce.jar.size.skip=true),
+			     opt-in per jar-packaged module. Mirrors core. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>${maven-enforcer-plugin.version}</version>
+				<executions>
+					<execution>
+						<id>jar-must-not-be-empty</id>
+						<phase>verify</phase>
+						<goals><goal>enforce</goal></goals>
+						<configuration>
+							<skip>${enforce.jar.size.skip}</skip>
+							<rules>
+								<requireFilesSize>
+									<message>JAR ${project.build.finalName}.jar is suspiciously small (&lt; 5 KB). Refusing to install — likely a build that skipped compile. Check IDE Maven settings / file watchers.</message>
+									<files>
+										<file>${project.build.directory}/${project.build.finalName}.jar</file>
+									</files>
+									<minsize>5000</minsize>
+									<maxsize>2147483647</maxsize>
+								</requireFilesSize>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+	<modules>
+		<module>garganttua-api-bindings</module>
+		<module>garganttua-api-commons</module>
+		<module>garganttua-api-core</module>
+		<module>garganttua-api-dao</module>
+		<module>garganttua-api-starters</module>
+		<!-- <module>garganttua-api-security</module>
+		<module>garganttua-api-interface</module> -->
+		<!-- <module>garganttua-api-javalin</module> -->
+		<!-- <module>garganttua-api-native-image</module> -->
+	</modules>
+
+	<profiles>
+		<!-- Opt-in code-size gate (WARNING ONLY — never fails the build). Kept out
+		     of the default build so offline builds don't need the Checkstyle
+		     artifacts. Activate with `-Pquality`:
+		       mvn -Pquality checkstyle:checkstyle   # human-readable worklist
+		       mvn -Pquality verify                  # passive gate, writes XML
+		     Tracks the god-class / long-method debt and guards against regression. -->
+		<profile>
+			<id>quality</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-checkstyle-plugin</artifactId>
+						<version>3.6.0</version>
+						<dependencies>
+							<dependency>
+								<groupId>com.puppycrawl.tools</groupId>
+								<artifactId>checkstyle</artifactId>
+								<version>10.21.0</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
+							<includeTestSourceDirectory>false</includeTestSourceDirectory>
+							<failOnViolation>false</failOnViolation>
+							<violationSeverity>ignore</violationSeverity>
+							<consoleOutput>false</consoleOutput>
+						</configuration>
+						<executions>
+							<execution>
+								<id>checkstyle-size-gate</id>
+								<phase>verify</phase>
+								<goals><goal>check</goal></goals>
+							</execution>
+						</executions>
+					</plugin>
+					<!-- Static analysis (WARN-only, like checkstyle above) — parity with
+					     core's quality profile. Never fails the build; produces XML/HTML
+					     worklists. Needs online resolution on first run. -->
+					<plugin>
+						<groupId>com.github.spotbugs</groupId>
+						<artifactId>spotbugs-maven-plugin</artifactId>
+						<version>${spotbugs-maven-plugin.version}</version>
+						<dependencies>
+							<dependency>
+								<groupId>com.github.spotbugs</groupId>
+								<artifactId>spotbugs</artifactId>
+								<version>${spotbugs.version}</version>
+							</dependency>
+						</dependencies>
+						<configuration>
+							<effort>Max</effort>
+							<threshold>Low</threshold>
+							<failOnError>false</failOnError>
+							<includeTests>false</includeTests>
+							<xmlOutput>true</xmlOutput>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-pmd-plugin</artifactId>
+						<version>${maven-pmd-plugin.version}</version>
+						<configuration>
+							<failOnViolation>false</failOnViolation>
+							<includeTests>false</includeTests>
+							<rulesets>
+								<ruleset>category/java/errorprone.xml</ruleset>
+								<ruleset>category/java/bestpractices.xml</ruleset>
+							</rulesets>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+</project>

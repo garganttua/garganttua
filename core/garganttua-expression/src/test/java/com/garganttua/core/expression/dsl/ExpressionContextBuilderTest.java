@@ -1,0 +1,391 @@
+package com.garganttua.core.expression.dsl;
+
+import static com.garganttua.core.supply.dsl.NullSupplierBuilder.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import com.garganttua.core.dsl.DslException;
+import com.garganttua.core.expression.annotations.Expression;
+import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IMethod;
+import com.garganttua.core.reflection.IReflection;
+import com.garganttua.core.reflection.dsl.ReflectionBuilder;
+import com.garganttua.core.reflections.ReflectionsAnnotationScanner;
+import com.garganttua.core.reflection.runtime.RuntimeReflectionProvider;
+import jakarta.annotation.Nonnull;
+
+/**
+ * Test class for ExpressionContextBuilder.
+ *
+ * @since 2.0.0-ALPHA01
+ */
+class ExpressionContextBuilderTest {
+
+    @Expression
+    public String string(@Nonnull String message){
+        return message;
+    }
+
+    @Expression
+    public String echo(@Nonnull String message){
+        return message;
+    }
+
+    @BeforeEach
+    void setUp() {
+        IReflection reflection = ReflectionBuilder.builder()
+                .withProvider(new RuntimeReflectionProvider(), 1)
+                .withScanner(new ReflectionsAnnotationScanner(), 1)
+                .build();
+        IClass.setReflection(reflection);
+    }
+
+    /**
+     * Helper class with static methods for testing.
+     */
+    public static class TestExpressions {
+
+        public static String getString() {
+            return "test string";
+        }
+
+        public static Integer getInteger() {
+            return 42;
+        }
+
+        public static Double getDouble() {
+            return 3.14;
+        }
+
+        public static Boolean getBoolean() {
+            return true;
+        }
+
+        // Non-static method - should fail
+        public String getNonStaticString() {
+            return "non-static";
+        }
+    }
+
+    @Test
+    void testbuilderExpressionContextBuilder() {
+        // Test that we can builder an ExpressionContextBuilder
+        assertDoesNotThrow(() -> {
+            ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+            assertNotNull(builder);
+        });
+    }
+
+    @Test
+    void testWithPackage() {
+        // Test adding a single package
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            builder.withPackage("com.example.test");
+        });
+
+        String[] packages = builder.getPackages();
+        // Builder seeds the framework's built-in expression-functions package,
+        // so withPackage(X) yields 2 entries (user's + built-in default).
+        assertEquals(1 + 10, packages.length);  // 1 user + 10 framework built-in defaults
+        assertTrue(java.util.Arrays.asList(packages).contains("com.example.test"));
+    }
+
+    @Test
+    void testWithPackages() {
+        // Test adding multiple packages
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        String[] packagesToAdd = {
+                "com.example.test1",
+                "com.example.test2",
+                "com.example.test3"
+        };
+
+        assertDoesNotThrow(() -> {
+            builder.withPackages(packagesToAdd);
+        });
+
+        String[] packages = builder.getPackages();
+        assertEquals(3 + 10, packages.length); // 3 user + 10 framework built-in defaults
+    }
+
+    @Test
+    void testwithExpressionNodebuildersMethodBinderBuilder() {
+        // Test that withExpressionNode returns a method binder builder
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<String> methodBuilder = builder.expression(of(IClass.getClass(TestExpressions.class)),
+                    IClass.getClass(String.class));
+            assertNotNull(methodBuilder);
+        });
+    }
+
+    @Test
+    void testwithExpressionNodeStaticMethod() throws DslException {
+        // Test binding a static method
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<String> methodBuilder = builder
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(String.class))
+                    .encapsulatedMethod("getString", IClass.getClass(String.class));
+            assertNotNull(methodBuilder);
+        });
+    }
+
+    @Test
+    void testwithExpressionNodeDifferentTypes() throws DslException {
+        // Test binding methods with different return types
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        // String
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<String> stringBuilder = builder
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(String.class))
+                    .encapsulatedMethod("getString", IClass.getClass(String.class));
+            assertNotNull(stringBuilder);
+        });
+
+        // Integer
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<Integer> intBuilder = builder
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(Integer.class))
+                    .encapsulatedMethod("getInteger", IClass.getClass(Integer.class));
+            assertNotNull(intBuilder);
+        });
+
+        // Double
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<Double> doubleBuilder = builder
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(Double.class))
+                    .encapsulatedMethod("getDouble", IClass.getClass(Double.class));
+            assertNotNull(doubleBuilder);
+        });
+
+        // Boolean
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<Boolean> booleanBuilder = builder
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(Boolean.class))
+                    .encapsulatedMethod("getBoolean", IClass.getClass(Boolean.class));
+            assertNotNull(booleanBuilder);
+        });
+    }
+
+    @Test
+    void testWithParamIsInoperative() throws DslException {
+        // Test that withParam doesn't fail but is inoperative
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<String> methodBuilder = builder
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(String.class))
+                    .encapsulatedMethod("getString", IClass.getClass(String.class))
+                    .withParam("test") // Should be ignored
+                    .withParam(0, "test") // Should be ignored
+                    .withParam("paramName", "test"); // Should be ignored
+            assertNotNull(methodBuilder);
+        });
+    }
+
+    @Test
+    void testWithReturnIsInoperative() throws DslException {
+        // Test that withReturn doesn't fail but is inoperative
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            IExpressionMethodBinderBuilder<String> methodBuilder = builder
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(String.class))
+                    .encapsulatedMethod("getString", IClass.getClass(String.class)); // Should be ignored
+            assertNotNull(methodBuilder);
+        });
+    }
+
+    @Test
+    void testAutoDetect() {
+        // Test auto-detect functionality
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            builder.autoDetect(true);
+        });
+
+        assertDoesNotThrow(() -> {
+            builder.autoDetect(false);
+        });
+    }
+
+    @Test
+    void testChainedCalls() {
+        // Test method chaining
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            builder
+                    .withPackage("com.example.test1")
+                    .withPackage("com.example.test2")
+                    .autoDetect(true)
+                    .expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(String.class))
+                    .encapsulatedMethod("getString", IClass.getClass(String.class));
+        });
+
+        String[] packages = builder.getPackages();
+        assertEquals(2 + 10, packages.length); // 2 user + 10 framework built-in defaults
+    }
+
+    @Test
+    void testNullPackageNameThrowsException() {
+        // Test that null package name throws exception
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertThrows(NullPointerException.class, () -> {
+            builder.withPackage(null);
+        });
+    }
+
+    @Test
+    void testNullPackageArrayThrowsException() {
+        // Test that null package array throws exception
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertThrows(NullPointerException.class, () -> {
+            builder.withPackages(null);
+        });
+    }
+
+    @Test
+    void testMultipleExpressionsOnSameBuilder() throws DslException {
+        // Test adding multiple expressions to the same builder
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertDoesNotThrow(() -> {
+            // First expression
+            builder.expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(String.class))
+                    .encapsulatedMethod("getString", IClass.getClass(String.class));
+
+            // Second expression
+            builder.expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(Integer.class))
+                    .encapsulatedMethod("getInteger", IClass.getClass(Integer.class));
+
+            // Third expression
+            builder.expression(of(IClass.getClass(TestExpressions.class)), IClass.getClass(Boolean.class))
+                    .encapsulatedMethod("getBoolean", IClass.getClass(Boolean.class));
+        });
+    }
+
+    /**
+     * Helper class with methods that have parameters - should fail since
+     * expressions don't support parameters.
+     */
+    public static class TestExpressionsWithParams {
+
+        public static String getStringWithParam(String param) {
+            return param;
+        }
+
+        public static Integer addIntegers(Integer a, Integer b) {
+            return a + b;
+        }
+    }
+
+    @Test
+    void testwithExpressionNodeNullMethodOwnerThrowsException() {
+        // Test that null method owner throws exception
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertThrows(NullPointerException.class, () -> {
+            IClass<?> type = null;
+            builder.expression(of(type), IClass.getClass(String.class));
+        });
+    }
+
+    @Test
+    void testwithExpressionNodeNullSuppliedTypeThrowsException() {
+        // Test that null supplied type throws exception
+        ExpressionContextBuilder builder = ExpressionContextBuilder.builder();
+
+        assertThrows(NullPointerException.class, () -> {
+            builder.expression(of(IClass.getClass(TestExpressions.class)), null);
+        });
+    }
+
+    @Test
+    void testBuildWithAutoDetection() {
+        IExpressionContextBuilder builder = ExpressionContextBuilder.builder()
+                .withPackage("com.garganttua.core.expression.dsl").autoDetect(true);
+        builder.build();
+    }
+
+    @Test
+    void testIntFunctionSurvivesMultipleBuilds() {
+        // Exact reproduction from bug report: second ExpressionContextBuilder
+        // loses all base functions (int, boolean, string, etc.)
+        for (int i = 0; i < 5; i++) {
+            IExpressionContextBuilder ecb = ExpressionContextBuilder.builder();
+            ecb.autoDetect(true);
+            ecb.withPackage("com.garganttua.core.expression.functions");
+            var ctx = ecb.build();
+            final int iteration = i + 1;
+            // "405" triggers visitLiteral → createNode("int", "405") → needs int(String)
+            assertDoesNotThrow(() -> ctx.expression("405"),
+                    "Build #" + iteration + ": int(String) factory missing");
+            assertDoesNotThrow(() -> ctx.expression("true"),
+                    "Build #" + iteration + ": boolean(String) factory missing");
+            assertDoesNotThrow(() -> ctx.expression("string(\"hello\")"),
+                    "Build #" + iteration + ": string(String) factory missing");
+        }
+    }
+
+    @Test
+    void testIntFunctionSurvivesMultipleBuildsWithFreshReflection() {
+        // Each iteration creates a fresh IReflection (simulates multiple test setups)
+        for (int i = 0; i < 3; i++) {
+            IReflection reflection = ReflectionBuilder.builder()
+                    .withProvider(new RuntimeReflectionProvider(), 1)
+                    .withScanner(new ReflectionsAnnotationScanner(), 1)
+                    .build();
+            IClass.setReflection(reflection);
+
+            IExpressionContextBuilder ecb = ExpressionContextBuilder.builder();
+            ecb.autoDetect(true);
+            ecb.withPackage("com.garganttua.core.expression.functions");
+            var ctx = ecb.build();
+            final int iteration = i + 1;
+            assertDoesNotThrow(() -> ctx.expression("405"),
+                    "Build #" + iteration + ": int(String) factory missing after fresh reflection");
+        }
+    }
+
+    @Test
+    void testReflectionScannerReturnsSameResultsAcrossMultipleScans() {
+        // Verify the scanner doesn't degrade across multiple scans of the same package.
+        // This tests the Reflections library's behavior when scanning the same package
+        // repeatedly through multiple CompositeReflection instances.
+        IClass<Expression> exprAnno = IClass.getClass(Expression.class);
+        String pkg = "com.garganttua.core.expression.functions";
+
+        int firstScanCount = -1;
+        for (int i = 0; i < 5; i++) {
+            // Fresh reflection each time (same as user's @BeforeEach)
+            IReflection reflection = ReflectionBuilder.builder()
+                    .withProvider(new RuntimeReflectionProvider(), 1)
+                    .withScanner(new ReflectionsAnnotationScanner(), 1)
+                    .build();
+            // ReflectionBuilder.doBuild() calls IClass.setReflection()
+
+            List<IMethod> methods = reflection.getMethodsWithAnnotation(pkg, exprAnno);
+            if (firstScanCount == -1) {
+                firstScanCount = methods.size();
+                assertTrue(firstScanCount > 0, "First scan should find @Expression methods");
+            }
+            assertEquals(firstScanCount, methods.size(),
+                    "Scan #" + (i + 1) + ": should find same number of methods as first scan");
+        }
+    }
+}

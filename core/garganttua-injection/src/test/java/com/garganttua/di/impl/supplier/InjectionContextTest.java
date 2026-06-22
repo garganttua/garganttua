@@ -1,0 +1,64 @@
+package com.garganttua.di.impl.supplier;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.Optional;
+import java.util.UUID;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import com.garganttua.core.dsl.DslException;
+import com.garganttua.core.injection.Predefined;
+import com.garganttua.core.injection.context.InjectionContext;
+import com.garganttua.core.injection.context.beans.Beans;
+import com.garganttua.core.injection.context.properties.Properties;
+import com.garganttua.core.injection.dummies.DummyBean;
+import com.garganttua.core.lifecycle.LifecycleException;
+import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.dsl.IReflectionBuilder;
+import com.garganttua.core.reflection.dsl.ReflectionBuilder;
+import com.garganttua.core.reflection.runtime.RuntimeReflectionProvider;
+import com.garganttua.core.reflections.ReflectionsAnnotationScanner;
+import com.garganttua.core.supply.SupplyException;
+
+public class InjectionContextTest {
+
+    String propertyValue = UUID.randomUUID().toString();
+
+    @BeforeEach
+    void setUp() throws DslException, LifecycleException {
+        IReflectionBuilder rb = ReflectionBuilder.builder().withProvider(new RuntimeReflectionProvider()).withScanner(new ReflectionsAnnotationScanner());
+        rb.build();
+        InjectionContext.builder().provide(rb).withPackage("com.garganttua")
+                .propertyProvider(Predefined.PropertyProviders.garganttua.toString())
+                .withProperty(IClass.getClass(String.class), "com.garganttua.dummyPropertyInConstructor", propertyValue)
+                .up()
+                .autoDetect(true)
+                .build().onInit().onStart();
+    }
+
+    @Test
+    public void testPropertiesAreLoaded() throws DslException, SupplyException {
+        Optional<String> property = Properties.property(IClass.getClass(String.class)).key("com.garganttua.dummyPropertyInConstructor")
+                .build().supply();
+
+        assertNotNull(property);
+        assertTrue(property.isPresent());
+
+        assertEquals(propertyValue, property.get());
+    }
+
+    @Test
+    public void testDummyBeanIsLoaded() throws DslException, SupplyException {
+        Optional<DummyBean> bean = Beans.bean(IClass.getClass(DummyBean.class)).build().supply();
+        assertNotNull(bean);
+        assertTrue(bean.isPresent());
+
+        assertEquals(propertyValue, bean.get().getValue());
+        assertNotNull(bean.get().getAnotherBean());
+        assertTrue(bean.get().isPostConstructCalled());
+        assertNotNull(bean.get().getOtherBean());
+    }
+
+}

@@ -1,0 +1,161 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api</artifactId>
+		<version>3.0.0-ALPHA04</version>
+	</parent>
+	<artifactId>garganttua-api-core</artifactId>
+	<description>Core engine: DSL builders, definition/context model, request pipeline and workflow assembly, repository filters and security expressions.</description>
+
+	<dependencies>
+		<!-- Garganttua API -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-commons</artifactId>
+		</dependency>
+
+		<!-- Garganttua Core -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-script</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-mapper</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-reflection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-bootstrap</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-execution</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-injection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-workflow</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-commons</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-crypto</artifactId>
+		</dependency>
+
+		<!-- AOT — the @Reflected DSL builders here generate AOTClass_*
+		     source files into target/generated-sources/annotations at
+		     compile time; those generated classes reference types from
+		     com.garganttua.core.aot.commons / com.garganttua.core.aot.reflection,
+		     so we need the artefact on the compile + runtime classpath. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-reflection</artifactId>
+		</dependency>
+
+		<!-- AOT infrastructure seed SPI — used by ApiCoreInfrastructureSeed
+		     to pre-register every framework-public concrete type of api-core
+		     (contexts, definitions, services, filter, repository, caller,
+		     default mapper) in the AOTRegistry on cold-start. Required in
+		     pure-AOT mode (no garganttua-runtime-reflection on the classpath). -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-commons</artifactId>
+		</dependency>
+
+		<!-- Standalone third-party deps reintroduced directly. -->
+		<dependency>
+			<groupId>org.javatuples</groupId>
+			<artifactId>javatuples</artifactId>
+		</dependency>
+
+		<!-- Binding for Jackson — Filter.java uses ObjectMapper. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-jackson</artifactId>
+		</dependency>
+
+		<!-- Test dependencies — providers/scanners the framework does not impose at compile time -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-runtime-reflection</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-reflections</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Concrete observability DSL (ObservabilityBuilder) lives in garganttua-observability
+		     since the core split it out of garganttua-commons; main code only needs the
+		     IObservabilityBuilder interface (in commons), the observability integration tests
+		     exercise the concrete builder. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-observability</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<resources>
+			<!-- Filter only the version properties file. Keeping .gs scripts and
+				 other resources unfiltered avoids accidental ${...} substitution
+				 inside script bodies. -->
+			<resource>
+				<directory>src/main/resources</directory>
+				<filtering>false</filtering>
+				<excludes>
+					<exclude>garganttua-api-version.properties</exclude>
+				</excludes>
+			</resource>
+			<resource>
+				<directory>src/main/resources</directory>
+				<filtering>true</filtering>
+				<includes>
+					<include>garganttua-api-version.properties</include>
+				</includes>
+			</resource>
+		</resources>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<exclude>**/old/**</exclude>
+						<exclude>**/legacy/**</exclude>
+						<exclude>**/examples/**</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>

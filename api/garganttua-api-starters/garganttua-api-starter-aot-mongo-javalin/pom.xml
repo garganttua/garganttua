@@ -1,0 +1,58 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api-starters</artifactId>
+		<version>3.0.0-ALPHA04</version>
+	</parent>
+	<artifactId>garganttua-api-starter-aot-mongo-javalin</artifactId>
+	<packaging>jar</packaging>
+	<description>AOT/native starter: same stack as jvm-mongo-javalin but with AOT reflection
+		providers ahead of the runtime ones (GraalVM-ready).</description>
+
+	<!--
+	  aot-mongo-javalin — same persistence/transport stack as jvm-mongo-javalin,
+	  but with the AOT reflection provider/scanner instead of the runtime ones.
+	  The bootstrap socle is provider-agnostic, so this aggregator brings the AOT
+	  providers ONLY — there is no runtime reflection stack on the classpath,
+	  keeping the build pure-AOT / native-image-clean (no org.reflections scan).
+	  The runner is unchanged — provider precedence is decided purely by classpath
+	  contents.
+
+	  AOT processing is required: add the garganttua-aot-maven-plugin to your
+	  application's build to populate the AOT index. There is NO runtime fallback
+	  in this starter — a type without a generated AOT descriptor will not be
+	  resolved. If you want the runtime safety net, use a future hybrid aggregator
+	  (bootstrap + garganttua-starter-hybrid), not this pure-AOT starter.
+	-->
+
+	<dependencies>
+		<!-- AOT reflection providers only. The bootstrap socle is now
+		     provider-agnostic, so no runtime reflection stack leaks in here —
+		     this aggregator stays pure-AOT (no org.reflections, no classpath
+		     scan), which native-image needs. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-reflection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-annotation-scanner</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-bootstrap</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-mongodb</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-javalin</artifactId>
+		</dependency>
+	</dependencies>
+</project>

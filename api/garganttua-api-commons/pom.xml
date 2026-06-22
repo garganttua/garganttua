@@ -1,0 +1,80 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api</artifactId>
+		<version>3.0.0-ALPHA04</version>
+	</parent>
+	<artifactId>garganttua-api-commons</artifactId>
+	<description>Pure contract layer: interfaces, annotations, enums and definition records shared by every API module. Zero business logic.</description>
+
+	<dependencies>
+		<!-- Garganttua Core — the core consolidated its public API (reflection,
+		     crypto, workflow, dsl, observability interfaces + the @Indexed/@Reflected
+		     annotations) into garganttua-commons; depend on it explicitly rather than
+		     relying on the granular jars' transitivity. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-commons</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-execution</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-reflection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-injection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-workflow</artifactId>
+		</dependency>
+
+		<!-- AOT infrastructure seed SPI — used by ApiCommonsInfrastructureSeed
+		     to pre-register every framework-public interface of api-commons in
+		     the AOTRegistry on cold-start. Needed only at compile time; the
+		     seed runs at framework cold-start. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-commons</artifactId>
+		</dependency>
+
+		<!-- AOT direct-binder support. @Reflected types in this module (e.g. the
+		     Authentication result record) make the annotation processor emit
+		     AOTClass_*/AOTMethod_*/AOTField_*/AOTConstructor_* descriptors that
+		     reference com.garganttua.core.aot.reflection — required on the
+		     compile + runtime classpath. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-reflection</artifactId>
+		</dependency>
+
+		<!-- Test dependencies -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-runtime-reflection</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- Standalone third-party dep reintroduced directly (no binding
+		     wrapper) — used by IDomain, IEntityUpdater, IEntityDefinition,
+		     IFilterMapper. -->
+		<dependency>
+			<groupId>org.javatuples</groupId>
+			<artifactId>javatuples</artifactId>
+		</dependency>
+
+		<!-- Test dependencies (no binding wrapper). -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+</project>

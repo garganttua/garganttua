@@ -1,0 +1,216 @@
+package com.garganttua.core.script;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import com.garganttua.core.expression.context.IExpressionContext;
+import com.garganttua.core.expression.dsl.ExpressionContextBuilder;
+import com.garganttua.core.injection.IInjectionContext;
+import com.garganttua.core.injection.context.InjectionContext;
+import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
+import com.garganttua.core.runtime.dsl.RuntimesBuilder;
+import com.garganttua.core.reflections.ReflectionsAnnotationScanner;
+import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IReflectionProvider;
+import com.garganttua.core.reflection.dsl.IReflectionBuilder;
+import com.garganttua.core.reflection.dsl.ReflectionBuilder;
+import com.garganttua.core.script.context.ScriptContext;
+import com.garganttua.core.script.functions.ScriptTimingFunctions;
+import com.garganttua.core.script.functions.ScriptResilienceFunctions;
+import com.garganttua.core.supply.dsl.FixedSupplierBuilder;
+
+class ScriptRetryTest {
+
+    private static IReflectionBuilder reflectionBuilder;
+
+    @BeforeAll
+    static void setup() throws Exception {
+        @SuppressWarnings("unchecked")
+        Class<? extends IReflectionProvider> providerClass =
+                (Class<? extends IReflectionProvider>) Class.forName(
+                        "com.garganttua.core.reflection.runtime.RuntimeReflectionProvider");
+        reflectionBuilder = ReflectionBuilder.builder()
+                .withProvider(providerClass.getDeclaredConstructor().newInstance())
+                .withScanner(new ReflectionsAnnotationScanner());
+        reflectionBuilder.build();
+    }
+
+    private IScript createScript(String source) {
+        IInjectionContextBuilder injectionContextBuilder = InjectionContext.builder()
+                .provide(reflectionBuilder)
+                .autoDetect(true)
+                .withPackage("com.garganttua.core.runtime");
+
+        ExpressionContextBuilder expressionContextBuilder = ExpressionContextBuilder.builder();
+        expressionContextBuilder.withPackage("com.garganttua").autoDetect(true).provide(injectionContextBuilder);
+
+        IInjectionContext injectionContext = injectionContextBuilder.build();
+        injectionContext.onInit().onStart();
+
+        IExpressionContext expressionContext = expressionContextBuilder.build();
+
+        ScriptContext ctx = new ScriptContext(expressionContext, () -> RuntimesBuilder.builder().provide(injectionContextBuilder), null);
+        ctx.load(source);
+        ctx.compile();
+        return ctx;
+    }
+
+    // ---- Time Unit Functions (Direct Java) ----
+
+    @Test
+    void testMilliseconds() {
+        assertEquals(100L, ScriptTimingFunctions.milliseconds(100));
+        assertEquals(100L, ScriptTimingFunctions.milliseconds(100L));
+    }
+
+    @Test
+    void testSeconds() {
+        assertEquals(10000L, ScriptTimingFunctions.seconds(10));
+        assertEquals(10000L, ScriptTimingFunctions.seconds(10L));
+    }
+
+    @Test
+    void testMinutes() {
+        assertEquals(60000L, ScriptTimingFunctions.minutes(1));
+        assertEquals(120000L, ScriptTimingFunctions.minutes(2L));
+    }
+
+    @Test
+    void testHours() {
+        assertEquals(3600000L, ScriptTimingFunctions.hours(1));
+        assertEquals(7200000L, ScriptTimingFunctions.hours(2L));
+    }
+
+    // ---- Time Unit Functions in Script ----
+
+    @Test
+    void testSecondsInScript() {
+        IScript s = createScript("result <- seconds(5)");
+        s.execute();
+        assertEquals(5000L, s.getVariable("result", IClass.getClass(Long.class)).orElse(null));
+    }
+
+    @Test
+    void testMinutesInScript() {
+        IScript s = createScript("result <- minutes(2)");
+        s.execute();
+        assertEquals(120000L, s.getVariable("result", IClass.getClass(Long.class)).orElse(null));
+    }
+
+    @Test
+    void testMillisecondsInScript() {
+        IScript s = createScript("result <- milliseconds(100)");
+        s.execute();
+        assertEquals(100L, s.getVariable("result", IClass.getClass(Long.class)).orElse(null));
+    }
+
+    @Test
+    void testHoursInScript() {
+        IScript s = createScript("result <- hours(1)");
+        s.execute();
+        assertEquals(3600000L, s.getVariable("result", IClass.getClass(Long.class)).orElse(null));
+    }
+
+    // ---- Retry with already evaluated value (returns immediately) ----
+
+    @Test
+    void testRetryWithDirectValue() {
+        IScript s = createScript("""
+                result <- retry(3, milliseconds(10), "direct-value")
+                """);
+        s.execute();
+        assertEquals("direct-value", s.getVariable("result", IClass.getClass(String.class)).orElse(null));
+    }
+
+    @Test
+    void testRetryWithDirectInteger() {
+        // Use string "42" since literals are typed strictly
+        IScript s = createScript("""
+                result <- retry(3, milliseconds(0), "42")
+                """);
+        s.execute();
+        assertEquals("42", s.getVariable("result", IClass.getClass(String.class)).orElse(null));
+    }
+
+    // ---- Retry With Backoff (already evaluated value) ----
+
+    @Test
+    void testRetryWithBackoffDirectValue() {
+        IScript s = createScript("""
+                result <- retryWithBackoff(3, milliseconds(10), milliseconds(100), "backoff-value")
+                """);
+        s.execute();
+        assertEquals("backoff-value", s.getVariable("result", IClass.getClass(String.class)).orElse(null));
+    }
+
+    // ---- Retry with Constructor Call (evaluated once) ----
+
+    @Test
+    void testRetryWithConstructorCall() {
+        IScript s = createScript("""
+                result <- retry(2, milliseconds(0), :(String.class, "constructed"))
+                """);
+        s.execute();
+        assertEquals("constructed", s.getVariable("result", IClass.getClass(String.class)).orElse(null));
+    }
+
+    // ---- Retry with Integer Constructor ----
+
+    @Test
+    void testRetryWithIntegerConstructor() {
+        IScript s = createScript("""
+                result <- retry(2, milliseconds(0), :(Integer.class, "123"))
+                """);
+        s.execute();
+        assertEquals(123, s.getVariable("result", IClass.getClass(Integer.class)).orElse(null));
+    }
+
+    // ---- Retry with null returns null ----
+
+    @Test
+    void testRetryWithNullReturnsNull() {
+        // Test direct Java call
+        assertNull(ScriptResilienceFunctions.retry(3, 10, null));
+    }
+
+    // ---- RetryWithBackoff with null returns null ----
+
+    @Test
+    void testRetryWithBackoffNullReturnsNull() {
+        // Test direct Java call
+        assertNull(ScriptResilienceFunctions.retryWithBackoff(3, 10, 100, null));
+    }
+
+    // ---- Retry validates maxAttempts ----
+
+    @Test
+    void testRetryInvalidMaxAttempts() {
+        assertThrows(Exception.class, () -> ScriptResilienceFunctions.retry(0, 10, FixedSupplierBuilder.of("value").build()));
+    }
+
+    // ---- Retry validates delay ----
+
+    @Test
+    void testRetryInvalidDelay() {
+        assertThrows(Exception.class, () -> ScriptResilienceFunctions.retry(3, -1, FixedSupplierBuilder.of("value").build()));
+    }
+
+    // ---- RetryWithBackoff validates parameters ----
+
+    @Test
+    void testRetryWithBackoffInvalidMaxAttempts() {
+        assertThrows(Exception.class, () -> ScriptResilienceFunctions.retryWithBackoff(0, 10, 100, FixedSupplierBuilder.of("value").build()));
+    }
+
+    @Test
+    void testRetryWithBackoffInvalidDelay() {
+        assertThrows(Exception.class, () -> ScriptResilienceFunctions.retryWithBackoff(3, -1, 100, FixedSupplierBuilder.of("value").build()));
+    }
+
+    @Test
+    void testRetryWithBackoffMaxDelayLessThanInitial() {
+        assertThrows(Exception.class, () -> ScriptResilienceFunctions.retryWithBackoff(3, 100, 10, FixedSupplierBuilder.of("value").build()));
+    }
+}

@@ -1,0 +1,52 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api-starters</artifactId>
+		<version>3.0.0-ALPHA04</version>
+	</parent>
+	<artifactId>garganttua-api-starter-jvm-mongo-javalin</artifactId>
+	<packaging>jar</packaging>
+	<description>JVM starter: bootstrap runner + MongoDB persistence + Javalin HTTP, runtime reflection.</description>
+
+	<!--
+	  jvm-mongo-javalin — the recommended "web app" stack. Aggregator that
+	  composes:
+
+	    * garganttua-api-starter-bootstrap — runner (reflection-provider-agnostic)
+	    * garganttua-starter-runtime       — runtime reflection stack
+	                                         (runtime-reflection + reflections)
+	    * garganttua-api-starter-mongodb   — MongoDB default DAO auto-config
+	    * garganttua-api-starter-javalin   — Javalin transport auto-config + JSON
+
+	  Add this one dependency, annotate your @Entity/@Dto, drop an
+	  application.yaml (mongodb.uri, mongodb.database, server.port), and
+	  GarganttuaApplication.run(App.class) serves CRUD over HTTP with no DSL.
+	-->
+
+	<dependencies>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-bootstrap</artifactId>
+		</dependency>
+
+		<!-- Runtime reflection stack (JDK reflection + org.reflections scanner).
+		     The bootstrap socle is provider-agnostic, so the JVM aggregator is
+		     where the runtime providers enter the classpath. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-starter-runtime</artifactId>
+			<type>pom</type>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-mongodb</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-javalin</artifactId>
+		</dependency>
+	</dependencies>
+</project>
