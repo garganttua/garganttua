@@ -1,0 +1,32 @@
+package com.garganttua.core.console;
+
+/**
+ * Entry point for the Garganttua Script Console fat JAR.
+ *
+ * <p>Launches the interactive REPL console. Use:
+ * {@code java -jar garganttua-console-*-executable.jar}</p>
+ */
+public class ConsoleMain {
+
+    /** Command-line flag that enables the AOT annotation scanner. */
+    private static final String AOT_FLAG = "--aot";
+
+    private ConsoleMain() {
+    }
+
+    /**
+     * Launches the interactive REPL console.
+     *
+     * @param args command-line arguments; pass {@code --aot} to enable the AOT annotation scanner
+     */
+    public static void main(String[] args) {
+        boolean useAOT = false;
+        for (String arg : args) {
+            if (AOT_FLAG.equals(arg)) {
+                useAOT = true;
+            }
+        }
+        ScriptConsole console = new ScriptConsole(useAOT);
+        console.start();
+    }
+}

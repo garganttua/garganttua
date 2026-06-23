@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Module-local SpotBugs exclusions for garganttua-script.
+  Excludes the ANTLR4-generated lexer/parser package (target/generated-sources/antlr4):
+  these classes are machine-generated from Script.g4 and must never be hand-edited
+  (see .claude/rules/antlr-grammar.md), so their MS_PKGPROTECT / MS_FINAL_PKGPROTECT /
+  SF_SWITCH_NO_DEFAULT / SF_SWITCH_FALLTHROUGH findings are not actionable.
+  Mirrors core/expression/spotbugs-exclude.xml.
+-->
+<FindBugsFilter>
+  <Match>
+    <Package name="com.garganttua.core.script.antlr4"/>
+  </Match>
+</FindBugsFilter>

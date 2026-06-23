@@ -1,0 +1,110 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api-dao</artifactId>
+		<version>3.0.0-ALPHA04</version>
+	</parent>
+	<artifactId>garganttua-api-dao-mongodb</artifactId>
+	<description>MongoDB DAO implementation — native-ready repository backed by the MongoDB driver.</description>
+
+	<dependencies>
+		<!-- Garganttua API -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-commons</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-mongodb</artifactId>
+		</dependency>
+
+		<!-- Geo filter translation serialises org.geojson geometries to GeoJSON via
+		     Jackson; the binding wrapper pins both jackson-databind and geojson-jackson. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-jackson</artifactId>
+		</dependency>
+
+		<!-- IKey persistence bridge: serialise/reconstruct crypto key material at the
+		     DAO boundary (KeySerializer + KeyAlgorithm live here; IKey + enums are in
+		     garganttua-commons, already on the classpath). -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-crypto</artifactId>
+		</dependency>
+
+		<!-- AOT support. The @Reflected annotation processor emits AOTClass_*
+		     descriptors into target/generated-sources/annotations referencing
+		     com.garganttua.core.aot.reflection, so that artefact is needed on the
+		     compile + runtime classpath. aot-commons carries the
+		     IAOTInfrastructureSeed SPI implemented by MongoDaoInfrastructureSeed. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-reflection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-commons</artifactId>
+		</dependency>
+
+		<!-- Test -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- A reflection stack for IClass.getClass(...) in tests (ServiceLoader cold-start via Bootstrap.builder()). -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-bootstrap</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-runtime-reflection</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-reflections</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<profiles>
+		<!-- The shared config/checkstyle/checkstyle.xml references the suppressions filter
+		     property ${checkstyle.suppressions.file}, but the parent quality profile never
+		     binds the plugin's suppressionsLocation, so the expression is unset and the
+		     check goal aborts. Bind it here (module-local) to the existing, unmodified
+		     shared suppressions file so checkstyle:check resolves the property. -->
+		<profile>
+			<id>quality</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-checkstyle-plugin</artifactId>
+						<configuration>
+							<suppressionsLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/suppressions.xml</suppressionsLocation>
+							<suppressionsFileExpression>checkstyle.suppressions.file</suppressionsFileExpression>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+</project>

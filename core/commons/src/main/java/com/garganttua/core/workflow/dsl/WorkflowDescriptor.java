@@ -1,0 +1,111 @@
+package com.garganttua.core.workflow.dsl;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Data structure describing a workflow's configuration.
+ *
+ * <p>
+ * WorkflowDescriptor provides a structured representation of a workflow
+ * including its name, stages, scripts, and variable mappings. It can be
+ * used for introspection, documentation generation, or debugging.
+ * </p>
+ *
+ * @param name            the workflow name
+ * @param inlineAll       whether all scripts are forced inline
+ * @param presetVariables the preset variables for the workflow
+ * @param stages          the list of stage descriptors
+ * @since 2.0.0-ALPHA01
+ */
+public record WorkflowDescriptor(
+        String name,
+        boolean inlineAll,
+        Map<String, Object> presetVariables,
+        List<StageDescriptor> stages) {
+
+    /**
+     * Canonical constructor making defensive immutable copies of the collections.
+     */
+    // null preserves the "unset" component; non-null is defensively copied
+    @SuppressWarnings("PMD.NullAssignment")
+    public WorkflowDescriptor {
+        presetVariables = presetVariables == null ? null
+                : Collections.unmodifiableMap(new LinkedHashMap<>(presetVariables));
+        stages = stages == null ? null : Collections.unmodifiableList(new ArrayList<>(stages));
+    }
+
+    /**
+     * Describes a workflow stage.
+     *
+     * @param name                      the stage name
+     * @param wrapExpression            the wrapper expression (e.g., "retry(3, @0)")
+     * @param catchExpression           the stage-level catch expression
+     * @param catchDownstreamExpression the stage-level downstream catch expression
+     * @param condition                 the stage condition expression (when clause)
+     * @param scripts                   the list of script descriptors in this stage
+     */
+    public record StageDescriptor(
+            String name,
+            String wrapExpression,
+            String catchExpression,
+            String catchDownstreamExpression,
+            String condition,
+            List<ScriptDescriptor> scripts) {
+
+        /**
+         * Canonical constructor making a defensive immutable copy of the script list.
+         */
+        // null preserves the "unset" script list; non-null is defensively copied
+        @SuppressWarnings("PMD.NullAssignment")
+        public StageDescriptor {
+            scripts = scripts == null ? null : Collections.unmodifiableList(new ArrayList<>(scripts));
+        }
+    }
+
+    /**
+     * Describes a script within a stage.
+     *
+     * @param name                     the script name
+     * @param description              the script description (from header or builder)
+     * @param sourceType               the source type (STRING, FILE, PATH, etc.)
+     * @param sourcePath               the source path (for file sources)
+     * @param inline                   whether this script is inlined
+     * @param inputMappings            the input variable mappings (scriptVar -> expression)
+     * @param outputMappings           the output variable mappings (workflowVar -> scriptVar)
+     * @param catchExpression          the immediate catch expression (! syntax)
+     * @param catchDownstreamExpression the downstream catch expression (* syntax)
+     * @param codeActions              the code actions (code -> action)
+     * @param condition                the script condition expression (when clause)
+     */
+    public record ScriptDescriptor(
+            String name,
+            String description,
+            String sourceType,
+            String sourcePath,
+            boolean inline,
+            Map<String, String> inputMappings,
+            Map<String, String> outputMappings,
+            String catchExpression,
+            String catchDownstreamExpression,
+            Map<Integer, String> codeActions,
+            String condition) {
+
+        /**
+         * Canonical constructor making defensive immutable copies of the mapping maps.
+         */
+        // null preserves the "unset" mapping; non-null is defensively copied
+        @SuppressWarnings("PMD.NullAssignment")
+        public ScriptDescriptor {
+            inputMappings = inputMappings == null ? null
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(inputMappings));
+            outputMappings = outputMappings == null ? null
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(outputMappings));
+            codeActions = codeActions == null ? null
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(codeActions));
+        }
+    }
+}

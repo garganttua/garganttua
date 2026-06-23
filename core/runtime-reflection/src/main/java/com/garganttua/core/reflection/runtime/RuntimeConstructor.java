@@ -1,0 +1,295 @@
+package com.garganttua.core.reflection.runtime;
+
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedType;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IConstructor;
+import com.garganttua.core.reflection.IParameter;
+import com.garganttua.core.reflection.IReflection;
+import com.garganttua.core.reflection.ITypeVariable;
+
+/**
+ * JVM runtime-reflection implementation of {@link IConstructor}, wrapping a JDK
+ * {@link Constructor}. Instances are cached and shared per underlying constructor.
+ *
+ * @param <T> the type instantiated by the wrapped constructor
+ */
+// AvoidDuplicateLiterals: the repeated literal is the "unchecked" @SuppressWarnings argument — not refactorable.
+@SuppressWarnings("PMD.AvoidDuplicateLiterals")
+public class RuntimeConstructor<T> implements IConstructor<T> {
+
+	private static final Map<Constructor<?>, RuntimeConstructor<?>> CACHE = new ConcurrentHashMap<>();
+
+	private final Constructor<T> constructor;
+
+	private RuntimeConstructor(Constructor<T> constructor) {
+		this.constructor = constructor;
+	}
+
+	/**
+	 * Returns the cached mirror for the given JDK constructor, creating it on
+	 * first request.
+	 *
+	 * @param <T>         the instantiated type
+	 * @param constructor the JDK constructor to wrap
+	 * @return the shared {@code RuntimeConstructor} for {@code constructor}
+	 */
+	@SuppressWarnings("unchecked")
+	public static <T> RuntimeConstructor<T> of(Constructor<T> constructor) {
+		return (RuntimeConstructor<T>) CACHE.computeIfAbsent(constructor, k -> new RuntimeConstructor<>(constructor));
+	}
+
+	/**
+	 * Wildcard-typed variant of {@link #of(Constructor)} for use when the
+	 * instantiated type is not statically known.
+	 *
+	 * @param constructor the JDK constructor to wrap
+	 * @return the shared {@code RuntimeConstructor} for {@code constructor}
+	 */
+	@SuppressWarnings("unchecked")
+	public static RuntimeConstructor<?> ofUnchecked(Constructor<?> constructor) {
+		return CACHE.computeIfAbsent(constructor, k -> new RuntimeConstructor<>(k));
+	}
+
+	/**
+	 * Returns the underlying JDK {@link Constructor} this mirror wraps.
+	 *
+	 * @return the wrapped constructor
+	 */
+	// EI_EXPOSE_REP: exposing the wrapped JDK Constructor is the documented contract of unwrap().
+	@SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "unwrap() intentionally returns the wrapped JDK constructor")
+	public Constructor<T> unwrap() {
+		return constructor;
+	}
+
+	/**
+	 * Extracts the underlying JDK {@link Constructor} from an {@link IConstructor}
+	 * mirror.
+	 *
+	 * @param <T>          the instantiated type
+	 * @param iconstructor the mirror to unwrap
+	 * @return the wrapped constructor
+	 * @throws IllegalArgumentException if {@code iconstructor} is not a
+	 *         {@code RuntimeConstructor}
+	 */
+	// MS_EXPOSE_REP: returning the wrapped JDK constructor is the documented contract of unwrap().
+	@SuppressFBWarnings(value = "MS_EXPOSE_REP", justification = "unwrap() intentionally returns the wrapped JDK constructor")
+	@SuppressWarnings("unchecked")
+	public static <T> Constructor<T> unwrap(IConstructor<T> iconstructor) {
+		if (iconstructor instanceof RuntimeConstructor<T> rc) return rc.constructor;
+		throw new IllegalArgumentException("Cannot unwrap non-RuntimeConstructor IConstructor: " + iconstructor.getClass());
+	}
+
+	// --- Member ---
+
+	@Override
+	@SuppressWarnings("unchecked")
+	public IClass<T> getDeclaringClass() {
+		return (IClass<T>) RuntimeClass.ofUnchecked(constructor.getDeclaringClass());
+	}
+
+	@Override
+	public String getName() {
+		return constructor.getName();
+	}
+
+	@Override
+	public int getModifiers() {
+		return constructor.getModifiers();
+	}
+
+	@Override
+	public boolean isSynthetic() {
+		return constructor.isSynthetic();
+	}
+
+	// --- AccessibleObject ---
+
+	@Override
+	// AvoidAccessibilityAlteration: mirroring AccessibleObject.setAccessible is the contract of this reflection facade.
+	@SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+	public void setAccessible(boolean flag) {
+		constructor.setAccessible(flag);
+	}
+
+	@Override
+	public boolean trySetAccessible() {
+		return constructor.trySetAccessible();
+	}
+
+	@Override
+	public boolean canAccess(Object obj) {
+		return constructor.canAccess(obj);
+	}
+
+	// --- GenericDeclaration ---
+
+	@Override
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	public ITypeVariable<?>[] getTypeParameters() {
+		TypeVariable<Constructor<T>>[] jdkVars = constructor.getTypeParameters();
+		ITypeVariable<?>[] result = new ITypeVariable[jdkVars.length];
+		for (int i = 0; i < jdkVars.length; i++) {
+			result[i] = new RuntimeTypeVariable<>(jdkVars[i], this);
+		}
+		return result;
+	}
+
+	// --- Parameters ---
+
+	@Override
+	public IClass<?>[] getParameterTypes() {
+		return Arrays.stream(constructor.getParameterTypes())
+				.map(RuntimeClass::ofUnchecked)
+				.toArray(IClass<?>[]::new);
+	}
+
+	@Override
+	public Type[] getGenericParameterTypes() {
+		return constructor.getGenericParameterTypes();
+	}
+
+	@Override
+	public int getParameterCount() {
+		return constructor.getParameterCount();
+	}
+
+	@Override
+	public IParameter[] getParameters() {
+		return Arrays.stream(constructor.getParameters())
+				.map(RuntimeParameter::of)
+				.toArray(IParameter[]::new);
+	}
+
+	@Override
+	public Annotation[][] getParameterAnnotations() {
+		return constructor.getParameterAnnotations();
+	}
+
+	// --- Exceptions ---
+
+	@Override
+	public IClass<?>[] getExceptionTypes() {
+		return Arrays.stream(constructor.getExceptionTypes())
+				.map(RuntimeClass::ofUnchecked)
+				.toArray(IClass<?>[]::new);
+	}
+
+	@Override
+	public Type[] getGenericExceptionTypes() {
+		return constructor.getGenericExceptionTypes();
+	}
+
+	// --- Constructor properties ---
+
+	@Override
+	public boolean isVarArgs() {
+		return constructor.isVarArgs();
+	}
+
+	@Override
+	public String toGenericString() {
+		return constructor.toGenericString();
+	}
+
+	// --- Instantiation ---
+
+	@Override
+	public T newInstance(Object... initargs)
+			throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
+		return constructor.newInstance(initargs);
+	}
+
+	// --- Annotated types ---
+
+	@Override
+	public AnnotatedType getAnnotatedReturnType() {
+		return constructor.getAnnotatedReturnType();
+	}
+
+	@Override
+	public AnnotatedType[] getAnnotatedParameterTypes() {
+		return constructor.getAnnotatedParameterTypes();
+	}
+
+	@Override
+	public AnnotatedType[] getAnnotatedExceptionTypes() {
+		return constructor.getAnnotatedExceptionTypes();
+	}
+
+	@Override
+	public AnnotatedType getAnnotatedReceiverType() {
+		return constructor.getAnnotatedReceiverType();
+	}
+
+	// --- AnnotatedElement (IClass overloads) ---
+
+	@Override
+	public boolean isAnnotationPresent(IClass<? extends Annotation> annotationClass) {
+		return constructor.isAnnotationPresent(RuntimeClass.unwrapAnnotationClass(annotationClass));
+	}
+
+	@Override
+	public <A extends Annotation> A getAnnotation(IClass<A> annotationClass) {
+		return constructor.getAnnotation(RuntimeClass.unwrapAnnotationClass(annotationClass));
+	}
+
+	@Override
+	public <A extends Annotation> A[] getAnnotationsByType(IClass<A> annotationClass) {
+		return constructor.getAnnotationsByType(RuntimeClass.unwrapAnnotationClass(annotationClass));
+	}
+
+	@Override
+	public <A extends Annotation> A getDeclaredAnnotation(IClass<A> annotationClass) {
+		return constructor.getDeclaredAnnotation(RuntimeClass.unwrapAnnotationClass(annotationClass));
+	}
+
+	@Override
+	public <A extends Annotation> A[] getDeclaredAnnotationsByType(IClass<A> annotationClass) {
+		return constructor.getDeclaredAnnotationsByType(RuntimeClass.unwrapAnnotationClass(annotationClass));
+	}
+
+	@Override
+	public Annotation[] getAnnotations() {
+		return constructor.getAnnotations();
+	}
+
+	@Override
+	public Annotation[] getDeclaredAnnotations() {
+		return constructor.getDeclaredAnnotations();
+	}
+
+	// --- IAnnotatedElement ---
+
+	@Override
+	public IReflection reflection() {
+		return IClass.getReflection();
+	}
+
+	// --- Object overrides ---
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (obj instanceof RuntimeConstructor<?> other) return constructor.equals(other.constructor);
+		return false;
+	}
+
+	@Override
+	public int hashCode() {
+		return constructor.hashCode();
+	}
+
+	@Override
+	public String toString() {
+		return constructor.toString();
+	}
+}

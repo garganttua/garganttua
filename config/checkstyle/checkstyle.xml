@@ -4,19 +4,27 @@
   "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
 <!--
-  Garganttua code-size gate — WARNING ONLY.
+  Garganttua code-size gate — BLOCKING under the `quality` profile.
 
   Purpose: track the "god class / long method" technical debt addressed during
-  the 2.0.0-ALPHA02 rework and prevent silent regression afterwards. The Maven
-  plugin is configured with failOnViolation=false / violationSeverity=ignore, so
-  these checks NEVER break the build — they are advisory and feed the worklist
-  produced by `mvn checkstyle:checkstyle`.
+  the 2.0.0-ALPHA02 rework and prevent silent regression afterwards. Under
+  `-Pquality` the Maven plugin runs with failOnViolation=true /
+  violationSeverity=warning, so a NEW oversize file or long method FAILS the
+  build. The default offline build does not run this gate (stays fast/advisory).
 
-  Deliberately minimal: only the two size checks the rework targets, plus an
-  advisory parameter-count check.
+  Approved, documented exceptions are listed in suppressions.xml.
+
+  Deliberately minimal: only the two size checks the rework targets, plus a
+  parameter-count check.
 -->
 <module name="Checker">
   <property name="severity" value="warning"/>
+
+  <!-- Approved size exceptions (see .claude/rules/code-quality.md). -->
+  <module name="SuppressionFilter">
+    <property name="file" value="${checkstyle.suppressions.file}"/>
+    <property name="optional" value="true"/>
+  </module>
 
   <!-- God-class gate: production files over 500 lines. -->
   <module name="FileLength">
@@ -24,19 +32,23 @@
   </module>
 
   <module name="TreeWalker">
-    <!-- Long-method gate: method bodies over 20 lines (blank lines excluded).
-         Token METHOD_DEF only — constructors are intentionally NOT checked
-         because the codebase's large constructors are field-assignment / record
-         canonical bodies (heuristic false positives), not refactor targets. -->
+    <!-- Long-method gate. BLOCKING threshold = 35 lines = the documented
+         "real offender" line (.claude/rules/code-quality.md: extract methods
+         > ~35 lines OR multi-responsibility; cohesive 21–35-line methods are
+         accepted). The old advisory worklist target was 20; the build only
+         FAILS above 35. Token METHOD_DEF only — constructors are NOT checked
+         (field-assignment / record canonical bodies, not refactor targets). -->
     <module name="MethodLength">
       <property name="tokens" value="METHOD_DEF"/>
-      <property name="max" value="20"/>
+      <property name="max" value="35"/>
       <property name="countEmpty" value="false"/>
     </module>
 
-    <!-- Advisory: many parameters often signals a missing value object.
-         Known noisy hit: AOTClass' generated 23-arg constructor. -->
+    <!-- ADVISORY only (severity=info → never fails the build): many parameters
+         often signals a missing value object. Known noisy hit: AOTClass'
+         generated 23-arg constructor. -->
     <module name="ParameterNumber">
+      <property name="severity" value="info"/>
       <property name="max" value="7"/>
       <property name="tokens" value="METHOD_DEF"/>
     </module>

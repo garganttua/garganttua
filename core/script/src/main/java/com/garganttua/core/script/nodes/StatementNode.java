@@ -1,0 +1,135 @@
+package com.garganttua.core.script.nodes;
+
+import java.util.List;
+
+import com.garganttua.core.expression.IExpression;
+import com.garganttua.core.script.ScriptException;
+import com.garganttua.core.supply.ISupplier;
+
+/**
+ * The default {@link IScriptNode} for a single expression statement. Holds the
+ * expression, its optional variable binding and exit code, and any catch/pipe
+ * clauses attached to it.
+ */
+// fields mirror the IScriptNode accessor names (field x + method x()) by design
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+public class StatementNode implements IScriptNode {
+
+    private final IExpression<?, ? extends ISupplier<?>> expression;
+    private final String variableName;
+    private final boolean assignExpression;
+    private final Integer code;
+    private final List<CatchClause> catchClauses;
+    private final List<CatchClause> downstreamCatchClauses;
+    private final List<PipeClause> pipeClauses;
+    private final int line;
+    private final String sourceText;
+
+    /**
+     * Creates a statement node at an unknown source location.
+     *
+     * @param expression             the expression evaluated by this statement
+     * @param variableName           the variable the result binds to, or {@code null}
+     * @param assignExpression       {@code true} to assign the supplier itself ({@code =}),
+     *                               {@code false} to assign its evaluated result ({@code <-})
+     * @param code                   the exit code for this statement, or {@code null}
+     * @param catchClauses           the immediate ({@code !}) catch clauses
+     * @param downstreamCatchClauses the downstream ({@code *}) catch clauses
+     * @param pipeClauses            the conditional pipe ({@code |}) clauses
+     */
+    public StatementNode(IExpression<?, ? extends ISupplier<?>> expression, String variableName,
+            boolean assignExpression, Integer code,
+            List<CatchClause> catchClauses, List<CatchClause> downstreamCatchClauses,
+            List<PipeClause> pipeClauses) {
+        this(expression, variableName, assignExpression, code, catchClauses, downstreamCatchClauses, pipeClauses, 0, null);
+    }
+
+    /**
+     * Creates a statement node.
+     *
+     * @param expression             the expression evaluated by this statement
+     * @param variableName           the variable the result binds to, or {@code null}
+     * @param assignExpression       {@code true} to assign the supplier itself ({@code =}),
+     *                               {@code false} to assign its evaluated result ({@code <-})
+     * @param code                   the exit code for this statement, or {@code null}
+     * @param catchClauses           the immediate ({@code !}) catch clauses
+     * @param downstreamCatchClauses the downstream ({@code *}) catch clauses
+     * @param pipeClauses            the conditional pipe ({@code |}) clauses
+     * @param line                   the source line of this statement
+     * @param sourceText             the original source text, or {@code null}
+     */
+    public StatementNode(IExpression<?, ? extends ISupplier<?>> expression, String variableName,
+            boolean assignExpression, Integer code,
+            List<CatchClause> catchClauses, List<CatchClause> downstreamCatchClauses,
+            List<PipeClause> pipeClauses, int line, String sourceText) {
+        this.expression = expression;
+        this.variableName = variableName;
+        this.assignExpression = assignExpression;
+        this.code = code;
+        this.catchClauses = catchClauses != null ? List.copyOf(catchClauses) : List.of();
+        this.downstreamCatchClauses = downstreamCatchClauses != null ? List.copyOf(downstreamCatchClauses) : List.of();
+        this.pipeClauses = pipeClauses != null ? List.copyOf(pipeClauses) : List.of();
+        this.line = line;
+        this.sourceText = sourceText;
+    }
+
+    @Override
+    public Object execute() throws ScriptException {
+        try {
+            ISupplier<?> supplier = this.expression.evaluate();
+            return supplier.supply().orElse(null);
+        } catch (Exception e) {
+            // Use root cause message for cleaner error reporting
+            Throwable root = e;
+            while (root.getCause() != null) {
+                root = root.getCause();
+            }
+            throw new ScriptException(root.getMessage() != null ? root.getMessage() : "Expression execution failed", e);
+        }
+    }
+
+    @Override
+    public String variableName() {
+        return this.variableName;
+    }
+
+    @Override
+    public boolean assignExpression() {
+        return this.assignExpression;
+    }
+
+    @Override
+    public Integer code() {
+        return this.code;
+    }
+
+    @Override
+    public IExpression<?, ? extends ISupplier<?>> expression() {
+        return this.expression;
+    }
+
+    @Override
+    public List<CatchClause> catchClauses() {
+        return this.catchClauses;
+    }
+
+    @Override
+    public List<CatchClause> downstreamCatchClauses() {
+        return this.downstreamCatchClauses;
+    }
+
+    @Override
+    public List<PipeClause> pipeClauses() {
+        return this.pipeClauses;
+    }
+
+    @Override
+    public int line() {
+        return this.line;
+    }
+
+    @Override
+    public String sourceText() {
+        return this.sourceText;
+    }
+}

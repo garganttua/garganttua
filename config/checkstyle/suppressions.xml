@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<!--
+  Approved, documented size exceptions (see .claude/rules/code-quality.md → god-class rule).
+  These are inherent large-interface mirrors / cohesive facades with no clean extraction; they
+  carry a `<b>Size note:</b>` javadoc. Suppressing them here keeps the now-BLOCKING checkstyle
+  gate green for the accepted set while still failing the build on any NEW oversize file.
+-->
+<suppressions>
+  <!-- god-class FileLength > 500 — accepted exceptions -->
+  <suppress checks="FileLength"
+            files="[\\/](AOTClass|RuntimeClass|RuntimeContext|IReflection|BuilderDependency|InjectionContext|Bootstrap|FieldAccessor)\.java$"/>
+
+  <!-- ParameterNumber > 7 — AOTClass' generated 23-arg constructor -->
+  <suppress checks="ParameterNumber" files="[\\/]AOTClass\.java$"/>
+</suppressions>

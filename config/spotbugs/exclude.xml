@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusions for the now-BLOCKING quality gate (see .claude/rules/code-quality.md).
+  Keep this list tight: prefer FIXING real bugs over suppressing. Add an entry only for a
+  reviewed false-positive / accepted-noise pattern, with a one-line justification.
+-->
+<FindBugsFilter>
+  <!-- Generated code is never gated: ANTLR parsers/lexers (…​.antlr4.*) and the AOT
+       direct binders / class descriptors (AOTClass_*/AOTMethod_*/AOTField_*/AOTConstructor_*). -->
+  <Match>
+    <Class name="~.*\.antlr4\..*"/>
+  </Match>
+  <Match>
+    <Class name="~.*\.AOT(Class|Method|Field|Constructor)_.*"/>
+  </Match>
+
+  <!-- Reviewed false-positive: SecurityRandoms.secureRandom() deliberately returns a single
+       shared, thread-safe SecureRandom. Sharing it is the correct design; creating a new
+       instance per call would be an anti-pattern. -->
+  <Match>
+    <Class name="com.garganttua.api.commons.security.SecurityRandoms"/>
+    <Method name="secureRandom"/>
+    <Bug pattern="MS_EXPOSE_REP"/>
+  </Match>
+</FindBugsFilter>

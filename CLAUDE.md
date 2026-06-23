@@ -55,7 +55,7 @@ declares the in-reactor AOT annotation processor on its `annotationProcessorPath
 Common per-module commands:
 
 ```bash
-mvn -o install -pl core/garganttua-injection          # build one module (path-based)
+mvn -o install -pl core/injection                     # build one module (path-based)
 mvn -o install -pl :garganttua-injection              # build one module (artifactId-based, path-independent)
 mvn -o test                                            # all tests
 mvn -o test -pl :garganttua-expression                 # tests for one module
@@ -177,8 +177,8 @@ dependency (tests build one and call `.provide(reflectionBuilder)`).
 
 ### Expression & script languages (ANTLR4)
 
-Grammars at `garganttua-expression/src/main/resources/antlr4/Expression.g4` and
-`garganttua-script/src/main/resources/antlr4/Script.g4`; never edit generated files under
+Grammars at `core/expression/src/main/resources/antlr4/Expression.g4` and
+`core/script/src/main/resources/antlr4/Script.g4`; never edit generated files under
 `target/generated-sources/`. Expression syntax: `concatenate("a","b")`, `:methodName(args)`,
 `:(String.class,"value")`, vars `@lazy` / `.eager` / `@0` positional. Nodes implement
 `IExpressionNode<R, S extends ISupplier<R>>` → evaluation yields suppliers. Script (`.gs`) adds
@@ -253,7 +253,7 @@ Inactive (commented out, Lombok may linger pending migration): `garganttua-api-s
 - **Method binder** — wires lifecycle hooks (beforeCreate, afterGet…) and security methods
   (authenticate, sign, validate) at build time via core reflection (`core/builder/binder/`).
 - **Pipeline** — `IPipeline` → `IPhase` → `IPhaseScript`; script definitions under
-  `garganttua-api-core/src/main/resources/scripts/` (see `PIPELINE.md`). New operation types
+  `api/core/src/main/resources/scripts/` (see `PIPELINE.md`). New operation types
   **mirror the CRUD path** — never build a parallel mechanism.
 - **Definition / Context separation** — definitions (`EntityDefinition`, `DomainDefinition`) built
   once; contexts (`EntityContext`, `Domain`) aggregate them and provide `invoke(IServiceRequest)`.

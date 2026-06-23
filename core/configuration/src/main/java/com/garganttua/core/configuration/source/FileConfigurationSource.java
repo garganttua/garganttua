@@ -1,0 +1,65 @@
+package com.garganttua.core.configuration.source;
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.Optional;
+
+import com.garganttua.core.configuration.ConfigurationException;
+import com.garganttua.core.configuration.IConfigurationSource;
+
+/**
+ * {@link IConfigurationSource} that reads configuration from a filesystem file,
+ * deriving the format hint from the file extension.
+ */
+public class FileConfigurationSource implements IConfigurationSource {
+
+    private final Path path;
+
+    /**
+     * Creates a source backed by the given file path.
+     *
+     * @param path the configuration file path
+     */
+    public FileConfigurationSource(Path path) {
+        this.path = path;
+    }
+
+    /**
+     * Creates a source backed by the given file path.
+     *
+     * @param path the configuration file path
+     */
+    public FileConfigurationSource(String path) {
+        this.path = Path.of(path);
+    }
+
+    @Override
+    public InputStream getInputStream() throws ConfigurationException {
+        try {
+            return new FileInputStream(this.path.toFile());
+        } catch (FileNotFoundException e) {
+            throw new ConfigurationException("Configuration file not found: " + this.path, e);
+        }
+    }
+
+    @Override
+    public Optional<String> getFormatHint() {
+        var fileNamePath = this.path.getFileName();
+        if (fileNamePath == null) {
+            return Optional.empty();
+        }
+        var fileName = fileNamePath.toString();
+        int dot = fileName.lastIndexOf('.');
+        if (dot > 0) {
+            return Optional.of(fileName.substring(dot + 1));
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public String getDescription() {
+        return "file:" + this.path;
+    }
+}

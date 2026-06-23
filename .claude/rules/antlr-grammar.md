@@ -2,23 +2,23 @@
 ---
 paths:
   - "**/*.g4"
-  - "**/garganttua-expression/**/*.java"
+  - "**/expression/**/*.java"
 ---
 
 ## Critical Rules
 
 - **NEVER edit generated files** in `target/generated-sources/`
-- Grammar location: `garganttua-expression/src/main/antlr4/com/garganttua/core/expression/parser/Expression.g4`
+- Grammar location: `core/expression/src/main/antlr4/com/garganttua/core/expression/parser/Expression.g4`
 - Parser/Lexer classes are auto-generated via `antlr4-maven-plugin`
 
 ## Rebuild Commands
 
 ```bash
 # Regenerate parser after grammar changes
-mvn antlr4:antlr4 -pl garganttua-expression
+mvn antlr4:antlr4 -pl :garganttua-expression
 
 # Full rebuild of expression module
-mvn clean compile -pl garganttua-expression
+mvn clean compile -pl :garganttua-expression
 ```
 
 ## Expression Language Syntax

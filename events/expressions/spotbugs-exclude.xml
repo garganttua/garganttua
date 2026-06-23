@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Module-local SpotBugs exclusions for garganttua-events-expressions.
+
+  The shared config/spotbugs/exclude.xml (off-limits) is empty by policy. The only
+  SpotBugs findings here come from GENERATED, do-not-edit AOT method descriptors:
+  garganttua-aot-annotation-processor emits AOTMethod_* classes for every @Expression
+  static method. Because this module's expression methods declare checked exceptions
+  (HandlingException / FilterException / ConnectorException — part of the public API),
+  the generated invoke() rethrow + private __sneakyThrow(...) helper trip
+  THROWS_METHOD_THROWS_RUNTIMEEXCEPTION. That code lives under target/generated-sources
+  and cannot be hand-edited; the exception signatures cannot be removed without breaking
+  the public expression contract. Scope the exclusion tightly to the generated classes.
+-->
+<FindBugsFilter>
+  <Match>
+    <Class name="~com\.garganttua\.events\.expressions\.AOTMethod_.*"/>
+    <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION"/>
+  </Match>
+</FindBugsFilter>

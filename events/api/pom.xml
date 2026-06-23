@@ -1,0 +1,66 @@
+<!-- Copyright (c) 2022 Jérémy COLOMBET -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-events</artifactId>
+		<version>3.0.0-ALPHA04</version>
+	</parent>
+
+	<artifactId>garganttua-events-api</artifactId>
+	<packaging>jar</packaging>
+
+	<dependencies>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-commons</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-lifecycle</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+		</dependency>
+		<!-- Compile-time only: @SuppressFBWarnings to annotate the design-intentional
+		     EI_EXPOSE_REP/REP2 on the framework transport/config records (mutable
+		     components are shared by reference / null-allowed by design — a defensive
+		     copy would change runtime behaviour). Not needed at runtime. -->
+		<dependency>
+			<groupId>com.github.spotbugs</groupId>
+			<artifactId>spotbugs-annotations</artifactId>
+			<version>4.9.8</version>
+			<scope>provided</scope>
+			<optional>true</optional>
+		</dependency>
+	</dependencies>
+
+	<profiles>
+		<!-- The shared config/checkstyle/checkstyle.xml references the suppressions filter
+		     property ${checkstyle.suppressions.file}, but the parent (events) quality profile
+		     never binds the plugin's suppressionsLocation, so the expression is unset and the
+		     check goal aborts. Bind it here (module-local) to the existing, unmodified shared
+		     suppressions file so checkstyle:check resolves the property. Mirrors the same fix
+		     already applied in api/dao/dao-mongodb/pom.xml. -->
+		<profile>
+			<id>quality</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-checkstyle-plugin</artifactId>
+						<configuration>
+							<suppressionsLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/suppressions.xml</suppressionsLocation>
+							<suppressionsFileExpression>checkstyle.suppressions.file</suppressionsFileExpression>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
+</project>

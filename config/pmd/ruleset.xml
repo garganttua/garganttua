@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<ruleset name="garganttua-quality"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+  <description>
+    Blocking PMD gate for the garganttua platform: error-prone + best-practices,
+    minus the categories accepted as noise in .claude/rules/code-quality.md
+    (GuardLogStatement — moot with {}-parameterized logging; SystemPrintln —
+    legitimate in the CLI/REPL; CloseResource — caller-owned resources).
+  </description>
+
+  <rule ref="category/java/errorprone.xml">
+    <exclude name="CloseResource"/>
+  </rule>
+
+  <rule ref="category/java/bestpractices.xml">
+    <exclude name="GuardLogStatement"/>
+    <exclude name="SystemPrintln"/>
+    <!-- Excluded because GuardLogStatement/SystemPrintln/CloseResource are excluded
+         globally above: any leftover @SuppressWarnings for them is harmless, and flagging
+         it just creates churn against the defensive-suppression approach. -->
+    <exclude name="UnnecessaryWarningSuppression"/>
+  </rule>
+</ruleset>

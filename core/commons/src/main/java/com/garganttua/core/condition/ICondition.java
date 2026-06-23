@@ -1,0 +1,132 @@
+package com.garganttua.core.condition;
+
+import java.lang.reflect.Type;
+
+import com.garganttua.core.expression.ExpressionException;
+import com.garganttua.core.expression.IExpressionNode;
+import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.supply.ISupplier;
+
+/**
+ * Represents a boolean condition that can be evaluated to true or false.
+ *
+ * <p>
+ * ICondition is a functional interface that encapsulates boolean logic for
+ * runtime decision-making.
+ * Conditions can be simple predicates or complex composite expressions built
+ * using boolean algebra
+ * (AND, OR, XOR, NOT, NAND, NOR). They are commonly used in runtime workflows
+ * to control step execution,
+ * validate inputs, or implement business rules.
+ * </p>
+ *
+ * <h2>Core Use Cases</h2>
+ * <ul>
+ * <li><b>Step Guards</b> - Control whether a runtime step should execute</li>
+ * <li><b>Business Rules</b> - Encode complex validation and eligibility
+ * logic</li>
+ * <li><b>Feature Toggles</b> - Enable/disable features based on runtime
+ * state</li>
+ * <li><b>Access Control</b> - Implement permission checks and authorization
+ * rules</li>
+ * </ul>
+ *
+ * <h2>Usage Example - Simple Condition</h2>
+ * 
+ * <pre>{@code
+ * // Lambda-based condition
+ * ICondition isAdult = () -> user.getAge() >= 18;
+ *
+ * if (isAdult.evaluate()) {
+ *     // Allow access
+ * }
+ * }</pre>
+ *
+ * <h2>Usage Example - Composite Conditions</h2>
+ * 
+ * <pre>{@code
+ * import static com.garganttua.core.condition.Conditions.*;
+ *
+ * // Complex business rule: eligible if adult AND (premium OR long-time user)
+ * ICondition eligibility = and(
+ *     custom(userSupplier, User::getAge, age -> age >= 18),
+ *     or(
+ *         custom(userSupplier, User::isPremium, premium -> premium),
+ *         custom(userSupplier, User::getAccountAge, age -> age > 365)
+ *     )
+ * ).build();
+ *
+ * boolean isEligible = eligibility.evaluate();
+ * }</pre>
+ *
+ * <h2>Usage Example - Runtime Integration</h2>
+ * 
+ * <pre>
+ * &#64;RuntimeDefinition
+ * public class ConditionalRuntime {
+ *
+ *     &#64;Operation
+ *     &#64;Condition("isVipUser")
+ *     public void processVipDiscount(&#64;Input Order order) {
+ *         // Only executes if user is VIP
+ *         order.applyDiscount(0.20);
+ *     }
+ *
+ *     public ICondition isVipUser(&#64;Input Order order) {
+ *         return () -&gt; order.getUser().isVip();
+ *     }
+ * }
+ * </pre>
+ *
+ * <h2>Thread Safety</h2>
+ * <p>
+ * Condition implementations should be stateless and thread-safe. Multiple
+ * threads may call
+ * {@link #evaluate()} concurrently. If a condition depends on external state,
+ * ensure proper
+ * synchronization or use immutable suppliers.
+ * </p>
+ *
+ * @since 2.0.0-ALPHA01
+ * @see com.garganttua.core.condition.dsl.IConditionBuilder
+ * @see com.garganttua.core.runtime.annotations.Condition
+ */
+// expression-node contract (default methods + one abstract), not a lambda target
+@SuppressWarnings("PMD.ImplicitFunctionalInterface")
+public interface ICondition extends IExpressionNode<Boolean, ISupplier<Boolean>> {
+
+    /**
+     * {@return the type supplied by this condition, namely {@link ISupplier}}
+     */
+    @Override
+    default Type getSuppliedType() {
+        return ISupplier.class;
+    }
+
+    /**
+     * {@return the {@link IClass} mirror of the supplied {@link ISupplier} type}
+     */
+    @SuppressWarnings("unchecked")
+    @Override
+    default IClass<ISupplier<Boolean>> getSuppliedClass() {
+        return (IClass<ISupplier<Boolean>>) (IClass<?>) IClass.getClass(ISupplier.class);
+    }
+
+    /**
+     * {@return the {@link IClass} mirror of the final supplied value type, {@link Boolean}}
+     */
+    @Override
+    default IClass<Boolean> getFinalSuppliedClass() {
+        return IClass.getClass(Boolean.class);
+    }
+
+    /**
+     * Evaluates this condition and resolves its supplier chain to a concrete boolean value.
+     *
+     * @return the resolved boolean result of the condition
+     * @throws ExpressionException if evaluation or supplier resolution fails
+     */
+    default Boolean fullEvaluate() throws ExpressionException {
+        return this.evaluate().supply().get();
+    }
+}

@@ -45,12 +45,12 @@
 	</repositories>
 
 	<modules>
-		<module>garganttua-events-api</module>
-		<module>garganttua-events-expressions</module>
-		<module>garganttua-events-core</module>
-		<module>garganttua-events-connector-kafka</module>
-		<module>garganttua-events-connector-bus</module>
-		<module>garganttua-events-connector-mail</module>
+		<module>api</module>
+		<module>expressions</module>
+		<module>core</module>
+		<module>connector-kafka</module>
+		<module>connector-bus</module>
+		<module>connector-mail</module>
 	</modules>
 
 	<properties>
@@ -58,6 +58,9 @@
 		<maven.compiler.source>25</maven.compiler.source>
 		<maven.compiler.target>25</maven.compiler.target>
 		<garganttua.core.version>3.0.0-ALPHA04</garganttua.core.version>
+		<!-- Per-module LINE coverage floor enforced by jacoco:check under -Pquality.
+		     Wired but 0 for now (events ships ~no tests yet); ratchet up later. -->
+		<jacoco.line.min>0.0</jacoco.line.min>
 		<jackson.version>2.15.2</jackson.version>
 		<lombok.version>1.18.36</lombok.version>
 		<junit.version>5.9.0</junit.version>
@@ -124,6 +127,22 @@
 				<version>${garganttua.core.version}</version>
 			</dependency>
 
+			<!-- AOT — the generated AOTClass_*/AOTField_*/AOTMethod_* sources
+			     (emitted by garganttua-aot-annotation-processor with
+			     -Agarganttua.direct.binders=true) reference these types, so they
+			     must be on the compile + runtime classpath. aot-reflection is the
+			     pure-AOT/native reflection provider (no java.lang.reflect). -->
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-aot-reflection</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-aot-commons</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+
 			<!-- External -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
@@ -182,15 +201,45 @@
 		</dependencies>
 	</dependencyManagement>
 
+	<!-- Every events module is AOT-pure / native-ready: it carries the AOT
+	     reflection provider + commons so the generated direct binders resolve
+	     without java.lang.reflect. Inherited by all sub-modules. -->
+	<dependencies>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-reflection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-commons</artifactId>
+		</dependency>
+	</dependencies>
+
 	<build>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.11.0</version>
+				<version>3.13.0</version>
 				<configuration>
-					<source>21</source>
-					<target>21</target>
+					<!-- source/target come from maven.compiler.source/target = 25 -->
+					<compilerArgs>
+						<arg>-parameters</arg>
+						<!-- Level 2 AOT: emit AOTClass_*/AOTField_*/AOTMethod_* direct
+						     binders for every @Reflected type, registered into AOTRegistry
+						     via static initialisers — events resolves through the AOT
+						     reflection provider (pure-AOT / GraalVM native), never
+						     java.lang.reflect. Level 1 @Indexed APT always runs too
+						     (indexes @Expression functions for native discovery). -->
+						<arg>-Agarganttua.direct.binders=true</arg>
+					</compilerArgs>
+					<annotationProcessorPaths>
+						<path>
+							<groupId>com.garganttua.core</groupId>
+							<artifactId>garganttua-aot-annotation-processor</artifactId>
+							<version>${garganttua.core.version}</version>
+						</path>
+					</annotationProcessorPaths>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -202,6 +251,28 @@
 						<id>attach-sources</id>
 						<goals>
 							<goal>jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!-- Code coverage (parity with garganttua-core / garganttua-api).
+			     prepare-agent before tests, report bound to the test phase →
+			     target/site/jacoco/ per module. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.14</version>
+				<executions>
+					<execution>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
 						</goals>
 					</execution>
 				</executions>
@@ -234,10 +305,16 @@
 						</dependencies>
 						<configuration>
 							<configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
+							<suppressionsLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/suppressions.xml</suppressionsLocation>
 							<includeTestSourceDirectory>false</includeTestSourceDirectory>
-							<failOnViolation>false</failOnViolation>
-							<violationSeverity>ignore</violationSeverity>
-							<consoleOutput>false</consoleOutput>
+							<!-- Hand-written sources only — never gate ANTLR/AOT generated code. -->
+							<sourceDirectories>
+								<sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
+							</sourceDirectories>
+							<!-- BLOCKING (parity with core). -->
+							<failOnViolation>true</failOnViolation>
+							<violationSeverity>warning</violationSeverity>
+							<consoleOutput>true</consoleOutput>
 						</configuration>
 						<executions>
 							<execution>
@@ -261,23 +338,68 @@
 						<configuration>
 							<effort>Max</effort>
 							<threshold>Low</threshold>
-							<failOnError>false</failOnError>
+							<failOnError>true</failOnError>
 							<includeTests>false</includeTests>
 							<xmlOutput>true</xmlOutput>
+							<excludeFilterFile>${maven.multiModuleProjectDirectory}/config/spotbugs/exclude.xml</excludeFilterFile>
 						</configuration>
+						<executions>
+							<execution>
+								<id>spotbugs-gate</id>
+								<phase>verify</phase>
+								<goals><goal>check</goal></goals>
+							</execution>
+						</executions>
 					</plugin>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-pmd-plugin</artifactId>
 						<version>3.28.0</version>
 						<configuration>
-							<failOnViolation>false</failOnViolation>
+							<failOnViolation>true</failOnViolation>
+							<printFailingErrors>true</printFailingErrors>
 							<includeTests>false</includeTests>
+							<!-- Never gate ANTLR/AOT generated code. -->
+							<excludeRoots>
+								<excludeRoot>${project.build.directory}/generated-sources</excludeRoot>
+							</excludeRoots>
 							<rulesets>
-								<ruleset>category/java/errorprone.xml</ruleset>
-								<ruleset>category/java/bestpractices.xml</ruleset>
+								<ruleset>${maven.multiModuleProjectDirectory}/config/pmd/ruleset.xml</ruleset>
 							</rulesets>
 						</configuration>
+						<executions>
+							<execution>
+								<id>pmd-gate</id>
+								<phase>verify</phase>
+								<goals><goal>check</goal></goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.jacoco</groupId>
+						<artifactId>jacoco-maven-plugin</artifactId>
+						<version>0.8.14</version>
+						<executions>
+							<execution>
+								<id>coverage-floor</id>
+								<phase>verify</phase>
+								<goals><goal>check</goal></goals>
+								<configuration>
+									<rules>
+										<rule>
+											<element>BUNDLE</element>
+											<limits>
+												<limit>
+													<counter>LINE</counter>
+													<value>COVEREDRATIO</value>
+													<minimum>${jacoco.line.min}</minimum>
+												</limit>
+											</limits>
+										</rule>
+									</rules>
+								</configuration>
+							</execution>
+						</executions>
 					</plugin>
 				</plugins>
 			</build>

@@ -16,7 +16,7 @@ mvn test
 mvn test -Dtest=ExecutorChainTest
 
 # Run tests in a specific module
-mvn test -pl garganttua-expression
+mvn test -pl :garganttua-expression
 
 # Run tests with coverage
 mvn clean test jacoco:report

@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # build runs tests + commits the coverage badge on main
       packages: write
 
     steps:
@@ -36,6 +36,35 @@ jobs:
       run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
     - name: Build with Maven
       run: mvn -B -ntp package --file pom.xml
+
+    # Aggregate JaCoCo coverage across every module: writes the run summary,
+    # refreshes the README badge, and emits target/coverage/coverage-summary.md.
+    - name: Aggregate coverage
+      if: always()
+      run: python3 scripts/coverage.py
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: jacoco-coverage
+        path: |
+          **/target/site/jacoco/
+          target/coverage/coverage-summary.md
+        if-no-files-found: warn
+
+    # Keep the README coverage badge fresh. Only on main pushes; [skip ci] avoids
+    # re-triggering this workflow.
+    - name: Commit coverage badge
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        if ! git diff --quiet -- README.md; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update coverage badge [skip ci]"
+          git push
+        fi
 
   deploy:
     needs: build
