@@ -119,6 +119,10 @@ Requires JDK 25.
 | \|    \|- [**connector-mail**](./events/connector-mail/README.md) |  |
 | \|    \|- [**core**](./events/core/README.md) |  |
 | \|    \|- [**expressions**](./events/expressions/README.md) |  |
+| \|    \|- [**starters**](./events/starters/README.md) | Aggregator for the garganttua-events consumption starters. Each starter         bundles the events engine (DSL + core), one connector (bus / kafka / mail), the JVM         reflection stack and the bootstrap — so a downstream app picks a transport by         depending on a single Maven coordinate. |
+| \|    \|    \|- [**starter-bus**](./events/starters/starter-bus/README.md) | Batteries-included garganttua-events starter for the in-memory BigQueue bus         connector: events engine (DSL + core) + bus connector + JVM reflection stack +         bootstrap. Depend on this single artifact to build/run an events app on the bus. |
+| \|    \|    \|- [**starter-kafka**](./events/starters/starter-kafka/README.md) | Batteries-included garganttua-events starter for the Apache Kafka connector:         events engine (DSL + core) + Kafka connector + JVM reflection stack + bootstrap.         Depend on this single artifact to build/run an events app on Kafka. |
+| \|    \|    \|- [**starter-mail**](./events/starters/starter-mail/README.md) | Batteries-included garganttua-events starter for the e-mail (Angus Mail)         connector: events engine (DSL + core) + mail connector + JVM reflection stack +         bootstrap. Depend on this single artifact to build/run an events app producing mail. |
 <!-- AUTO-GENERATED-ARCHITECTURE-STOP -->
 
 ## Internal dependency graph
