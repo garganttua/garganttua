@@ -43,6 +43,7 @@ In addition, this module ships the annotation families that drive auto-detection
  - `com.garganttua.core:garganttua-aot-reflection`
  - `com.garganttua.core:garganttua-runtime-reflection:test`
  - `org.javatuples:javatuples`
+ - `org.yaml:snakeyaml`
  - `org.junit.jupiter:junit-jupiter-engine:test`
 
 <!-- AUTO-GENERATED-END -->

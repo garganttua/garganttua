@@ -26,8 +26,11 @@ as email).
  - `com.garganttua.core:garganttua-commons`
  - `com.garganttua.core:garganttua-lifecycle`
  - `org.eclipse.angus:angus-mail`
+ - `com.fasterxml.jackson.core:jackson-databind`
  - `org.projectlombok:lombok`
  - `org.slf4j:slf4j-api`
+ - `org.junit.jupiter:junit-jupiter-api:test`
+ - `org.junit.jupiter:junit-jupiter-engine:${junit.version}:test`
 
 <!-- AUTO-GENERATED-END -->
 

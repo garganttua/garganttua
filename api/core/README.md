@@ -59,6 +59,7 @@ The module ships `ApiCoreInfrastructureSeed`, an `IAOTInfrastructureSeed` implem
  - `com.garganttua.core:garganttua-runtime-reflection:test`
  - `com.garganttua.core:garganttua-reflections:test`
  - `com.garganttua.core:garganttua-observability:test`
+ - `com.garganttua.core:garganttua-configuration:test`
  - `org.junit.jupiter:junit-jupiter-engine:test`
  - `org.mockito:mockito-core:test`
  - `org.mockito:mockito-junit-jupiter:test`

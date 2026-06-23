@@ -30,7 +30,7 @@ It is deliberately **transport- and persistence-agnostic** — it brings the fra
 ### Dependencies
  - `com.garganttua:garganttua-api-core`
  - `com.garganttua.core:garganttua-bootstrap`
- - `org.yaml:snakeyaml`
+ - `com.garganttua.core:garganttua-starter-application`
  - `org.junit.jupiter:junit-jupiter-engine:test`
  - `org.mockito:mockito-core:test`
  - `org.mockito:mockito-junit-jupiter:test`

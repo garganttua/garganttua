@@ -37,6 +37,9 @@ builders (`ContextBuilder`, `RouteBuilder`, …) and JSON context I/O (`JsonCont
  - `org.projectlombok:lombok`
  - `org.slf4j:slf4j-api`
  - `org.junit.jupiter:junit-jupiter-api`
+ - `org.junit.jupiter:junit-jupiter-engine:${junit.version}:test`
+ - `com.garganttua.core:garganttua-runtime-reflection:${garganttua.core.version}:test`
+ - `com.garganttua.core:garganttua-configuration:test`
 
 <!-- AUTO-GENERATED-END -->
 
