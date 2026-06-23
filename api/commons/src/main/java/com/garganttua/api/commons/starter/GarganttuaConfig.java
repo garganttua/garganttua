@@ -1,4 +1,4 @@
-package com.garganttua.api.starter;
+package com.garganttua.api.commons.starter;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,8 +16,6 @@ import java.util.function.UnaryOperator;
 
 import org.yaml.snakeyaml.Yaml;
 
-import com.garganttua.api.commons.starter.IConfig;
-
 /**
  * Externalized configuration assembled, in increasing precedence, from
  * {@code application.yaml} (or {@code .yml}), {@code application.properties}, and
@@ -28,6 +26,10 @@ import com.garganttua.api.commons.starter.IConfig;
  *
  * <p>YAML is flattened to dotted keys; a YAML list is kept as a {@code List}
  * value so {@link #getStringList(String)} can return it verbatim.
+ *
+ * <p>Lives in {@code garganttua-api-commons} so {@code garganttua-api-core}
+ * (the {@code ApiBuilder} that self-configures during bootstrap) can read it
+ * without depending on a higher starter module.
  */
 public final class GarganttuaConfig implements IConfig {
 

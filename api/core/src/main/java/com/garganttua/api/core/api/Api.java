@@ -59,6 +59,9 @@ public class Api extends AbstractLifecycle implements IApi, com.garganttua.core.
     private final List<IProtocol<?, ?>> protocols;
     private final List<IAuthorizationProtocol> authorizationProtocols;
     private final com.garganttua.api.commons.context.IAuthoritiesEndpoint authoritiesEndpoint;
+    // Resources opened by IApiAutoConfiguration (e.g. a MongoClient); adopted into this Api's
+    // lifecycle so onStop() closes them regardless of which runner (neutral core / api shim) booted.
+    private volatile List<AutoCloseable> autoConfigResources = java.util.List.of();
 
     public Api(IInjectionContext injectionContext, Map<String, IDomain<?>> domainContexts,
             String superTenantId, boolean superTenantAutoCreate, boolean multiTenant,
@@ -87,6 +90,16 @@ public class Api extends AbstractLifecycle implements IApi, com.garganttua.core.
         // never called, and getAuthoritiesEndpoint() must propagate that null
         // to transport modules so they skip the route.
         this.authoritiesEndpoint = authoritiesEndpoint;
+    }
+
+    /**
+     * Adopts the resources opened by the {@code IApiAutoConfiguration}s so this Api closes them
+     * on {@link #doStop()} (e.g. a {@code MongoClient}). Called once by the builder after assembly.
+     *
+     * @param resources the closeables to adopt (a defensive copy is taken)
+     */
+    void adoptAutoConfigurationResources(List<AutoCloseable> resources) {
+        this.autoConfigResources = List.copyOf(resources);
     }
 
     @Override
@@ -415,6 +428,16 @@ public class Api extends AbstractLifecycle implements IApi, com.garganttua.core.
 
         // Stop the injection context
         this.injectionContext.onStop();
+
+        // Close auto-configuration resources (e.g. a MongoClient) last, best-effort.
+        for (AutoCloseable resource : this.autoConfigResources) {
+            try {
+                resource.close();
+            } catch (Exception e) {
+                log.warn("Failed to close auto-configuration resource {}: {}",
+                        resource.getClass().getSimpleName(), e.getMessage());
+            }
+        }
 
         return this;
     }

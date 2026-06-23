@@ -29,6 +29,7 @@ import com.garganttua.api.commons.serialization.ISerializer;
 import com.garganttua.api.commons.serialization.Serializer;
 import com.garganttua.core.bootstrap.annotations.Bootstrap;
 import com.garganttua.core.dsl.IObservableBuilder;
+import com.garganttua.core.dsl.annotations.ConfigurableBuilder;
 import com.garganttua.core.dsl.annotations.Scan;
 import com.garganttua.core.dsl.dependency.AbstractAutomaticDependentBuilder;
 import com.garganttua.core.dsl.dependency.DependencyPhase;
@@ -46,6 +47,7 @@ import com.garganttua.core.observability.Logger;
 
 @Bootstrap
 @Reflected
+@ConfigurableBuilder("api")
 @Scan(scan = "com.garganttua.api.core")
 @SuppressFBWarnings(value = {"EI_EXPOSE_REP"}, justification = "Immutable-by-contract value/definition carrier; collections & arrays carried by reference as a snapshot (framework-internal, built once).")
 @SuppressWarnings({"PMD.AvoidFieldNameMatchingMethodName", "PMD.AvoidDuplicateLiterals"})
@@ -72,19 +74,15 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 
 	private final Set<String> packages = ConcurrentHashMap.newKeySet();
 
-	/**
-	 * Framework packages {@code doAutoDetection()} auto-injects into the asset scan surface so
-	 * built-in protocols/serializers ship discoverable out of the box. Opt-out via
-	 * {@link #includeFrameworkPackages(boolean)}.
-	 */
+	// Framework packages auto-injected into the asset scan surface so built-in protocols/serializers
+	// ship discoverable out of the box. Opt-out via includeFrameworkPackages(false).
 	static final String[] FRAMEWORK_PACKAGES = {"com.garganttua.api", "com.garganttua.core"};
 
 	private volatile boolean includeFrameworkPackages = true;
 	volatile String superTenantId;
 	volatile boolean superTenantAutoCreate = false;
 	volatile boolean multiTenant = true;
-	// Locked by default: super-tenants / super-owners may only be seeded by the startup scan and the
-	// auto-created master tenant; runtime promotion is rejected unless the matching lock is opened.
+	// Locked by default: super-tenants/owners seeded only by the startup scan; runtime promotion needs the lock.
 	volatile boolean lockSuperTenantCreation = true;
 	volatile boolean lockSuperOwnerCreation = true;
 
@@ -347,6 +345,8 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 	}
 
 	private volatile boolean autoDetectionRan = false;
+	// Closeables opened by IApiAutoConfiguration; adopted by the built Api lifecycle.
+	volatile List<AutoCloseable> autoConfigResources = List.of();
 
 	@Override
 	protected void doAutoDetection() throws ApiException {
@@ -358,6 +358,9 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 			log.debug("doAutoDetection skipped — already ran at CONFIGURATION stage");
 			return;
 		}
+		// Self-configure BEFORE the scans: run every IApiAutoConfiguration (default DAO/interface,
+		// anonymous access, top-level api.* config) so the neutral core runner boots a wired API.
+		this.autoConfigResources = ApiAutoConfigurationRunner.apply(this);
 		// Asset scan (serializers/protocols/authorization protocols) spans framework packages too;
 		// entity/security scans stay user-package-only to avoid dragging in framework test fixtures.
 		ApiBuilderAssetDetection.autoDetectAll(this, assetScanSurface());
@@ -366,11 +369,8 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 		this.autoDetectionRan = true;
 	}
 
-	/**
-	 * Union of user-declared packages and the framework's own packages (when
-	 * {@link #includeFrameworkPackages(boolean)} is on — the default). Used only by asset
-	 * auto-detection so the framework can ship built-in implementations picked up out of the box.
-	 */
+	// Union of user-declared packages and the framework's own (when includeFrameworkPackages is on,
+	// the default). Used only by asset auto-detection so built-in implementations ship discoverable.
 	private Set<String> assetScanSurface() {
 		Set<String> surface = new java.util.HashSet<>(this.packages);
 		if (this.includeFrameworkPackages) {
@@ -381,17 +381,15 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 		return surface;
 	}
 
-	// package-private for unit testing
+	// package-private delegators for unit testing
 	static IAuthorizationProtocol instantiateAuthorizationProtocol(IClass<?> clazz) {
 		return ApiBuilderAssetDetection.instantiateAuthorizationProtocol(clazz);
 	}
 
-	// package-private for unit testing
 	static IProtocol<?, ?> instantiateProtocol(IClass<?> clazz) {
 		return ApiBuilderAssetDetection.instantiateProtocol(clazz);
 	}
 
-	// package-private for unit testing
 	static ISerializer instantiateSerializer(IClass<?> clazz) {
 		return ApiBuilderAssetDetection.instantiateSerializer(clazz);
 	}

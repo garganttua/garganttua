@@ -58,6 +58,16 @@ public final class AutoConfigurationContext {
 		this.resources.add(Objects.requireNonNull(resource, "resource cannot be null"));
 	}
 
+	/**
+	 * The resources registered via {@link #registerResource(AutoCloseable)}, so the built
+	 * {@code IApi} can adopt them into its own lifecycle and close them on stop.
+	 *
+	 * @return an immutable snapshot of the registered closeables
+	 */
+	public List<AutoCloseable> resources() {
+		return List.copyOf(this.resources);
+	}
+
 	/** Closes every registered resource, swallowing individual failures. */
 	public void closeResources() {
 		for (AutoCloseable resource : this.resources) {

@@ -1,24 +1,13 @@
 package com.garganttua.api.starter;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.ServiceLoader;
-
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.IApi;
-import com.garganttua.api.commons.context.dsl.IApiBuilder;
-import com.garganttua.api.commons.starter.AutoConfigurationContext;
-import com.garganttua.api.commons.starter.IApiAutoConfiguration;
-import com.garganttua.api.core.api.ApiBuilder;
-import com.garganttua.core.bootstrap.dsl.Bootstrap;
-import com.garganttua.core.bootstrap.dsl.IBootstrap;
+import com.garganttua.core.application.GarganttuaApplicationException;
 import com.garganttua.core.bootstrap.dsl.IBuiltRegistry;
-import com.garganttua.core.dsl.DslException;
-import com.garganttua.core.dsl.IBuilder;
+import com.garganttua.core.reflection.IClass;
 
 /**
- * Spring-Boot-style entry point: one call boots a fully wired, running API.
+ * Thin, Spring-Boot-style entry point that boots a fully wired, running API.
  *
  * <pre>{@code
  * public final class MyApp {
@@ -28,55 +17,51 @@ import com.garganttua.core.dsl.IBuilder;
  * }
  * }</pre>
  *
- * <p>{@link #run} reads {@link GarganttuaConfig externalized config}, applies
- * top-level API settings, runs every {@link IApiAutoConfiguration} discovered on
- * the classpath (persistence, transport, …), then drives garganttua-core's
- * {@code Bootstrap} — which installs the reflection stack and auto-wires the
- * injection/expression/runtimes/scripts/workflows builders — and finally
- * {@code onInit()/onStart()}s the API. Domains, DAOs and HTTP interfaces are
- * discovered from {@code @Entity}/{@code @Dto} annotations and from the
- * starters on the classpath, so a typical app writes no {@code ApiBuilder} DSL.
+ * <p>This shim now delegates the whole bootstrap dance to the engine-neutral core
+ * runner {@link com.garganttua.core.application.GarganttuaApplication} and simply
+ * pulls the {@link IApi} out of the assembled registry. garganttua-api configures
+ * itself during the bootstrap CONFIGURATION stage — {@code ApiBuilder} runs every
+ * {@code IApiAutoConfiguration} on the classpath (persistence/transport) and reads
+ * the externalized {@code api.*} config — so no api-specific wiring is needed here.</p>
+ *
+ * <p>Domains, DAOs and HTTP interfaces are discovered from {@code @Entity}/{@code @Dto}
+ * annotations and from the starters on the classpath, so a typical app writes no
+ * {@code ApiBuilder} DSL.</p>
+ *
+ * @deprecated prefer the engine-neutral
+ *     {@link com.garganttua.core.application.GarganttuaApplication#run(Class, String...)},
+ *     which boots api and events together and returns the full
+ *     {@link IBuiltRegistry}; pull the {@code IApi} with
+ *     {@code registry.request(IClass.getClass(IApi.class))}. This shim is kept for
+ *     source compatibility with apps that depend on a returned {@code IApi}.
  */
+@Deprecated(since = "3.0.0-ALPHA04")
 public final class GarganttuaApplication {
 
 	private GarganttuaApplication() {
 	}
 
-	/** Builds, initializes and starts the API, then returns it without blocking. */
+	/**
+	 * Builds, initializes and starts the API via the neutral core runner, then returns
+	 * it without blocking. The core runner installs a JVM shutdown hook that stops every
+	 * {@code ILifecycle} (the {@code IApi} included, which closes its auto-configuration
+	 * resources on stop); a second {@code onStop()} here would be a no-op, so none is added.
+	 *
+	 * @param source the application's main class; its package is scanned by default
+	 * @param args   process arguments (reserved for parity)
+	 * @return the running {@link IApi}
+	 * @throws ApiException if the bootstrap produced no {@code IApi}
+	 */
 	public static IApi run(Class<?> source, String... args) {
-		GarganttuaConfig config = GarganttuaConfig.load();
-		String[] packages = config.getStringList("api.packages")
-				.orElseGet(() -> new String[] { source.getPackageName() });
-
-		// Bootstrap.builder() runs garganttua-core's ServiceLoader cold-start,
-		// which installs the IReflection stack globally — this MUST happen before
-		// ApiBuilder.builder(), which needs reflection to declare its dependencies.
-		IBootstrap bootstrap = Bootstrap.builder();
-
-		IApiBuilder apiBuilder = ApiBuilder.builder();
-		// Enable the ApiBuilder's own auto-detection so its build() scans the
-		// declared packages for @Entity/@Dto (and security) annotations.
-		((com.garganttua.core.dsl.IAutomaticBuilder<?, ?>) apiBuilder).autoDetect(true);
-		config.getBoolean("api.multiTenant").ifPresent(apiBuilder::multiTenant);
-		config.getString("api.superTenantId").ifPresent(apiBuilder::superTenantId);
-		config.getBoolean("api.superTenantAutoCreate").ifPresent(apiBuilder::superTenantAutoCreate);
-		apiBuilder.packages(packages);
-
-		AutoConfigurationContext context = new AutoConfigurationContext(apiBuilder, config);
-		applyAutoConfigurations(context);
-
-		// Bootstrap's build() already onInit()s and onStart()s every lifecycle
-		// object it builds (the IApi included), so the API is running on return.
-		IApi api = build(bootstrap, source, apiBuilder, packages);
-
-		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-			try {
-				api.onStop();
-			} finally {
-				context.closeResources();
-			}
-		}, "garganttua-shutdown"));
-		return api;
+		try {
+			IBuiltRegistry registry =
+					com.garganttua.core.application.GarganttuaApplication.run(source, args);
+			return registry.request(IClass.getClass(IApi.class))
+					.orElseThrow(() -> new ApiException(
+							"Bootstrap produced no IApi — is garganttua-api-core on the classpath?"));
+		} catch (GarganttuaApplicationException e) {
+			throw new ApiException("Bootstrap failed to assemble the API: " + e.getMessage(), e);
+		}
 	}
 
 	/** Same as {@link #run} but blocks the calling thread until JVM shutdown. */
@@ -86,40 +71,6 @@ public final class GarganttuaApplication {
 			Thread.currentThread().join();
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-		}
-	}
-
-	private static void applyAutoConfigurations(AutoConfigurationContext context) {
-		List<IApiAutoConfiguration> autoConfigs = new ArrayList<>();
-		ServiceLoader.load(IApiAutoConfiguration.class).forEach(autoConfigs::add);
-		autoConfigs.sort(Comparator.comparingInt(IApiAutoConfiguration::order));
-		for (IApiAutoConfiguration autoConfig : autoConfigs) {
-			autoConfig.apply(context);
-		}
-	}
-
-	private static IApi build(IBootstrap bootstrap, Class<?> source, IApiBuilder apiBuilder, String... packages) {
-		try {
-			// autoDetect(true) enables the SPI fallback; withBuilder registers our
-			// configured ApiBuilder BEFORE load() so the SPI doesn't create a second
-			// one; load() then discovers the injection/expression/runtimes/scripts/
-			// workflows builders (via IBootstrapBuilderFactory) and feeds them to it.
-			bootstrap.autoDetect(true)
-					.withApplicationName(source.getSimpleName())
-					.withBuilder((IBuilder<?>) apiBuilder)
-					.withPackages(packages)
-					.load();
-			IBuiltRegistry registry = bootstrap.build();
-			// The registry is keyed by concrete class (Api), so request(IApi) misses;
-			// pick the IApi out of the built objects to stay free of the impl class.
-			return registry.toList().stream()
-					.filter(IApi.class::isInstance)
-					.map(IApi.class::cast)
-					.findFirst()
-					.orElseThrow(() -> new ApiException(
-							"Bootstrap produced no IApi — is garganttua-api-core on the classpath?"));
-		} catch (DslException e) {
-			throw new ApiException("Bootstrap failed to assemble the API: " + e.getMessage(), e);
 		}
 	}
 }

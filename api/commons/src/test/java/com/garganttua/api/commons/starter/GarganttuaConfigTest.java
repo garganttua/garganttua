@@ -1,4 +1,4 @@
-package com.garganttua.api.starter;
+package com.garganttua.api.commons.starter;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;

@@ -107,6 +107,13 @@
 			<artifactId>garganttua-observability</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- @ConfigurableBuilder("api") population test: drives the real
+		     BootstrapConfigurationContributor against an ApiBuilder. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-configuration</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-engine</artifactId>

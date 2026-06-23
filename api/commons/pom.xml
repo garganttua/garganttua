@@ -70,6 +70,13 @@
 			<artifactId>javatuples</artifactId>
 		</dependency>
 
+		<!-- GarganttuaConfig reads application.yaml/.yml so api-core can self-configure
+		     during bootstrap. SnakeYAML is tiny and zero-transitive. -->
+		<dependency>
+			<groupId>org.yaml</groupId>
+			<artifactId>snakeyaml</artifactId>
+		</dependency>
+
 		<!-- Test dependencies (no binding wrapper). -->
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>

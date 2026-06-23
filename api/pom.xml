@@ -132,6 +132,16 @@
 			<!-- Garganttua Core dependencies -->
 			<dependency>
 				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-starter-application</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-configuration</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
 				<artifactId>garganttua-script</artifactId>
 				<version>${garganttua.core.version}</version>
 			</dependency>

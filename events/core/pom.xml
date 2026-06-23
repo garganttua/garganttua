@@ -76,6 +76,13 @@
 			<version>${garganttua.core.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- @ConfigurableBuilder("events") population test: drives the real
+		     BootstrapConfigurationContributor against an EventsBuilder. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-configuration</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<!-- Supplies the checkstyle SuppressionFilter location the shared

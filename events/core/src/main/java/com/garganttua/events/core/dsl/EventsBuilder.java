@@ -10,6 +10,7 @@ import java.util.Set;
 
 import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.dsl.IObservableBuilder;
+import com.garganttua.core.dsl.annotations.ConfigurableBuilder;
 import com.garganttua.core.dsl.dependency.AbstractAutomaticDependentBuilder;
 import com.garganttua.core.dsl.dependency.DependencySpec;
 import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
@@ -35,6 +36,7 @@ import com.garganttua.events.core.Events;
 // pervasive across the connector(...) overloads and bean-registration helpers; they are guarded by
 // the @Connector marker check at registration time.
 @SuppressWarnings("unchecked")
+@ConfigurableBuilder("events")
 public class EventsBuilder
 		extends AbstractAutomaticDependentBuilder<IEventsBuilder, IEvents>
 		implements IEventsBuilder {
@@ -64,7 +66,8 @@ public class EventsBuilder
 			Optional<BeanStrategy> strategy, Optional<String> name) {
 	}
 
-	private String assetId;
+	// package-private so the @ConfigurableBuilder population test can assert it; written via asset(...).
+	String assetId;
 	private final List<String> packages = new ArrayList<>();
 	private final List<ContextDef> contexts = new ArrayList<>();
 	private final Map<String, IClass<? extends IConnector>> connectorRegistry = new HashMap<>();

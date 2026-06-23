@@ -59,11 +59,12 @@ final class ApiBuilderBuild {
 
             List<IMethodBinder<Void>> startupBinders = buildStartupBinders(b);
 
-            com.garganttua.api.commons.context.IApi apiContext = new Api(b.injectionContext,
+            Api apiContext = new Api(b.injectionContext,
                     domainContexts, b.superTenantId, b.superTenantAutoCreate, b.multiTenant,
                     b.lockSuperTenantCreation, b.lockSuperOwnerCreation,
                     startupBinders, buildSerializers(b), buildProtocols(b),
                     buildAuthorizationProtocols(b), buildAuthoritiesEndpoint(b));
+            apiContext.adoptAutoConfigurationResources(b.autoConfigResources);
 
             attachObservability(b, domainContexts);
 

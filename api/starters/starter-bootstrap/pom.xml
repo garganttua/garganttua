@@ -49,10 +49,10 @@
 			<artifactId>garganttua-bootstrap</artifactId>
 		</dependency>
 
-		<!-- application.yaml parser — single jar, no transitive deps. -->
+		<!-- Engine-neutral core runner: this shim delegates the bootstrap dance to it. -->
 		<dependency>
-			<groupId>org.yaml</groupId>
-			<artifactId>snakeyaml</artifactId>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-starter-application</artifactId>
 		</dependency>
 
 		<!-- Test stack. -->
