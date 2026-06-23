@@ -22,6 +22,8 @@ import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.dsl.ReflectionBuilder;
 import com.garganttua.core.reflection.runtime.RuntimeReflectionProvider;
+import com.garganttua.core.supply.ISupplier;
+import com.garganttua.core.supply.dsl.ISupplierBuilder;
 import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
@@ -188,6 +190,107 @@ class EventsBuilderConnectorTest {
 		@DisplayName("doAutoDetection does not throw")
 		void doAutoDetectionDoesNotThrow() {
 			assertDoesNotThrow(() -> builder.doAutoDetection());
+		}
+	}
+
+	@Nested
+	@DisplayName("connector(IConnector) instance overload")
+	class InstancePath {
+
+		@Test
+		@DisplayName("accepts an @Connector instance and records it")
+		void acceptsAnnotatedInstance() {
+			assertDoesNotThrow(() -> builder.connector(new TestConnector()));
+			assertEquals(1, builder.connectorInstanceCount());
+		}
+
+		@Test
+		@DisplayName("rejects an instance whose class lacks @Connector")
+		void rejectsUnmarkedInstance() {
+			IConnector unmarked = new UnmarkedConnector();
+			assertThrows(DslException.class, () -> builder.connector(unmarked));
+			assertEquals(0, builder.connectorInstanceCount());
+		}
+	}
+
+	@Nested
+	@DisplayName("connector(String) bean-reference overload")
+	class UrlPath {
+
+		@Test
+		@DisplayName("accepts a bare connector class FQN and records the reference")
+		void acceptsBareClassName() {
+			assertDoesNotThrow(() -> builder.connector(TestConnector.class.getName()));
+			assertEquals(1, builder.connectorReferenceCount());
+		}
+
+		@Test
+		@DisplayName("accepts a single-colon supplier scheme (normalized to '::')")
+		void acceptsSupplierScheme() {
+			assertDoesNotThrow(() -> builder.connector("supplier::" + TestConnector.class.getName()));
+			assertEquals(1, builder.connectorReferenceCount());
+		}
+
+		@Test
+		@DisplayName("rejects a URL whose class cannot be resolved")
+		void rejectsUnknownClass() {
+			assertThrows(DslException.class,
+					() -> builder.connector("com.foo.DoesNotExistConnector"));
+			assertEquals(0, builder.connectorReferenceCount());
+		}
+	}
+
+	@Nested
+	@DisplayName("connector(ISupplierBuilder) overload")
+	class SupplierPath {
+
+		@Test
+		@DisplayName("accepts a supplier builder and records it")
+		void acceptsSupplierBuilder() {
+			assertDoesNotThrow(() -> builder.connector(new TestConnectorSupplierBuilder()));
+			assertEquals(1, builder.connectorSupplierCount());
+		}
+	}
+
+	/** Minimal {@link ISupplier} yielding a {@link TestConnector}. */
+	static final class TestConnectorSupplier implements ISupplier<IConnector> {
+		@Override
+		public java.util.Optional<IConnector> supply() {
+			return java.util.Optional.of(new TestConnector());
+		}
+
+		@Override
+		public java.lang.reflect.Type getSuppliedType() {
+			return IConnector.class;
+		}
+
+		@Override
+		public IClass<IConnector> getSuppliedClass() {
+			return IClass.getClass(IConnector.class);
+		}
+	}
+
+	/** Minimal {@link ISupplierBuilder} building a {@link TestConnectorSupplier}. */
+	static final class TestConnectorSupplierBuilder
+			implements ISupplierBuilder<IConnector, ISupplier<IConnector>> {
+		@Override
+		public ISupplier<IConnector> build() {
+			return new TestConnectorSupplier();
+		}
+
+		@Override
+		public IClass<IConnector> getSuppliedClass() {
+			return IClass.getClass(IConnector.class);
+		}
+
+		@Override
+		public java.lang.reflect.Type getSuppliedType() {
+			return IConnector.class;
+		}
+
+		@Override
+		public boolean isContextual() {
+			return false;
 		}
 	}
 }

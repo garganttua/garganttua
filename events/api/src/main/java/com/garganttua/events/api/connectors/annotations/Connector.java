@@ -5,11 +5,14 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import javax.inject.Qualifier;
+
 import com.garganttua.core.reflection.annotations.Indexed;
 import com.garganttua.core.reflection.annotations.Reflected;
 
 /**
- * Marks an {@code IConnector} implementation as an auto-detectable event connector.
+ * Marks an {@code IConnector} implementation as an auto-detectable event connector and a
+ * dependency-injection qualifier.
  *
  * <p>
  * The annotated class must implement {@code com.garganttua.events.api.IConnector}. During
@@ -18,6 +21,14 @@ import com.garganttua.core.reflection.annotations.Reflected;
  * into the connector registry under the key {@code type:version}. The engine later resolves a
  * connector instance from that registry by {@code type} and {@code version} when initializing a
  * route's subscriptions.
+ * </p>
+ *
+ * <p>
+ * It is additionally meta-annotated with {@link Qualifier} (JSR-330), so connectors are registered
+ * into the garganttua-injection context as qualified beans (named {@code connector:type:version})
+ * and resolvable via {@code IInjectionContext.queryBean(...)} using {@code @Connector} as a
+ * {@code BeanReference} qualifier. The engine resolves connectors as beans first, falling back to
+ * the reflective registry path when no injection context is wired.
  * </p>
  *
  * <p>
@@ -42,6 +53,7 @@ import com.garganttua.core.reflection.annotations.Reflected;
  */
 @Indexed
 @Reflected
+@Qualifier
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Connector {

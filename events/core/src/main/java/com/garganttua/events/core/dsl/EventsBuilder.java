@@ -31,6 +31,10 @@ import com.garganttua.events.api.dsl.IContextBuilder;
 import com.garganttua.events.api.dsl.IEventsBuilder;
 import com.garganttua.events.core.Events;
 
+// Class-level "unchecked": the @Connector IClass<?> -> IClass<? extends IConnector> casts are
+// pervasive across the connector(...) overloads and bean-registration helpers; they are guarded by
+// the @Connector marker check at registration time.
+@SuppressWarnings("unchecked")
 public class EventsBuilder
 		extends AbstractAutomaticDependentBuilder<IEventsBuilder, IEvents>
 		implements IEventsBuilder {
@@ -41,16 +45,36 @@ public class EventsBuilder
 			DependencySpec.require(IClass.getClass(IInjectionContextBuilder.class)),
 			DependencySpec.require(IClass.getClass(IExpressionContextBuilder.class)));
 
+	/** The garganttua bean-provider scope connectors are registered under. */
+	private static final String CONNECTOR_PROVIDER = Predefined.BeanProviders.garganttua.toString();
+	/** Single-colon scheme detector ({@code provider:rest}, where {@code rest} is not another colon). */
+	private static final java.util.regex.Pattern SINGLE_COLON_SCHEME =
+			java.util.regex.Pattern.compile("^[a-zA-Z][a-zA-Z0-9]*:[^:].*");
+
+	/**
+	 * A pending connector bean-reference declared via {@link #connector(String)}: the resolved
+	 * connector class plus the parsed provider/strategy/name honored at registration time.
+	 *
+	 * @param provider the optional target bean-provider name
+	 * @param type     the resolved connector class
+	 * @param strategy the optional bean strategy
+	 * @param name     the optional bean name
+	 */
+	private record ConnectorReference(Optional<String> provider, IClass<? extends IConnector> type,
+			Optional<BeanStrategy> strategy, Optional<String> name) {
+	}
+
 	private String assetId;
 	private final List<String> packages = new ArrayList<>();
 	private final List<ContextDef> contexts = new ArrayList<>();
 	private final Map<String, IClass<? extends IConnector>> connectorRegistry = new HashMap<>();
 	// Connector resolution flows through @Connector auto-detection (doAutoDetection) and the
 	// connector(IClass) DSL path — both populate connectorRegistry keyed "type:version".
-	// connectorNames / connectorSuppliers back the public IEventsBuilder overloads that have no
-	// resolution mechanism yet (honest stubs pending a connector-resolution design decision).
-	private final List<String> connectorNames = new ArrayList<>();
+	// The lists below back the other connector(...) overloads; registerConnectorBeans consumes
+	// all of them at post-build time, registering each as a bean in the injection context.
 	private final List<ISupplierBuilder<IConnector, ISupplier<IConnector>>> connectorSuppliers = new ArrayList<>();
+	private final List<IConnector> connectorInstances = new ArrayList<>();
+	private final List<ConnectorReference> connectorReferences = new ArrayList<>();
 	private IObservableBuilder<?, ?> injectionContextBuilder;
 	private IObservableBuilder<?, ?> expressionContextBuilder;
 
@@ -90,20 +114,44 @@ public class EventsBuilder
 	}
 
 	@Override
-	public IEventsBuilder connector(String connectorName) {
-		this.connectorNames.add(connectorName);
-		log.debug("Connector registered by name: {}", connectorName);
+	public IEventsBuilder connector(String url) {
+		String normalized = normalizeConnectorUrl(url);
+		try {
+			// Parse the bean-reference segments directly: BeanReference.parse() defers class
+			// resolution and rejects a class-only reference, so we read provider/strategy/name
+			// via the segment extractors and resolve the class ourselves.
+			String classFqn = BeanReference.extractClass(normalized)
+					.orElseThrow(() -> new DslException(
+							"Connector URL " + url + " does not name a connector class"));
+			Optional<String> provider = BeanReference.extractProvider(normalized);
+			Optional<BeanStrategy> strategy = BeanReference.extractStrategy(normalized)
+					.map(s -> BeanStrategy.valueOf(s.toLowerCase(java.util.Locale.ROOT)));
+			Optional<String> name = BeanReference.extractName(normalized);
+			IClass<? extends IConnector> connectorClass =
+					(IClass<? extends IConnector>) (IClass<?>) IClass.forName(classFqn);
+			this.connectorReferences.add(
+					new ConnectorReference(provider, connectorClass, strategy, name));
+			log.debug("Connector registered by URL: {} (class {})", url, classFqn);
+		} catch (DslException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new DslException("Failed to resolve connector URL " + url + ": " + e.getMessage(), e);
+		}
 		return this;
+	}
+
+	/** Rewrites a single-colon scheme {@code provider:rest} to the core {@code provider::rest} form. */
+	private static String normalizeConnectorUrl(String url) {
+		if (url != null && SINGLE_COLON_SCHEME.matcher(url).matches()) {
+			return url.replaceFirst(":", "::");
+		}
+		return url;
 	}
 
 	@Override
 	public IEventsBuilder connector(IClass<? extends IConnector> connectorClass) {
 		// Mirror auto-detection: read the @Connector marker and register under "type:version".
-		Connector meta = ((Class<?>) connectorClass.getType()).getAnnotation(Connector.class);
-		if (meta == null) {
-			throw new DslException("Connector class " + connectorClass.getName()
-					+ " is not annotated with @Connector — cannot resolve its type/version");
-		}
+		Connector meta = connectorMeta(connectorClass, connectorClass.getName());
 		registerConnector(meta.type(), meta.version(), connectorClass);
 		log.debug("Connector registered by class: {} ({}:{})",
 				connectorClass.getName(), meta.type(), meta.version());
@@ -115,6 +163,25 @@ public class EventsBuilder
 		this.connectorSuppliers.add(connectorBuilder);
 		log.debug("Connector registered by supplier builder");
 		return this;
+	}
+
+	@Override
+	public IEventsBuilder connector(IConnector connector) {
+		// Validate the @Connector marker eagerly so a misconfigured instance fails fast.
+		connectorMeta(IClass.getClass(connector.getClass()), connector.getClass().getName());
+		this.connectorInstances.add(connector);
+		log.debug("Connector registered by instance: {}", connector.getClass().getName());
+		return this;
+	}
+
+	/** Reads the {@code @Connector} marker off a connector class, throwing {@link DslException} if absent. */
+	private static Connector connectorMeta(IClass<?> connectorClass, String label) {
+		Connector meta = ((Class<?>) connectorClass.getType()).getAnnotation(Connector.class);
+		if (meta == null) {
+			throw new DslException("Connector class " + label
+					+ " is not annotated with @Connector — cannot resolve its type/version");
+		}
+		return meta;
 	}
 
 	void addContext(ContextDef context) {
@@ -130,8 +197,22 @@ public class EventsBuilder
 		return this.connectorRegistry;
 	}
 
+	/** Package-private accessor for tests asserting {@link #connector(IConnector)} population. */
+	int connectorInstanceCount() {
+		return this.connectorInstances.size();
+	}
+
+	/** Package-private accessor for tests asserting {@link #connector(String)} population. */
+	int connectorReferenceCount() {
+		return this.connectorReferences.size();
+	}
+
+	/** Package-private accessor for tests asserting the supplier overload population. */
+	int connectorSupplierCount() {
+		return this.connectorSuppliers.size();
+	}
+
 	@Override
-	@SuppressWarnings("unchecked")
 	protected void doAutoDetection() throws DslException {
 		// Mirrors InjectionAutoDetector / ApiBuilderAssetDetection: discover @Connector classes via
 		// IReflection and register each under "type:version". A GLOBAL scan is used so that merely
@@ -150,7 +231,6 @@ public class EventsBuilder
 				.forEach(clazz -> registerDiscovered(clazz));
 	}
 
-	@SuppressWarnings("unchecked")
 	private void registerDiscovered(IClass<?> clazz) {
 		try {
 			if (!IConnector.class.isAssignableFrom((Class<?>) clazz.getType())) {
@@ -181,10 +261,15 @@ public class EventsBuilder
 
 	@Override
 	protected void doPostBuildWithDependency(Object dependency) {
-		// Like ApiBuilder: once the IInjectionContext is built, register the built
-		// IEvents as a named bean so it is discoverable by the rest of the bootstrap.
+		// Like ApiBuilder: once the IInjectionContext is built, register the built IEvents and
+		// every declared connector as beans, then hand the context to the engine so it can
+		// resolve connectors as beans at init time (with reflective fallback intact).
 		if (dependency instanceof IInjectionContext context && this.built != null) {
 			registerEventsBean(context, this.built);
+			registerConnectorBeans(context);
+			if (this.built instanceof Events events) {
+				events.setInjectionContext(context);
+			}
 		}
 	}
 
@@ -194,8 +279,81 @@ public class EventsBuilder
 				Optional.of(BeanStrategy.singleton),
 				Optional.of("events"),
 				Set.of());
-		context.addBean(Predefined.BeanProviders.garganttua.toString(), reference, events);
+		context.addBean(CONNECTOR_PROVIDER, reference, events);
 		log.debug("IEvents registered as bean 'events' in the injection context");
+	}
+
+	/**
+	 * Registers every declared connector into the injection context as a {@code @Connector}-qualified
+	 * bean named {@code connector:type:version}: auto-detected / by-class connectors as prototype
+	 * by-class beans (fresh instance per resolution), direct instances and supplier-built connectors
+	 * as singleton instance beans, and URL references as prototype by-class beans honoring any parsed
+	 * provider / strategy / name.
+	 *
+	 * @param context the built injection context
+	 */
+	private void registerConnectorBeans(IInjectionContext context) {
+		IClass<? extends Annotation> qualifier = IClass.getClass(Connector.class);
+		connectorRegistry.values().forEach(clazz -> registerPrototypeConnector(context, clazz, qualifier));
+		connectorReferences.forEach(reference -> registerReferenceConnector(context, reference, qualifier));
+		connectorInstances.forEach(instance -> registerSingletonConnector(context, instance, qualifier));
+		connectorSuppliers.forEach(supplier -> registerSuppliedConnector(context, supplier, qualifier));
+	}
+
+	private void registerPrototypeConnector(IInjectionContext context,
+			IClass<? extends IConnector> clazz, IClass<? extends Annotation> qualifier) {
+		Connector meta = ((Class<?>) clazz.getType()).getAnnotation(Connector.class);
+		String name = connectorBeanName(meta.type(), meta.version());
+		BeanReference<IConnector> reference = new BeanReference<>(
+				(IClass<IConnector>) (IClass<?>) clazz,
+				Optional.of(BeanStrategy.prototype), Optional.of(name), Set.of(qualifier));
+		context.addBean(CONNECTOR_PROVIDER, reference);
+		log.debug("Connector bean '{}' registered (prototype, class {})", name, clazz.getName());
+	}
+
+	private void registerReferenceConnector(IInjectionContext context,
+			ConnectorReference reference, IClass<? extends Annotation> qualifier) {
+		Connector meta = connectorMeta(reference.type(), reference.type().getName());
+		String name = reference.name().orElse(connectorBeanName(meta.type(), meta.version()));
+		BeanStrategy strategy = reference.strategy().orElse(BeanStrategy.prototype);
+		String provider = reference.provider().orElse(CONNECTOR_PROVIDER);
+		BeanReference<IConnector> beanRef = new BeanReference<>(
+				(IClass<IConnector>) (IClass<?>) reference.type(),
+				Optional.of(strategy), Optional.of(name), Set.of(qualifier));
+		context.addBean(provider, beanRef);
+		log.debug("Connector bean '{}' registered from URL (provider {}, class {})",
+				name, provider, reference.type().getName());
+	}
+
+	private void registerSingletonConnector(IInjectionContext context,
+			IConnector instance, IClass<? extends Annotation> qualifier) {
+		Connector meta = connectorMeta(IClass.getClass(instance.getClass()), instance.getClass().getName());
+		String name = connectorBeanName(meta.type(), meta.version());
+		BeanReference<IConnector> reference = new BeanReference<>(
+				IClass.getClass(IConnector.class),
+				Optional.of(BeanStrategy.singleton), Optional.of(name), Set.of(qualifier));
+		context.addBean(CONNECTOR_PROVIDER, reference, instance);
+		log.debug("Connector bean '{}' registered (singleton instance, class {})",
+				name, instance.getClass().getName());
+	}
+
+	private void registerSuppliedConnector(IInjectionContext context,
+			ISupplierBuilder<IConnector, ISupplier<IConnector>> supplierBuilder,
+			IClass<? extends Annotation> qualifier) {
+		try {
+			IConnector instance = supplierBuilder.build().supply()
+					.orElseThrow(() -> new DslException("Connector supplier produced no instance"));
+			registerSingletonConnector(context, instance, qualifier);
+		} catch (DslException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new DslException("Failed to build connector from supplier: " + e.getMessage(), e);
+		}
+	}
+
+	/** Builds the {@code connector:type:version} bean name shared by registration and resolution. */
+	private static String connectorBeanName(String type, String version) {
+		return "connector:" + type + ":" + version;
 	}
 
 	@Override

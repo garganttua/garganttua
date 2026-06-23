@@ -1,9 +1,12 @@
 package com.garganttua.events.core;
 
+import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,10 +32,13 @@ import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.dsl.IObservableBuilder;
 import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
+import com.garganttua.core.injection.BeanReference;
+import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
+import com.garganttua.events.api.connectors.annotations.Connector;
 
 public class Events extends AbstractLifecycle implements IEvents {
 
@@ -47,6 +53,7 @@ public class Events extends AbstractLifecycle implements IEvents {
 	private final Map<String, Map<String, ClusterRuntime>> runtimes = new HashMap<>();
 	private final List<Thread> consumerThreads = new ArrayList<>();
 	private ExecutorService executorService;
+	private IInjectionContext injectionContext;
 
 	public Events(String assetId, List<ContextDef> contexts,
 			Map<String, IClass<? extends IConnector>> connectorRegistry,
@@ -59,6 +66,20 @@ public class Events extends AbstractLifecycle implements IEvents {
 		this.connectorRegistry = new HashMap<>(connectorRegistry);
 		this.injectionContextBuilder = injectionContextBuilder;
 		this.expressionContextBuilder = expressionContextBuilder;
+	}
+
+	/**
+	 * Wires the injection context the engine uses to resolve connectors as beans. Called by
+	 * {@code EventsBuilder} after connector beans are registered and before the engine starts;
+	 * when unset, {@link #initConnector} falls back to the reflective registry path.
+	 *
+	 * @param injectionContext the built injection context
+	 */
+	@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
+			justification = "The engine deliberately holds the live shared injection context to "
+					+ "resolve connector beans; it is not a defensively copied value object.")
+	public void setInjectionContext(IInjectionContext injectionContext) {
+		this.injectionContext = injectionContext;
 	}
 
 	@Override
@@ -140,17 +161,8 @@ public class Events extends AbstractLifecycle implements IEvents {
 
 	private void initConnector(ConnectorDef connDef, ClusterRuntime runtime,
 			String tenantId, String clusterId) throws LifecycleException {
-		String key = connDef.type() + ":" + connDef.version();
-		IClass<? extends IConnector> connectorClass = connectorRegistry.get(key);
-		if (connectorClass == null) {
-			throw new LifecycleException("Connector not found: " + key);
-		}
-
-		// Create a new instance per connector definition — through the
-		// garganttua-reflection facade (provider-agnostic: runtime or AOT),
-		// never java.lang.reflect directly.
 		try {
-			IConnector instance = connectorClass.getDeclaredConstructor().newInstance();
+			IConnector instance = resolveConnector(connDef);
 			ConnectorContext ctx = new ConnectorContext(assetId, tenantId, clusterId);
 			Map<String, String> config = connDef.configuration() != null
 					? new HashMap<>(connDef.configuration()) : new HashMap<>();
@@ -159,8 +171,54 @@ public class Events extends AbstractLifecycle implements IEvents {
 			runtime.getConnectors().put(connDef.name(), instance);
 			log.info("[{}][{}][{}] Connector {} ({}) configured", assetId, tenantId, clusterId,
 					connDef.name(), connDef.type());
+		} catch (LifecycleException e) {
+			throw e;
 		} catch (Exception e) {
 			throw new LifecycleException(new RuntimeException("Failed to create connector: " + connDef.name(), e));
+		}
+	}
+
+	/**
+	 * Resolves a connector instance: bean-first (from the injection context, by name
+	 * {@code connector:type:version} and the {@code @Connector} qualifier), falling back to the
+	 * reflective registry path (a fresh instance per definition through the reflection facade) when
+	 * no context is wired or the bean is absent — so the engine works with or without injection.
+	 */
+	private IConnector resolveConnector(ConnectorDef connDef) throws LifecycleException {
+		String key = connDef.type() + ":" + connDef.version();
+		Optional<IConnector> bean = resolveConnectorBean(key);
+		if (bean.isPresent()) {
+			log.debug("Connector {} resolved from injection context bean 'connector:{}'", key, key);
+			return bean.get();
+		}
+		IClass<? extends IConnector> connectorClass = connectorRegistry.get(key);
+		if (connectorClass == null) {
+			throw new LifecycleException("Connector not found: " + key);
+		}
+		// Reflective fallback: new instance per connector definition through the garganttua-reflection
+		// facade (provider-agnostic: runtime or AOT), never java.lang.reflect directly.
+		try {
+			return connectorClass.getDeclaredConstructor().newInstance();
+		} catch (ReflectiveOperationException e) {
+			throw new LifecycleException(
+					new RuntimeException("Failed to instantiate connector: " + key, e));
+		}
+	}
+
+	private Optional<IConnector> resolveConnectorBean(String key) {
+		if (injectionContext == null) {
+			return Optional.empty();
+		}
+		IClass<? extends Annotation> qualifier = IClass.getClass(Connector.class);
+		BeanReference<IConnector> query = new BeanReference<>(
+				IClass.getClass(IConnector.class),
+				Optional.empty(), Optional.of("connector:" + key), Set.of(qualifier));
+		try {
+			return injectionContext.queryBean(query);
+		} catch (Exception e) {
+			log.warn("Bean resolution failed for connector {}, falling back to registry: {}",
+					key, e.getMessage());
+			return Optional.empty();
 		}
 	}
 
