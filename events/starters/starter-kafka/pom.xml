@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.garganttua</groupId>
+        <artifactId>garganttua-events-starters</artifactId>
+        <version>3.0.0-ALPHA04</version>
+    </parent>
+
+    <artifactId>garganttua-events-starter-kafka</artifactId>
+    <packaging>pom</packaging>
+    <description>Batteries-included garganttua-events starter for the Apache Kafka connector:
+        events engine (DSL + core) + Kafka connector + JVM reflection stack + bootstrap.
+        Depend on this single artifact to build/run an events app on Kafka.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.garganttua</groupId>
+            <artifactId>garganttua-events-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua</groupId>
+            <artifactId>garganttua-events-connector-kafka</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Bootstrap wires reflection + injection + expression + the events module. -->
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-bootstrap</artifactId>
+            <version>${garganttua.core.version}</version>
+        </dependency>
+        <!-- JVM reflection stack (runtime-reflection + reflections). -->
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-starter-runtime</artifactId>
+            <version>${garganttua.core.version}</version>
+            <type>pom</type>
+        </dependency>
+    </dependencies>
+</project>

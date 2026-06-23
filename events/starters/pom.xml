@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.garganttua</groupId>
+        <artifactId>garganttua-events</artifactId>
+        <version>3.0.0-ALPHA04</version>
+    </parent>
+
+    <artifactId>garganttua-events-starters</artifactId>
+    <packaging>pom</packaging>
+    <description>Aggregator for the garganttua-events consumption starters. Each starter
+        bundles the events engine (DSL + core), one connector (bus / kafka / mail), the JVM
+        reflection stack and the bootstrap — so a downstream app picks a transport by
+        depending on a single Maven coordinate.</description>
+
+    <modules>
+        <module>starter-bus</module>
+        <module>starter-kafka</module>
+        <module>starter-mail</module>
+    </modules>
+</project>
