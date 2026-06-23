@@ -26,9 +26,17 @@ import com.garganttua.events.api.context.SubscriptionDef;
  * <p>Configuration keys:</p>
  * <ul>
  *   <li>{@code name} — connector name (default {@code api-events}).</li>
- *   <li>{@code operations} — optional operation-name filter; only {@code api:operation:*} events
- *       whose source ends with this operation are forwarded (default: all operations).</li>
+ *   <li>{@code domain} — optional domain filter; only events whose source domain segment
+ *       ({@code api:operation:<domain>:<op>}) equals this value are forwarded (default: all
+ *       domains). This is the discriminator that lets two dataflows react to the same operation on
+ *       different domains (e.g. {@code create} on {@code contacts} vs {@code newsletters}).</li>
+ *   <li>{@code operations} — optional operation-key filter; only events whose source operation
+ *       segment matches this value are forwarded (default: all operations).</li>
  * </ul>
+ *
+ * <p>For finer discrimination (technical verb, business operation, use case) the forwarded JSON
+ * payload is self-describing — {@link ApiEventCodec} emits {@code domain}, {@code businessOperation}
+ * and {@code useCase} fields, so a dataflow transform stage can route on them too.</p>
  *
  * <p>This connector is <b>read-only</b>: {@link #createProducer(SubscriptionDef, DataflowDef)}
  * returns a producer whose {@code publish} throws.</p>
@@ -41,6 +49,7 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 
 	private String name = "api-events";
 	private String operations;
+	private String domain;
 
 	@Override
 	public IReflection reflection() {
@@ -56,12 +65,14 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	public void configure(Map<String, String> configuration, ConnectorContext ctx) {
 		this.name = configuration.getOrDefault("name", "api-events");
 		this.operations = configuration.get("operations");
-		LOG.debug("Configured api events connector {}", this.name);
+		this.domain = configuration.get("domain");
+		LOG.debug("Configured api events connector {} (domain={}, operations={})",
+				this.name, this.domain, this.operations);
 	}
 
 	@Override
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
-		return new ApiEventsConsumer(this.operations);
+		return new ApiEventsConsumer(this.operations, this.domain);
 	}
 
 	@Override

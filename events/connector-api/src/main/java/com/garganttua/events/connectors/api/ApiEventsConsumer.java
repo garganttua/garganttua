@@ -42,6 +42,7 @@ public final class ApiEventsConsumer implements IConsumer {
 	private static final long OVERFLOW_LOG_INTERVAL_MILLIS = 5_000L;
 
 	private final String operation;
+	private final String domain;
 	private final ApiEventCodec codec;
 	private final BlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
 
@@ -53,7 +54,16 @@ public final class ApiEventsConsumer implements IConsumer {
 	 * @param operation optional operation name filter; {@code null}/blank matches every operation
 	 */
 	public ApiEventsConsumer(String operation) {
+		this(operation, null);
+	}
+
+	/**
+	 * @param operation optional operation-key filter; {@code null}/blank matches every operation
+	 * @param domain    optional domain filter; {@code null}/blank matches every domain
+	 */
+	public ApiEventsConsumer(String operation, String domain) {
 		this.operation = normalize(operation);
+		this.domain = normalize(domain);
 		this.codec = new ApiEventCodec();
 	}
 
@@ -106,7 +116,16 @@ public final class ApiEventsConsumer implements IConsumer {
 		if (source == null || !source.startsWith(SOURCE_PREFIX)) {
 			return false;
 		}
-		return this.operation.isEmpty() || source.endsWith(":" + this.operation);
+		// Source is api:operation:<domain>:<operationKey>; neither segment contains a colon.
+		String remainder = source.substring(SOURCE_PREFIX.length());
+		int separator = remainder.indexOf(':');
+		String domainSegment = separator >= 0 ? remainder.substring(0, separator) : remainder;
+		String operationKey = separator >= 0 ? remainder.substring(separator + 1) : "";
+		if (!this.domain.isEmpty() && !this.domain.equals(domainSegment)) {
+			return false;
+		}
+		return this.operation.isEmpty() || operationKey.equals(this.operation)
+				|| source.endsWith(":" + this.operation);
 	}
 
 	private void drain(Consumer<byte[]> messageHandler) throws ConnectorException {

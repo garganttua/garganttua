@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.garganttua.api.commons.event.IEvent;
+import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.core.observability.Logger;
 
 /**
@@ -40,7 +41,15 @@ public final class ApiEventCodec {
 
 	private Map<String, Object> describe(IEvent event) {
 		Map<String, Object> json = new LinkedHashMap<>();
-		json.put("operation", str(event.getOperation()));
+		OperationDefinition operation = event.getOperation();
+		json.put("operation", str(operation));
+		// Self-describing routing fields so a dataflow transform stage can discriminate by domain,
+		// business operation or use case without re-parsing the source string.
+		json.put("domain", operation == null ? null : operation.domainName());
+		json.put("businessOperation",
+				operation == null || operation.getBusinessOperation() == null
+						? null : operation.getBusinessOperation().name());
+		json.put("useCase", operation == null ? null : operation.useCaseName());
 		json.put("code", event.getCode() == null ? null : event.getCode().name());
 		json.put("exceptionCode", event.getExceptionCode());
 		json.put("exceptionMessage", event.getExceptionMessage());

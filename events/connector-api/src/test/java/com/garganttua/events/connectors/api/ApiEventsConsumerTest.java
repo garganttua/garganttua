@@ -69,4 +69,61 @@ class ApiEventsConsumerTest {
 		worker.join(5_000);
 		assertFalse(worker.isAlive(), "consumer thread should stop cleanly");
 	}
+
+	@Test
+	void domainFilterForwardsOnlyTheConfiguredDomain() throws Exception {
+		// domain filter set to "contacts": a "newsletters" event with the same operation is dropped.
+		ApiEventsConsumer consumer = new ApiEventsConsumer(null, "contacts");
+		AtomicReference<byte[]> received = new AtomicReference<>();
+		CountDownLatch gotMessage = new CountDownLatch(1);
+
+		Thread worker = new Thread(() -> {
+			try {
+				consumer.start(bytes -> {
+					received.compareAndSet(null, bytes);
+					gotMessage.countDown();
+				});
+			} catch (ConnectorException e) {
+				fail(e);
+			}
+		});
+		worker.setDaemon(true);
+		worker.start();
+		TimeUnit.MILLISECONDS.sleep(100);
+
+		// Same operation key, different domains. Only the contacts event must be forwarded.
+		FakeEvent other = new FakeEvent();
+		other.setTenantId("newsletter-tenant");
+		other.setCode(OperationResponseCode.OK);
+		GlobalObservers.fire(new EndEvent(UUID.randomUUID(), Instant.now(),
+				"api:operation:newsletters:newsletters-create-oneEntity-newsletter",
+				Duration.ofMillis(2), 0, other));
+
+		FakeEvent wanted = new FakeEvent();
+		wanted.setTenantId("contact-tenant");
+		wanted.setCode(OperationResponseCode.OK);
+		GlobalObservers.fire(new EndEvent(UUID.randomUUID(), Instant.now(),
+				"api:operation:contacts:contacts-create-oneEntity-contact",
+				Duration.ofMillis(2), 0, wanted));
+
+		assertTrue(gotMessage.await(5, TimeUnit.SECONDS), "the contacts event should be forwarded");
+		String json = new String(received.get(), StandardCharsets.UTF_8);
+		assertTrue(json.contains("contact-tenant"), "must forward the contacts event: " + json);
+		assertFalse(json.contains("newsletter-tenant"), "must not forward the newsletters event: " + json);
+
+		consumer.stop();
+		worker.join(5_000);
+	}
+
+	@Test
+	void codecEmitsSelfDescribingRoutingFields() {
+		// With no OperationDefinition on the event, the routing fields are present but null — proving
+		// the keys exist for downstream transforms while staying null-safe (back-compat).
+		ApiEventCodec codec = new ApiEventCodec();
+		String json = new String(codec.toBytes(new FakeEvent()), StandardCharsets.UTF_8);
+		assertTrue(json.contains("\"domain\""), "payload should carry a domain field: " + json);
+		assertTrue(json.contains("\"businessOperation\""),
+				"payload should carry a businessOperation field: " + json);
+		assertTrue(json.contains("\"useCase\""), "payload should carry a useCase field: " + json);
+	}
 }
