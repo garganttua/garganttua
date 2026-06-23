@@ -19,5 +19,6 @@
         <module>starter-runtime</module>
         <module>starter-hybrid</module>
         <module>starter-native</module>
+        <module>starter-application</module>
     </modules>
 </project>

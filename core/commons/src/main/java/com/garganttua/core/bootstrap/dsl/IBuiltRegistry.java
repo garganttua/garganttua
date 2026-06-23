@@ -23,6 +23,15 @@ public interface IBuiltRegistry {
     <T>Optional<T> request(IClass<T> clazz);
 
     /**
+     * Looks up every built object assignable to the given type, in build order.
+     *
+     * @param <T>   the requested type
+     * @param clazz the type to match
+     * @return an immutable list of the matching built objects (empty if none match)
+     */
+    <T> List<T> requestAll(IClass<T> clazz);
+
+    /**
      * @return the number of built objects held in this registry
      */
     Integer size();

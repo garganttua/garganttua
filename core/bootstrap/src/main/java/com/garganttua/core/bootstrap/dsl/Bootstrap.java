@@ -1073,11 +1073,23 @@ public class Bootstrap extends AbstractAutomaticDependentBuilder<IBootstrap, IBu
 
         @Override
         public <T> Optional<T> request(IClass<T> clazz) {
-            Object obj = registry.get(clazz);
-            if (obj != null && clazz.isInstance(obj)) {
-                return Optional.of(clazz.cast(obj));
+            for (Object obj : registry.values()) {
+                if (clazz.isInstance(obj)) {
+                    return Optional.of(clazz.cast(obj));
+                }
             }
             return Optional.empty();
+        }
+
+        @Override
+        public <T> List<T> requestAll(IClass<T> clazz) {
+            List<T> matches = new ArrayList<>();
+            for (Object obj : registry.values()) {
+                if (clazz.isInstance(obj)) {
+                    matches.add(clazz.cast(obj));
+                }
+            }
+            return List.copyOf(matches);
         }
     }
 

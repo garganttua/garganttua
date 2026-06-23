@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.garganttua.core</groupId>
+        <artifactId>garganttua-starters</artifactId>
+        <version>3.0.0-ALPHA04</version>
+    </parent>
+
+    <artifactId>garganttua-starter-application</artifactId>
+    <packaging>jar</packaging>
+    <description>Neutral core-level application runner: GarganttuaApplication.run(source) boots garganttua-core's Bootstrap (autoDetect + SPI discovery of every IBootstrapBuilderFactory on the classpath) and returns the queryable IBuiltRegistry of bootstrapped modules. No api/events dependency.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-bootstrap</artifactId>
+        </dependency>
+        <!-- type pom: a downstream app pulling this starter gets the JVM
+             reflection stack (provider + scanner) so Bootstrap's SPI cold-start
+             can resolve reflection without extra wiring. -->
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-starter-runtime</artifactId>
+            <type>pom</type>
+        </dependency>
+    </dependencies>
+</project>
