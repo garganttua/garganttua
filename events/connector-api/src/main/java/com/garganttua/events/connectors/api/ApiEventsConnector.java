@@ -9,6 +9,7 @@ import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.garganttua.events.api.connectors.annotations.Connector;
 import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
@@ -35,6 +36,7 @@ import com.garganttua.events.connectors.observability.ReadOnlyProducer;
  * <p>This connector is <b>read-only</b>: {@link #createProducer(SubscriptionDef, DataflowDef)}
  * returns a producer whose {@code publish} throws.</p>
  */
+@Connector(type = "api")
 @Reflected
 public class ApiEventsConnector extends AbstractLifecycle implements IConnector {
 

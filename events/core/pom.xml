@@ -62,6 +62,20 @@
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-api</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<version>${junit.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- Test-only JVM reflection provider so IClass.getReflection() resolves during the
+		     EventsBuilder static-init (its DEPENDENCIES set calls IClass.getClass). -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-runtime-reflection</artifactId>
+			<version>${garganttua.core.version}</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<!-- Supplies the checkstyle SuppressionFilter location the shared

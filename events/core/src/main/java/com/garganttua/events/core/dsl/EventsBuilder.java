@@ -1,5 +1,6 @@
 package com.garganttua.events.core.dsl;
 
+import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,10 +20,12 @@ import com.garganttua.core.injection.Predefined;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.supply.ISupplier;
 import com.garganttua.core.supply.dsl.ISupplierBuilder;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IEvents;
+import com.garganttua.events.api.connectors.annotations.Connector;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.dsl.IContextBuilder;
 import com.garganttua.events.api.dsl.IEventsBuilder;
@@ -42,8 +45,11 @@ public class EventsBuilder
 	private final List<String> packages = new ArrayList<>();
 	private final List<ContextDef> contexts = new ArrayList<>();
 	private final Map<String, IClass<? extends IConnector>> connectorRegistry = new HashMap<>();
+	// Connector resolution flows through @Connector auto-detection (doAutoDetection) and the
+	// connector(IClass) DSL path — both populate connectorRegistry keyed "type:version".
+	// connectorNames / connectorSuppliers back the public IEventsBuilder overloads that have no
+	// resolution mechanism yet (honest stubs pending a connector-resolution design decision).
 	private final List<String> connectorNames = new ArrayList<>();
-	private final List<IClass<? extends IConnector>> connectorClasses = new ArrayList<>();
 	private final List<ISupplierBuilder<IConnector, ISupplier<IConnector>>> connectorSuppliers = new ArrayList<>();
 	private IObservableBuilder<?, ?> injectionContextBuilder;
 	private IObservableBuilder<?, ?> expressionContextBuilder;
@@ -92,8 +98,15 @@ public class EventsBuilder
 
 	@Override
 	public IEventsBuilder connector(IClass<? extends IConnector> connectorClass) {
-		this.connectorClasses.add(connectorClass);
-		log.debug("Connector registered by class: {}", connectorClass);
+		// Mirror auto-detection: read the @Connector marker and register under "type:version".
+		Connector meta = ((Class<?>) connectorClass.getType()).getAnnotation(Connector.class);
+		if (meta == null) {
+			throw new DslException("Connector class " + connectorClass.getName()
+					+ " is not annotated with @Connector — cannot resolve its type/version");
+		}
+		registerConnector(meta.type(), meta.version(), connectorClass);
+		log.debug("Connector registered by class: {} ({}:{})",
+				connectorClass.getName(), meta.type(), meta.version());
 		return this;
 	}
 
@@ -112,11 +125,46 @@ public class EventsBuilder
 		this.connectorRegistry.put(type + ":" + version, connectorClass);
 	}
 
+	/** Package-private accessor for tests asserting auto/manual registration. */
+	Map<String, IClass<? extends IConnector>> registeredConnectors() {
+		return this.connectorRegistry;
+	}
+
 	@Override
+	@SuppressWarnings("unchecked")
 	protected void doAutoDetection() throws DslException {
-		log.info("Auto-detection scanning packages: {}", packages);
-		// Connector auto-detection would scan packages for @Connector annotations
-		// This is simplified - real implementation would use annotation scanning
+		// Mirrors InjectionAutoDetector / ApiBuilderAssetDetection: discover @Connector classes via
+		// IReflection and register each under "type:version". A GLOBAL scan is used so that merely
+		// having a connector JAR on the classpath auto-registers it ("batteries-included"), matching
+		// garganttua-events being a bootstrap auto-loaded module.
+		IReflection reflection;
+		try {
+			reflection = IClass.getReflection();
+		} catch (Exception e) {
+			log.warn("No IReflection available for @Connector auto-detection: {}", e.getMessage());
+			return;
+		}
+		IClass<? extends Annotation> annotation =
+				(IClass<? extends Annotation>) reflection.getClass(Connector.class);
+		reflection.getClassesWithAnnotation(annotation)
+				.forEach(clazz -> registerDiscovered(clazz));
+	}
+
+	@SuppressWarnings("unchecked")
+	private void registerDiscovered(IClass<?> clazz) {
+		try {
+			if (!IConnector.class.isAssignableFrom((Class<?>) clazz.getType())) {
+				log.warn("Class {} annotated with @Connector but does not implement IConnector",
+						clazz.getName());
+				return;
+			}
+			Connector meta = ((Class<?>) clazz.getType()).getAnnotation(Connector.class);
+			registerConnector(meta.type(), meta.version(), (IClass<? extends IConnector>) clazz);
+			log.info("Auto-registered @Connector {} ({}:{})",
+					clazz.getName(), meta.type(), meta.version());
+		} catch (Exception e) {
+			log.warn("Failed to auto-register @Connector {}: {}", clazz.getName(), e.getMessage());
+		}
 	}
 
 	@Override

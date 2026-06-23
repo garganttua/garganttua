@@ -16,7 +16,9 @@ import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.garganttua.events.api.connectors.annotations.Connector;
 
+@Connector(type = "mail")
 @Reflected
 public class MailConnector extends AbstractLifecycle implements IConnector {
 

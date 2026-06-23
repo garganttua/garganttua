@@ -30,7 +30,9 @@ import com.garganttua.events.api.enums.ProcessMode;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.garganttua.events.api.connectors.annotations.Connector;
 
+@Connector(type = "kafka")
 @Reflected
 public class KafkaConnector extends AbstractLifecycle implements IConnector {
 

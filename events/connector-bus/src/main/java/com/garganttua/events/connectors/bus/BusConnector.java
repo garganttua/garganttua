@@ -23,7 +23,9 @@ import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.garganttua.events.api.connectors.annotations.Connector;
 
+@Connector(type = "bus")
 @Reflected
 public class BusConnector extends AbstractLifecycle implements IConnector {
 
