@@ -118,6 +118,8 @@ Requires JDK 25.
 | \|    \|- [**connector-kafka**](./events/connector-kafka/README.md) |  |
 | \|    \|- [**connector-mail**](./events/connector-mail/README.md) |  |
 | \|    \|- [**core**](./events/core/README.md) |  |
+| \|    \|- [**examples**](./events/examples/README.md) | Aggregator for runnable garganttua-events examples. Kept OUT of the root         reactor so a plain root build never depends on them — build explicitly with         `mvn -f events/examples/pom.xml install`. Self-contained: depends on the published         garganttua artifacts, exactly like a downstream consumer app would. |
+| \|    \|    \|- [**example-bus**](./events/examples/example-bus/README.md) | Minimal runnable garganttua-events demo: defines an events topology with         the EventsBuilder DSL, lets the Bootstrap auto-wire reflection / injection /         expression, and retrieves the built IEvents engine (the in-memory bus connector         module is on the classpath so the 'bus' connector type is available). |
 | \|    \|- [**expressions**](./events/expressions/README.md) |  |
 <!-- AUTO-GENERATED-ARCHITECTURE-STOP -->
 
