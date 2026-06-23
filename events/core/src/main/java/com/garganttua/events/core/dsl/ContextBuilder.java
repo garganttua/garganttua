@@ -13,7 +13,7 @@ import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.events.api.context.TopicDef;
 import com.garganttua.events.api.dsl.IConnectorConfigBuilder;
 import com.garganttua.events.api.dsl.IContextBuilder;
-import com.garganttua.events.api.dsl.IEngineBuilder;
+import com.garganttua.events.api.dsl.IEventsBuilder;
 import com.garganttua.events.api.dsl.IRouteBuilder;
 import com.garganttua.events.api.dsl.ISubscriptionBuilder;
 import com.garganttua.events.api.enums.PublicationMode;
@@ -23,7 +23,7 @@ import java.util.HashMap;
 
 public class ContextBuilder implements IContextBuilder {
 
-	private IEngineBuilder parent;
+	private IEventsBuilder parent;
 	private final String tenantId;
 	private final String clusterId;
 	private final List<TopicDef> topics = new ArrayList<>();
@@ -92,15 +92,15 @@ public class ContextBuilder implements IContextBuilder {
 	}
 
 	@Override
-	public IEngineBuilder up() {
-		if (parent instanceof EngineBuilder eb) {
+	public IEventsBuilder up() {
+		if (parent instanceof EventsBuilder eb) {
 			eb.addContext(build());
 		}
 		return parent;
 	}
 
 	@Override
-	public void setUp(IEngineBuilder up) {
+	public void setUp(IEventsBuilder up) {
 		this.parent = up;
 	}
 

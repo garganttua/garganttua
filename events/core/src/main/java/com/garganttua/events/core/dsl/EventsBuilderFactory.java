@@ -6,7 +6,7 @@ import com.garganttua.core.dsl.IBuilder;
 
 /**
  * SPI factory that lets {@code Bootstrap.autoDetect(true)} discover and register
- * an {@link EngineBuilder} without the caller having to declare it via
+ * an {@link EventsBuilder} without the caller having to declare it via
  * {@code .withBuilder(...)} explicitly — exactly like garganttua-api's
  * {@code ApiBuilderFactory}.
  *
@@ -18,10 +18,10 @@ import com.garganttua.core.dsl.IBuilder;
  *
  * @since 3.0.0-ALPHA04
  */
-public final class EngineBuilderFactory implements IBootstrapBuilderFactory {
+public final class EventsBuilderFactory implements IBootstrapBuilderFactory {
 
     @Override
     public IBuilder<?> create() throws DslException {
-        return (EngineBuilder) EngineBuilder.builder();
+        return (EventsBuilder) EventsBuilder.builder();
     }
 }

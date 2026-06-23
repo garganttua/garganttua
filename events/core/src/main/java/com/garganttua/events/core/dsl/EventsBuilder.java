@@ -20,14 +20,14 @@ import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IEngine;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.dsl.IContextBuilder;
-import com.garganttua.events.api.dsl.IEngineBuilder;
+import com.garganttua.events.api.dsl.IEventsBuilder;
 import com.garganttua.events.core.Engine;
 
-public class EngineBuilder
-		extends AbstractAutomaticDependentBuilder<IEngineBuilder, IEngine>
-		implements IEngineBuilder {
+public class EventsBuilder
+		extends AbstractAutomaticDependentBuilder<IEventsBuilder, IEngine>
+		implements IEventsBuilder {
 
-	private static final Logger log = Logger.getLogger(EngineBuilder.class);
+	private static final Logger log = Logger.getLogger(EventsBuilder.class);
 
 	private static final Set<DependencySpec> DEPENDENCIES = Set.of(
 			DependencySpec.require(IClass.getClass(IInjectionContextBuilder.class)),
@@ -43,22 +43,22 @@ public class EngineBuilder
 	private IObservableBuilder<?, ?> injectionContextBuilder;
 	private IObservableBuilder<?, ?> expressionContextBuilder;
 
-	private EngineBuilder() {
+	private EventsBuilder() {
 		super(DEPENDENCIES);
 	}
 
-	public static IEngineBuilder builder() {
-		return new EngineBuilder();
+	public static IEventsBuilder builder() {
+		return new EventsBuilder();
 	}
 
 	@Override
-	public IEngineBuilder asset(String assetId) {
+	public IEventsBuilder asset(String assetId) {
 		this.assetId = assetId;
 		return this;
 	}
 
 	@Override
-	public IEngineBuilder withPackage(String pkg) {
+	public IEventsBuilder withPackage(String pkg) {
 		this.packages.add(pkg);
 		return this;
 	}
@@ -71,7 +71,7 @@ public class EngineBuilder
 	}
 
 	@Override
-	public IEngineBuilder source(String type, String configuration) {
+	public IEventsBuilder source(String type, String configuration) {
 		// Context source loading will be handled by JsonContextReader
 		// For now, this is a placeholder for external source loading
 		log.info("Context source registered: type={}, configuration={}", type, configuration);
@@ -79,21 +79,21 @@ public class EngineBuilder
 	}
 
 	@Override
-	public IEngineBuilder connector(String connectorName) {
+	public IEventsBuilder connector(String connectorName) {
 		this.connectorNames.add(connectorName);
 		log.debug("Connector registered by name: {}", connectorName);
 		return this;
 	}
 
 	@Override
-	public IEngineBuilder connector(IClass<? extends IConnector> connectorClass) {
+	public IEventsBuilder connector(IClass<? extends IConnector> connectorClass) {
 		this.connectorClasses.add(connectorClass);
 		log.debug("Connector registered by class: {}", connectorClass);
 		return this;
 	}
 
 	@Override
-	public IEngineBuilder connector(ISupplierBuilder<IConnector, ISupplier<IConnector>> connectorBuilder) {
+	public IEventsBuilder connector(ISupplierBuilder<IConnector, ISupplier<IConnector>> connectorBuilder) {
 		this.connectorSuppliers.add(connectorBuilder);
 		log.debug("Connector registered by supplier builder");
 		return this;
@@ -147,7 +147,7 @@ public class EngineBuilder
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public IEngineBuilder provide(IObservableBuilder<?, ?> dependency) throws DslException {
+	public IEventsBuilder provide(IObservableBuilder<?, ?> dependency) throws DslException {
 		return super.provide(dependency);
 	}
 }

@@ -4,7 +4,7 @@ import com.garganttua.core.dsl.ILinkedBuilder;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.enums.PublicationMode;
 
-public interface IContextBuilder extends ILinkedBuilder<IEngineBuilder, ContextDef> {
+public interface IContextBuilder extends ILinkedBuilder<IEventsBuilder, ContextDef> {
 
 	IContextBuilder topic(String ref);
 
