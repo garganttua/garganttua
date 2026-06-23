@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import com.garganttua.core.dsl.DslException;
@@ -11,6 +12,10 @@ import com.garganttua.core.dsl.IObservableBuilder;
 import com.garganttua.core.dsl.dependency.AbstractAutomaticDependentBuilder;
 import com.garganttua.core.dsl.dependency.DependencySpec;
 import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
+import com.garganttua.core.injection.BeanReference;
+import com.garganttua.core.injection.BeanStrategy;
+import com.garganttua.core.injection.IInjectionContext;
+import com.garganttua.core.injection.Predefined;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
@@ -121,16 +126,28 @@ public class EventsBuilder
 
 	@Override
 	protected void doPreBuildWithDependency(Object dependency) {
-		if (dependency instanceof IInjectionContextBuilder) {
-			this.injectionContextBuilder = (IObservableBuilder<?, ?>) dependency;
-		} else if (dependency instanceof IExpressionContextBuilder) {
-			this.expressionContextBuilder = (IObservableBuilder<?, ?>) dependency;
-		}
+		// Dependency BUILDERS are captured in provide() — Engine needs the injection/
+		// expression builders to wire route workflows. The built contexts delivered
+		// here (BUILT-kind deps) are used post-build for bean registration.
 	}
 
 	@Override
 	protected void doPostBuildWithDependency(Object dependency) {
-		// No post-build processing needed
+		// Like ApiBuilder: once the IInjectionContext is built, register the built
+		// IEngine as a named bean so it is discoverable by the rest of the bootstrap.
+		if (dependency instanceof IInjectionContext context && this.built != null) {
+			registerEngineBean(context, this.built);
+		}
+	}
+
+	private void registerEngineBean(IInjectionContext context, IEngine engine) {
+		BeanReference<IEngine> reference = new BeanReference<>(
+				IClass.getClass(IEngine.class),
+				Optional.of(BeanStrategy.singleton),
+				Optional.of("events"),
+				Set.of());
+		context.addBean(Predefined.BeanProviders.garganttua.toString(), reference, engine);
+		log.debug("IEngine registered as bean 'events' in the injection context");
 	}
 
 	@Override
@@ -145,9 +162,15 @@ public class EventsBuilder
 				injectionContextBuilder, expressionContextBuilder);
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public IEventsBuilder provide(IObservableBuilder<?, ?> dependency) throws DslException {
+		// Capture the dependency BUILDERS here (Engine wires them into route workflows);
+		// their built contexts are delivered separately via the dependency callbacks.
+		if (dependency instanceof IInjectionContextBuilder) {
+			this.injectionContextBuilder = dependency;
+		} else if (dependency instanceof IExpressionContextBuilder) {
+			this.expressionContextBuilder = dependency;
+		}
 		return super.provide(dependency);
 	}
 }
