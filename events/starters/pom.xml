@@ -20,5 +20,7 @@
         <module>starter-bus</module>
         <module>starter-kafka</module>
         <module>starter-mail</module>
+        <module>starter-observability</module>
+        <module>starter-api</module>
     </modules>
 </project>

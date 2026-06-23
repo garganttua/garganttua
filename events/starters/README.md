@@ -9,10 +9,12 @@ events engine, a connector, the JVM reflection stack and the bootstrap.
 | `garganttua-events-starter-bus` | events-core + `connector-bus` (in-memory BigQueue) + starter-runtime + bootstrap |
 | `garganttua-events-starter-kafka` | events-core + `connector-kafka` (Apache Kafka) + starter-runtime + bootstrap |
 | `garganttua-events-starter-mail` | events-core + `connector-mail` (Angus Mail) + starter-runtime + bootstrap |
+| `garganttua-events-starter-observability` | events-core + `connector-observability` (observe any garganttua `IObservable`) + starter-runtime + bootstrap |
+| `garganttua-events-starter-api` | events-core + `connector-api` (observe garganttua-api business events; pulls `connector-observability`) + starter-runtime + bootstrap |
 
 Each pulls (transitively):
 - **`garganttua-events-core`** — the `EventsBuilder` DSL + the `IEvents` engine.
-- **one connector** — `garganttua-events-connector-{bus,kafka,mail}`.
+- **one connector** — `garganttua-events-connector-{bus,kafka,mail,observability,api}`.
 - **`garganttua-starter-runtime`** — the JVM reflection providers (runtime-reflection + reflections).
 - **`garganttua-bootstrap`** — wires reflection + injection + expression + the auto-loaded events module.
 
