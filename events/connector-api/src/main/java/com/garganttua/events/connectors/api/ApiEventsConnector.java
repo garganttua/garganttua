@@ -16,19 +16,16 @@ import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.SubscriptionDef;
-import com.garganttua.events.connectors.observability.ReadOnlyProducer;
 
 /**
- * Connector that observes an api {@code Domain} (registered as an
- * {@link com.garganttua.core.observability.IObservable}) and forwards its business
- * {@link com.garganttua.api.commons.event.IEvent}s into the events pipeline.
+ * Connector that observes the garganttua observability firehose
+ * ({@link com.garganttua.core.observability.GlobalObservers}) and forwards api business
+ * {@link com.garganttua.api.commons.event.IEvent}s into the events pipeline — with <b>zero
+ * application wiring</b>: the consumer self-registers, no {@code Domain} has to be exposed.
  *
  * <p>Configuration keys:</p>
  * <ul>
  *   <li>{@code name} — connector name (default {@code api-events}).</li>
- *   <li>{@code source} — the
- *       {@link com.garganttua.events.connectors.observability.ObservableSources} registry key of
- *       the Domain to observe (required at consumer start).</li>
  *   <li>{@code operations} — optional operation-name filter; only {@code api:operation:*} events
  *       whose source ends with this operation are forwarded (default: all operations).</li>
  * </ul>
@@ -43,7 +40,6 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	private static final Logger LOG = Logger.getLogger(ApiEventsConnector.class);
 
 	private String name = "api-events";
-	private String source;
 	private String operations;
 
 	@Override
@@ -59,14 +55,13 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	@Override
 	public void configure(Map<String, String> configuration, ConnectorContext ctx) {
 		this.name = configuration.getOrDefault("name", "api-events");
-		this.source = configuration.get("source");
 		this.operations = configuration.get("operations");
-		LOG.debug("Configured api events connector {} on source {}", this.name, this.source);
+		LOG.debug("Configured api events connector {}", this.name);
 	}
 
 	@Override
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
-		return new ApiEventsConsumer(this.source, this.operations);
+		return new ApiEventsConsumer(this.operations);
 	}
 
 	@Override

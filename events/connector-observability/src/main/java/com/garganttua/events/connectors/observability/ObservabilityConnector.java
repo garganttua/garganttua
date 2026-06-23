@@ -18,14 +18,14 @@ import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.SubscriptionDef;
 
 /**
- * Connector that observes a garganttua {@link com.garganttua.core.observability.IObservable} and
- * forwards its {@link com.garganttua.core.observability.ObservableEvent}s into the events pipeline.
+ * Connector that observes the garganttua observability firehose
+ * ({@link com.garganttua.core.observability.GlobalObservers}) and forwards every
+ * {@link com.garganttua.core.observability.ObservableEvent} into the events pipeline — with
+ * <b>zero application wiring</b>: the consumer self-registers, no observable has to be exposed.
  *
  * <p>Configuration keys:</p>
  * <ul>
  *   <li>{@code name} — connector name (default {@code observability}).</li>
- *   <li>{@code source} — the {@link ObservableSources} registry key of the observable to observe
- *       (required at consumer start).</li>
  *   <li>{@code events} — optional comma list among {@code start,end,error,log} selecting which
  *       event types to forward (default: all).</li>
  *   <li>{@code sourcePattern} — optional glob matched against {@code event.source()}
@@ -42,7 +42,6 @@ public class ObservabilityConnector extends AbstractLifecycle implements IConnec
 	private static final Logger LOG = Logger.getLogger(ObservabilityConnector.class);
 
 	private String name = "observability";
-	private String source;
 	private String events;
 	private String sourcePattern;
 
@@ -59,16 +58,15 @@ public class ObservabilityConnector extends AbstractLifecycle implements IConnec
 	@Override
 	public void configure(Map<String, String> configuration, ConnectorContext ctx) {
 		this.name = configuration.getOrDefault("name", "observability");
-		this.source = configuration.get("source");
 		this.events = configuration.get("events");
 		this.sourcePattern = configuration.get("sourcePattern");
-		LOG.debug("Configured observability connector {} on source {}", this.name, this.source);
+		LOG.debug("Configured observability connector {}", this.name);
 	}
 
 	@Override
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
 		EventFilter filter = EventFilter.of(this.events, this.sourcePattern);
-		return new ObservabilityConsumer(this.source, filter);
+		return new ObservabilityConsumer(filter);
 	}
 
 	@Override

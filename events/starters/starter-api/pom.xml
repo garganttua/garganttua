@@ -12,9 +12,11 @@
     <artifactId>garganttua-events-starter-api</artifactId>
     <packaging>pom</packaging>
     <description>Batteries-included garganttua-events starter for the garganttua-api connector:
-        events engine (DSL + core) + api connector (observe garganttua-api business events on a
-        Domain) + observability connector (transitive) + JVM reflection stack + bootstrap. Depend
-        on this single artifact to build/run an events app that ingests api business events.</description>
+        events engine (DSL + core) + api connector (observe garganttua-api business events) +
+        observability connector (full firehose) + JVM reflection stack + bootstrap. Both
+        connectors self-register on the global observability firehose, so an api-events app
+        receives events with zero wiring. Depend on this single artifact to build/run an events
+        app that ingests api business events.</description>
 
     <dependencies>
         <dependency>
@@ -25,6 +27,13 @@
         <dependency>
             <groupId>com.garganttua</groupId>
             <artifactId>garganttua-events-connector-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- connector-api no longer depends on connector-observability; bundle it explicitly so an
+             api-events app still gets the full observability firehose connector. -->
+        <dependency>
+            <groupId>com.garganttua</groupId>
+            <artifactId>garganttua-events-connector-observability</artifactId>
             <version>${project.version}</version>
         </dependency>
         <!-- Bootstrap wires reflection + injection + expression + the events module. -->

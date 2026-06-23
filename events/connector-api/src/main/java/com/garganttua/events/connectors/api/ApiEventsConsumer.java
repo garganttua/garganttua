@@ -2,48 +2,57 @@ package com.garganttua.events.connectors.api;
 
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.garganttua.api.commons.event.IEvent;
 import com.garganttua.core.observability.EndEvent;
 import com.garganttua.core.observability.ErrorEvent;
-import com.garganttua.core.observability.IObservable;
+import com.garganttua.core.observability.GlobalObservers;
 import com.garganttua.core.observability.IObserver;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.observability.ObservableEvent;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.exceptions.ConnectorException;
-import com.garganttua.events.connectors.observability.ObservableSources;
 
 /**
- * Observes an api {@code Domain} (registered as an {@link IObservable} in
- * {@link ObservableSources}) and forwards its business {@link IEvent}s into the events pipeline.
+ * Forwards api business {@link IEvent}s into the events pipeline with <b>zero application
+ * wiring</b>.
  *
- * <p>It keeps only the terminal {@link EndEvent}/{@link ErrorEvent} whose source matches
- * {@code api:operation:*} and, when configured, a specific operation suffix; it extracts the
- * {@link IEvent} payload, serialises it via {@link ApiEventCodec} and hands the bytes to the
- * pipeline. {@link #start(Consumer)} blocks the calling daemon thread until {@link #stop()}.</p>
+ * <p>On {@link #start(Consumer)} it registers an {@link IObserver} with {@link GlobalObservers},
+ * so every event emitted by an api {@code Domain} reaches it. It keeps only the terminal
+ * {@link EndEvent}/{@link ErrorEvent} whose source matches {@code api:operation:*} (and, when
+ * configured, a specific operation suffix), extracts the {@link IEvent} payload, serialises it via
+ * {@link ApiEventCodec} and <b>enqueues</b> the bytes — a cheap, non-blocking step that runs on
+ * arbitrary emitting threads. The consumer's own daemon thread (the caller of {@code start})
+ * drains the bounded queue and pushes the bytes into the pipeline handler, decoupling the
+ * instrumented application from pipeline latency.</p>
+ *
+ * <p>On queue overflow the event is dropped with a single throttled warn — the emitting thread is
+ * never blocked.</p>
  */
 public final class ApiEventsConsumer implements IConsumer {
 
 	private static final Logger LOG = Logger.getLogger(ApiEventsConsumer.class);
 	private static final String SOURCE_PREFIX = "api:operation:";
+	private static final int QUEUE_CAPACITY = 10_000;
+	private static final long POLL_MILLIS = 200L;
+	private static final long OVERFLOW_LOG_INTERVAL_MILLIS = 5_000L;
 
-	private final String sourceName;
 	private final String operation;
 	private final ApiEventCodec codec;
-	private final CountDownLatch stopLatch = new CountDownLatch(1);
+	private final BlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
 
-	private volatile IObservable observable;
+	private volatile boolean running;
 	private volatile IObserver<ObservableEvent> observer;
+	private volatile long lastOverflowLog;
 
 	/**
-	 * @param sourceName the {@link ObservableSources} registry key of the Domain to observe
-	 * @param operation  optional operation name filter; {@code null}/blank matches every operation
+	 * @param operation optional operation name filter; {@code null}/blank matches every operation
 	 */
-	public ApiEventsConsumer(String sourceName, String operation) {
-		this.sourceName = Objects.requireNonNull(sourceName, "source name cannot be null");
+	public ApiEventsConsumer(String operation) {
 		this.operation = normalize(operation);
 		this.codec = new ApiEventCodec();
 	}
@@ -58,21 +67,31 @@ public final class ApiEventsConsumer implements IConsumer {
 	@Override
 	public void start(Consumer<byte[]> messageHandler) throws ConnectorException {
 		Objects.requireNonNull(messageHandler, "message handler cannot be null");
-		this.observable = ObservableSources.lookup(this.sourceName)
-				.orElseThrow(() -> new ConnectorException(
-						"no observable registered under source '" + this.sourceName + "'"));
-		this.observer = event -> forward(event, messageHandler);
-		this.observable.addObserver(this.observer);
-		LOG.debug("Api events consumer attached to source {}", this.sourceName);
-		awaitStop();
+		this.running = true;
+		this.observer = this::enqueue;
+		GlobalObservers.addObserver(this.observer);
+		LOG.debug("Api events consumer attached to the global firehose");
+		drain(messageHandler);
 	}
 
-	private void forward(ObservableEvent event, Consumer<byte[]> messageHandler) {
-		businessEvent(event).ifPresent(business -> messageHandler.accept(this.codec.toBytes(business)));
+	private void enqueue(ObservableEvent event) {
+		businessEvent(event).ifPresent(business -> {
+			if (!this.queue.offer(this.codec.toBytes(business))) {
+				logOverflow();
+			}
+		});
+	}
+
+	private void logOverflow() {
+		long now = System.currentTimeMillis();
+		if (now - this.lastOverflowLog >= OVERFLOW_LOG_INTERVAL_MILLIS) {
+			this.lastOverflowLog = now;
+			LOG.warn("Api events consumer queue full ({}); dropping events", QUEUE_CAPACITY);
+		}
 	}
 
 	private Optional<IEvent> businessEvent(ObservableEvent event) {
-		if (!isTerminal(event) || !sourceMatches(event)) {
+		if (event == null || !isTerminal(event) || !sourceMatches(event)) {
 			return Optional.empty();
 		}
 		return event.payload() instanceof IEvent business ? Optional.of(business) : Optional.empty();
@@ -90,9 +109,14 @@ public final class ApiEventsConsumer implements IConsumer {
 		return this.operation.isEmpty() || source.endsWith(":" + this.operation);
 	}
 
-	private void awaitStop() throws ConnectorException {
+	private void drain(Consumer<byte[]> messageHandler) throws ConnectorException {
 		try {
-			this.stopLatch.await();
+			while (this.running) {
+				byte[] bytes = this.queue.poll(POLL_MILLIS, TimeUnit.MILLISECONDS);
+				if (bytes != null) {
+					messageHandler.accept(bytes);
+				}
+			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new ConnectorException("api events consumer interrupted", e);
@@ -101,12 +125,11 @@ public final class ApiEventsConsumer implements IConsumer {
 
 	@Override
 	public void stop() throws ConnectorException {
-		IObservable obs = this.observable;
+		this.running = false;
 		IObserver<ObservableEvent> obv = this.observer;
-		if (obs != null && obv != null) {
-			obs.removeObserver(obv);
+		if (obv != null) {
+			GlobalObservers.removeObserver(obv);
 		}
-		this.stopLatch.countDown();
-		LOG.debug("Api events consumer detached from source {}", this.sourceName);
+		LOG.debug("Api events consumer detached from the global firehose");
 	}
 }

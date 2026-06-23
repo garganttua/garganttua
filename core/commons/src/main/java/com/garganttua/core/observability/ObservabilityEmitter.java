@@ -234,6 +234,10 @@ public final class ObservabilityEmitter {
 		}
 
 		private void fire(ObservableEvent event) {
+			// Broadcast to the process-global firehose exactly once per emitted event. This is the
+			// single per-event choke point (active/local below may each receive the event, but this
+			// method runs once per emission), so global observers see every event exactly once.
+			GlobalObservers.fire(event);
 			if (active != null) {
 				active.fire(event);
 			}
