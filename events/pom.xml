@@ -51,6 +51,8 @@
 		<module>connector-kafka</module>
 		<module>connector-bus</module>
 		<module>connector-mail</module>
+		<module>connector-observability</module>
+		<module>connector-api</module>
 		<module>starters</module>
 	</modules>
 
