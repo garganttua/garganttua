@@ -5,9 +5,9 @@ import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.supply.ISupplier;
 import com.garganttua.core.supply.dsl.ISupplierBuilder;
 import com.garganttua.events.api.IConnector;
-import com.garganttua.events.api.IEngine;
+import com.garganttua.events.api.IEvents;
 
-public interface IEventsBuilder extends IDependentBuilder<IEventsBuilder, IEngine> {
+public interface IEventsBuilder extends IDependentBuilder<IEventsBuilder, IEvents> {
 
 	IEventsBuilder asset(String assetId);
 

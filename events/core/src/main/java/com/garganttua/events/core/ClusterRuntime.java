@@ -14,9 +14,9 @@ import com.garganttua.events.api.context.TopicDef;
 import com.garganttua.core.workflow.IWorkflow;
 
 // EI_EXPOSE_REP: these getters intentionally expose the live mutable accumulator maps;
-// the Engine populates them in-place during init (e.g. getTopics().put(...)), so a
+// the Events populates them in-place during init (e.g. getTopics().put(...)), so a
 // defensive copy would silently drop those registrations. Design-intentional shared state.
-@SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "live mutable runtime accumulators populated in-place by Engine")
+@SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "live mutable runtime accumulators populated in-place by Events")
 public class ClusterRuntime {
 
 	private final ContextDef context;

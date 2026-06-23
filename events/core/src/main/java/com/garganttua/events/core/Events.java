@@ -18,7 +18,7 @@ import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.Exchange;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
-import com.garganttua.events.api.IEngine;
+import com.garganttua.events.api.IEvents;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.context.ConnectorDef;
 import com.garganttua.events.api.context.ContextDef;
@@ -34,9 +34,9 @@ import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 
-public class Engine extends AbstractLifecycle implements IEngine {
+public class Events extends AbstractLifecycle implements IEvents {
 
-	private static final Logger log = Logger.getLogger(Engine.class);
+	private static final Logger log = Logger.getLogger(Events.class);
 
 	private final String assetId;
 	private final List<ContextDef> contexts;
@@ -48,7 +48,7 @@ public class Engine extends AbstractLifecycle implements IEngine {
 	private final List<Thread> consumerThreads = new ArrayList<>();
 	private ExecutorService executorService;
 
-	public Engine(String assetId, List<ContextDef> contexts,
+	public Events(String assetId, List<ContextDef> contexts,
 			Map<String, IClass<? extends IConnector>> connectorRegistry,
 			IObservableBuilder<?, ?> injectionContextBuilder,
 			IObservableBuilder<?, ?> expressionContextBuilder) {

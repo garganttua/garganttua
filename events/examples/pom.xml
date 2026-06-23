@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.garganttua</groupId>
+    <artifactId>garganttua-events-examples</artifactId>
+    <version>3.0.0-ALPHA04</version>
+    <packaging>pom</packaging>
+    <description>Aggregator for runnable garganttua-events examples. Kept OUT of the root
+        reactor so a plain root build never depends on them — build explicitly with
+        `mvn -f events/examples/pom.xml install`. Self-contained: depends on the published
+        garganttua artifacts, exactly like a downstream consumer app would.</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>25</maven.compiler.release>
+        <garganttua.version>3.0.0-ALPHA04</garganttua.version>
+        <exec.plugin.version>3.1.0</exec.plugin.version>
+    </properties>
+
+    <modules>
+        <module>example-bus</module>
+    </modules>
+</project>
