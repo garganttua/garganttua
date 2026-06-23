@@ -1,9 +1,9 @@
 # Garganttua
 
 <!-- AUTO-GENERATED-COVERAGE-START -->
-![coverage](https://img.shields.io/badge/coverage-70.6%25%20instructions-green)
+![coverage](https://img.shields.io/badge/coverage-70.1%25%20instructions-green)
 
-Coverage: **70.6%** instructions · **59.6%** branches · **69.4%** lines across 36 modules (JaCoCo; full per-module report in CI artifacts).
+Coverage: **70.1%** instructions · **59.6%** branches · **69.1%** lines across 37 modules (JaCoCo; full per-module report in CI artifacts).
 <!-- AUTO-GENERATED-COVERAGE-STOP -->
 
 Unified reactor aggregating the three Garganttua framework libraries that form a tight,
@@ -107,6 +107,7 @@ Requires JDK 25.
 | \|    \|- [**script-maven-plugin**](./core/script-maven-plugin/README.md) | Maven plugin to build JARs that can be included in Garganttua scripts (.gs files). Automatically adds Garganttua-Packages manifest attribute. |
 | \|    \|- [**starters**](./core/starters/README.md) | Aggregator for the four consumption starters (aot / runtime / hybrid / native) that bundle the reflection providers + scanners a downstream application needs to pick a reflection mode by changing a single Maven coordinate. |
 | \|    \|    \|- [**starter-aot**](./core/starters/starter-aot/README.md) | Pure-AOT starter: pulls the AOT reflection provider + annotation scanner. Cold-start optimised, no runtime classpath scan, prep for native-image. |
+| \|    \|    \|- [**starter-application**](./core/starters/starter-application/README.md) | Neutral core-level application runner: GarganttuaApplication.run(source) boots garganttua-core's Bootstrap (autoDetect + SPI discovery of every IBootstrapBuilderFactory on the classpath) and returns the queryable IBuiltRegistry of bootstrapped modules. No api/events dependency. |
 | \|    \|    \|- [**starter-hybrid**](./core/starters/starter-hybrid/README.md) | Hybrid starter (recommended default for dev): AOT prioritised at @Priority(20), runtime/reflections fallback at @Priority(10) for types the AOT processor didn't see. Belt and suspenders. |
 | \|    \|    \|- [**starter-native**](./core/starters/starter-native/README.md) | GraalVM native-image starter: pure AOT (same as garganttua-starter-aot) plus garganttua-aot-native-feature that registers every AOT descriptor with RuntimeReflection at native-image analysis time. Consumer still wires the native-maven-plugin in their pom (see this module README). |
 | \|    \|    \|- [**starter-runtime**](./core/starters/starter-runtime/README.md) | Runtime / legacy starter: JDK reflection + org.reflections-based classpath scanner. Quickest dev / debug loop, no AOT processor required. |
@@ -119,14 +120,16 @@ Requires JDK 25.
 | \|    \|- [**connector-kafka**](./events/connector-kafka/README.md) |  |
 | \|    \|- [**connector-mail**](./events/connector-mail/README.md) |  |
 | \|    \|- [**connector-observability**](./events/connector-observability/README.md) |  |
+| \|    \|- [**connector-websocket**](./events/connector-websocket/README.md) |  |
 | \|    \|- [**core**](./events/core/README.md) |  |
 | \|    \|- [**expressions**](./events/expressions/README.md) |  |
 | \|    \|- [**starters**](./events/starters/README.md) | Aggregator for the garganttua-events consumption starters. Each starter         bundles the events engine (DSL + core), one connector (bus / kafka / mail), the JVM         reflection stack and the bootstrap — so a downstream app picks a transport by         depending on a single Maven coordinate. |
-| \|    \|    \|- [**starter-api**](./events/starters/starter-api/README.md) | Batteries-included garganttua-events starter for the garganttua-api connector:         events engine (DSL + core) + api connector (observe garganttua-api business events on a         Domain) + observability connector (transitive) + JVM reflection stack + bootstrap. Depend         on this single artifact to build/run an events app that ingests api business events. |
+| \|    \|    \|- [**starter-api**](./events/starters/starter-api/README.md) | Batteries-included garganttua-events starter for the garganttua-api connector:         events engine (DSL + core) + api connector (observe garganttua-api business events) +         observability connector (full firehose) + JVM reflection stack + bootstrap. Both         connectors self-register on the global observability firehose, so an api-events app         receives events with zero wiring. Depend on this single artifact to build/run an events         app that ingests api business events. |
 | \|    \|    \|- [**starter-bus**](./events/starters/starter-bus/README.md) | Batteries-included garganttua-events starter for the in-memory BigQueue bus         connector: events engine (DSL + core) + bus connector + JVM reflection stack +         bootstrap. Depend on this single artifact to build/run an events app on the bus. |
 | \|    \|    \|- [**starter-kafka**](./events/starters/starter-kafka/README.md) | Batteries-included garganttua-events starter for the Apache Kafka connector:         events engine (DSL + core) + Kafka connector + JVM reflection stack + bootstrap.         Depend on this single artifact to build/run an events app on Kafka. |
 | \|    \|    \|- [**starter-mail**](./events/starters/starter-mail/README.md) | Batteries-included garganttua-events starter for the e-mail (Angus Mail)         connector: events engine (DSL + core) + mail connector + JVM reflection stack +         bootstrap. Depend on this single artifact to build/run an events app producing mail. |
 | \|    \|    \|- [**starter-observability**](./events/starters/starter-observability/README.md) | Batteries-included garganttua-events starter for the observability connector:         events engine (DSL + core) + observability connector (observe any garganttua IObservable —         workflow, runtime, mapper, bootstrap...) + JVM reflection stack + bootstrap. Depend on this         single artifact to build/run an events app that ingests garganttua observability events. |
+| \|    \|    \|- [**starter-websocket**](./events/starters/starter-websocket/README.md) | Batteries-included garganttua-events starter for the bidirectional WebSocket         connector (consumer + producer, client/server topology, pub/sub channels): events engine         (DSL + core) + websocket connector + JVM reflection stack + bootstrap. Depend on this         single artifact to build/run an events app over WebSocket. |
 <!-- AUTO-GENERATED-ARCHITECTURE-STOP -->
 
 ## Internal dependency graph
