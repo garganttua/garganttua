@@ -51,6 +51,7 @@
 		<module>connector-kafka</module>
 		<module>connector-bus</module>
 		<module>connector-mail</module>
+		<module>connector-websocket</module>
 		<module>connector-observability</module>
 		<module>connector-api</module>
 		<module>starters</module>
@@ -71,6 +72,7 @@
 		<kafka.version>3.9.0</kafka.version>
 		<bigqueue.version>0.7.0</bigqueue.version>
 		<angus.mail.version>2.0.2</angus.mail.version>
+		<javawebsocket.version>1.6.0</javawebsocket.version>
 		<jsonpath.version>2.7.0</jsonpath.version>
 	</properties>
 
@@ -189,6 +191,11 @@
 				<groupId>com.leansoft</groupId>
 				<artifactId>bigqueue</artifactId>
 				<version>${bigqueue.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.java-websocket</groupId>
+				<artifactId>Java-WebSocket</artifactId>
+				<version>${javawebsocket.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.eclipse.angus</groupId>
