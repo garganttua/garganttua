@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.injection.BeanReference;
+import com.garganttua.core.injection.BeanStrategy;
 import com.garganttua.core.injection.DiException;
 import com.garganttua.core.injection.IBeanProvider;
 import com.garganttua.core.injection.IInjectionContext;
@@ -186,6 +187,15 @@ public class InjectionContextBehaviourTest {
         BeanReference<DummyBean> ref = new BeanReference<>(IClass.getClass(DummyBean.class),
                 Optional.empty(), Optional.empty(), Set.of());
         assertThrows(DiException.class, () -> ctx.addBean("no-such", ref, new DummyBean()));
+    }
+
+    @Test
+    void addBeanWithoutInstanceRegistersPrototypeByClass() throws DiException {
+        // Prototype by-class registration carries no instance: the Optional<T> overload
+        // is empty, which must resolve to a null instance (not NPE on an empty Optional).
+        BeanReference<DummyBean> ref = new BeanReference<>(IClass.getClass(DummyBean.class),
+                Optional.of(BeanStrategy.prototype), Optional.empty(), Set.of());
+        assertDoesNotThrow(() -> ctx.addBean(GARG, ref));
     }
 
     // ---------- copy ----------

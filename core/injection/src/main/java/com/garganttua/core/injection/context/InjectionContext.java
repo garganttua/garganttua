@@ -595,7 +595,7 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
     @Override
     public <T> void addBean(String provider, BeanReference<T> reference, Optional<T> bean, boolean autoDetect)
             throws DiException {
-        this.addBean(provider, reference, bean.orElseGet(null), autoDetect);
+        this.addBean(provider, reference, bean.orElse(null), autoDetect);
     }
 
     @Override
@@ -605,7 +605,7 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
 
     @Override
     public <T> void addBean(String provider, BeanReference<T> reference, Optional<T> bean) throws DiException {
-        this.addBean(provider, reference, bean.orElseGet(null), false);
+        this.addBean(provider, reference, bean.orElse(null), false);
     }
 
     @Override
