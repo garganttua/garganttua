@@ -1,6 +1,7 @@
 package com.garganttua.events.api;
 
 import com.garganttua.core.lifecycle.ILifecycle;
+import com.garganttua.core.observability.IObservable;
 import com.garganttua.events.api.exceptions.EventsException;
 
 /**
@@ -11,8 +12,14 @@ import com.garganttua.events.api.exceptions.EventsException;
  * identity and human-readable descriptions of its configured routes, joining each
  * route to the topics, connectors and dataflows referenced by its subscriptions.
  * </p>
+ *
+ * <p>
+ * The engine is also {@link IObservable}: callers can attach observers to receive the
+ * {@code events:route:*} observability events the engine emits around each routed message,
+ * mirroring how garganttua-api's {@code IDomain} exposes {@code api:operation:*} events.
+ * </p>
  */
-public interface IEvents extends ILifecycle {
+public interface IEvents extends ILifecycle, IObservable {
 
 	/**
 	 * Returns the asset identifier this engine instance serves.

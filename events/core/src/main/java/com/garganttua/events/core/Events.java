@@ -3,14 +3,12 @@ package com.garganttua.events.core;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 
 import com.garganttua.core.bootstrap.banner.IBootstrapSummaryContributor;
 import com.garganttua.core.lifecycle.AbstractLifecycle;
@@ -39,7 +37,10 @@ import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
 import com.garganttua.core.injection.BeanReference;
 import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
+import com.garganttua.core.observability.IObserver;
 import com.garganttua.core.observability.Logger;
+import com.garganttua.core.observability.ObservableEvent;
+import com.garganttua.core.observability.ObservableRegistry;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.events.api.connectors.annotations.Connector;
@@ -57,6 +58,11 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	private final Map<String, Map<String, ClusterRuntime>> runtimes = new HashMap<>();
 	private final EventsPublisher publisher = new EventsPublisher(runtimes);
 	private final List<Thread> consumerThreads = new ArrayList<>();
+
+	// Local registry for the events:route:* ObservableEvents emitted around message routing;
+	// observers attached via addObserver receive correlated Start/End/Error events.
+	private final ObservableRegistry observableRegistry = new ObservableRegistry();
+	private final RouteObserver routeObserver = new RouteObserver(observableRegistry);
 	private ExecutorService executorService;
 	private IInjectionContext injectionContext;
 
@@ -117,6 +123,16 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		return this.publisher.producer(subscriptionId);
 	}
 
+	@Override
+	public void addObserver(IObserver<ObservableEvent> observer) {
+		this.observableRegistry.addObserver(observer);
+	}
+
+	@Override
+	public void removeObserver(IObserver<ObservableEvent> observer) {
+		this.observableRegistry.removeObserver(observer);
+	}
+
 	// --- IBootstrapSummaryContributor implementation ---
 
 	/**
@@ -137,25 +153,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	 */
 	@Override
 	public Map<String, String> getSummaryItems() {
-		Map<String, String> items = new LinkedHashMap<>();
-		items.put("Asset", assetId);
-		items.put("Clusters", String.valueOf(contexts.size()));
-		items.put("Routes", String.valueOf(count(ContextDef::routes)));
-		items.put("Connectors", String.valueOf(count(ContextDef::connectors)));
-		items.put("Topics", String.valueOf(count(ContextDef::topics)));
-		items.put("Dataflows", String.valueOf(count(ContextDef::dataflows)));
-		items.put("Subscriptions", String.valueOf(count(ContextDef::subscriptions)));
-		return items;
-	}
-
-	/** Sums the size of the selected list across all contexts, treating null as empty. */
-	private int count(Function<ContextDef, List<?>> selector) {
-		int total = 0;
-		for (ContextDef context : contexts) {
-			List<?> list = selector.apply(context);
-			total += list == null ? 0 : list.size();
-		}
-		return total;
+		return EventsSummary.items(assetId, contexts);
 	}
 
 	@Override
@@ -438,7 +436,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 				Map<String, Object> params = new HashMap<>();
 				params.put("exchange", exchange);
 				WorkflowInput input = WorkflowInput.of(exchange, params);
-				workflow.execute(input);
+				routeObserver.execute(routeDef.uuid(), workflow, input, exchange);
 			});
 		} catch (Exception e) {
 			log.error("Consumer thread error for route {}", routeDef.uuid(), e);

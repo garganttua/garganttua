@@ -64,6 +64,17 @@ public final class GlobalObservers {
 	}
 
 	/**
+	 * Reports whether any firehose observer is currently registered. Cheap (set emptiness check),
+	 * so a hot path can use it together with a per-engine registry check to skip building and
+	 * emitting observability events entirely when nothing — local or global — is listening.
+	 *
+	 * @return {@code true} if at least one global observer is registered, {@code false} otherwise
+	 */
+	public static boolean hasObservers() {
+		return !OBSERVERS.isEmpty();
+	}
+
+	/**
 	 * Broadcast the event to every registered firehose observer. Exceptions thrown by an observer
 	 * are caught and logged at warn level; delivery continues with the remaining observers. This
 	 * method never throws.
