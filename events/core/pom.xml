@@ -83,6 +83,24 @@
 			<artifactId>garganttua-configuration</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- E2E route test: the events @Expression functions (produce/set_header/log) are
+		     discovered by the expression context at runtime; the test needs them on its classpath
+		     to drive a real route through the engine. Test scope only (no production cycle:
+		     events-expressions depends on events-api, not events-core). -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-events-expressions</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- JVM annotation scanner for the e2e route test: lets the expression context discover the
+		     events @Expression functions by package scan (no AOT index needed at test time). -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-reflections</artifactId>
+			<version>${garganttua.core.version}</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<!-- Supplies the checkstyle SuppressionFilter location the shared

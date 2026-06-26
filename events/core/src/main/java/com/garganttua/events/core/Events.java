@@ -33,7 +33,6 @@ import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.events.api.exceptions.EventsException;
 import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.dsl.IObservableBuilder;
-import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
 import com.garganttua.core.injection.BeanReference;
 import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
@@ -53,7 +52,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	private final List<ContextDef> contexts;
 	private final Map<String, IClass<? extends IConnector>> connectorRegistry;
 	private final IObservableBuilder<?, ?> injectionContextBuilder;
-	private final IObservableBuilder<?, ?> expressionContextBuilder;
+	private final IObservableBuilder<?, ?> scriptsBuilder;
 
 	private final Map<String, Map<String, ClusterRuntime>> runtimes = new HashMap<>();
 	private final EventsPublisher publisher = new EventsPublisher(runtimes);
@@ -69,14 +68,16 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	public Events(String assetId, List<ContextDef> contexts,
 			Map<String, IClass<? extends IConnector>> connectorRegistry,
 			IObservableBuilder<?, ?> injectionContextBuilder,
-			IObservableBuilder<?, ?> expressionContextBuilder) {
+			IObservableBuilder<?, ?> scriptsBuilder) {
 		this.assetId = assetId;
 		// Defensive copies: the engine owns immutable snapshots of the supplied
 		// configuration; callers must not be able to mutate engine internals afterwards.
 		this.contexts = new ArrayList<>(contexts);
 		this.connectorRegistry = new HashMap<>(connectorRegistry);
 		this.injectionContextBuilder = injectionContextBuilder;
-		this.expressionContextBuilder = expressionContextBuilder;
+		// The scripts builder carries the full Workflows → Scripts → {Expression, Runtimes}
+		// execution chain, so route-stage scripts actually run (a bare expression builder does not).
+		this.scriptsBuilder = scriptsBuilder;
 	}
 
 	/**
@@ -292,7 +293,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 
 			IWorkflowBuilder wb = WorkflowsBuilder.builder()
 					.provide(injectionContextBuilder)
-					.provide(expressionContextBuilder)
+					.provide(scriptsBuilder)
 					.workflow("route-" + routeDef.uuid())
 					.variable("assetId", assetId)
 					.variable("tenantId", tenantId)

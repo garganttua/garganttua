@@ -13,7 +13,7 @@ import com.garganttua.core.dsl.IObservableBuilder;
 import com.garganttua.core.dsl.annotations.ConfigurableBuilder;
 import com.garganttua.core.dsl.dependency.AbstractAutomaticDependentBuilder;
 import com.garganttua.core.dsl.dependency.DependencySpec;
-import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
+import com.garganttua.core.script.dsl.IScriptsBuilder;
 import com.garganttua.core.injection.BeanReference;
 import com.garganttua.core.injection.BeanStrategy;
 import com.garganttua.core.injection.IInjectionContext;
@@ -43,9 +43,13 @@ public class EventsBuilder
 
 	private static final Logger log = Logger.getLogger(EventsBuilder.class);
 
+	// Depend on the bootstrap-provided IScriptsBuilder (not a bare expression builder): it carries
+	// the full Workflows → Scripts → {Expression, Runtimes, ClassLoader} execution chain, so route
+	// workflows can actually RUN their @Expression stages. A bare ExpressionContextBuilder lacks the
+	// scripts/runtime layers, so stages compiled but never executed.
 	private static final Set<DependencySpec> DEPENDENCIES = Set.of(
 			DependencySpec.require(IClass.getClass(IInjectionContextBuilder.class)),
-			DependencySpec.require(IClass.getClass(IExpressionContextBuilder.class)));
+			DependencySpec.require(IClass.getClass(IScriptsBuilder.class)));
 
 	/** The garganttua bean-provider scope connectors are registered under. */
 	private static final String CONNECTOR_PROVIDER = Predefined.BeanProviders.garganttua.toString();
@@ -79,7 +83,7 @@ public class EventsBuilder
 	private final List<IConnector> connectorInstances = new ArrayList<>();
 	private final List<ConnectorReference> connectorReferences = new ArrayList<>();
 	private IObservableBuilder<?, ?> injectionContextBuilder;
-	private IObservableBuilder<?, ?> expressionContextBuilder;
+	private IObservableBuilder<?, ?> scriptsBuilder;
 
 	private EventsBuilder() {
 		super(DEPENDENCIES);
@@ -373,7 +377,7 @@ public class EventsBuilder
 		String effectiveAssetId = (assetId == null || assetId.isEmpty()) ? "default" : assetId;
 
 		return new Events(effectiveAssetId, contexts, connectorRegistry,
-				injectionContextBuilder, expressionContextBuilder);
+				injectionContextBuilder, scriptsBuilder);
 	}
 
 	@Override
@@ -382,8 +386,8 @@ public class EventsBuilder
 		// their built contexts are delivered separately via the dependency callbacks.
 		if (dependency instanceof IInjectionContextBuilder) {
 			this.injectionContextBuilder = dependency;
-		} else if (dependency instanceof IExpressionContextBuilder) {
-			this.expressionContextBuilder = dependency;
+		} else if (dependency instanceof IScriptsBuilder) {
+			this.scriptsBuilder = dependency;
 		}
 		return super.provide(dependency);
 	}
