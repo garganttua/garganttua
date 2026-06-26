@@ -215,6 +215,11 @@ public class EventsBuilder
 		return this.connectorSuppliers.size();
 	}
 
+	/** Package-private accessor for tests asserting {@link #context(String, String)} population. */
+	int contextCount() {
+		return this.contexts.size();
+	}
+
 	@Override
 	protected void doAutoDetection() throws DslException {
 		// Mirrors InjectionAutoDetector / ApiBuilderAssetDetection: discover @Connector classes via

@@ -7,6 +7,12 @@ import com.garganttua.core.supply.dsl.ISupplierBuilder;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IEvents;
 
+/**
+ * Fluent builder of the events topology (asset, cluster contexts, connectors, routes).
+ *
+ * <p>Applications contribute a configured topology to the shared bootstrap by implementing
+ * {@link IEventsTopologyContributor} rather than building this directly.</p>
+ */
 public interface IEventsBuilder extends IDependentBuilder<IEventsBuilder, IEvents> {
 
 	IEventsBuilder asset(String assetId);
