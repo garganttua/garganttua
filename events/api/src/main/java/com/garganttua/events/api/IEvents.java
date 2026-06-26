@@ -1,6 +1,7 @@
 package com.garganttua.events.api;
 
 import com.garganttua.core.lifecycle.ILifecycle;
+import com.garganttua.events.api.exceptions.EventsException;
 
 /**
  * Engine contract for the Garganttua events runtime.
@@ -47,4 +48,33 @@ public interface IEvents extends ILifecycle {
 	 *         is configured
 	 */
 	String describeRoutes();
+
+	/**
+	 * Publishes a raw payload onto the given topic, resolved against the running topology's
+	 * subscriptions.
+	 *
+	 * <p>The first subscription whose topic equals {@code topic} is selected, and the payload is
+	 * pushed through the engine's own connector instance for that subscription (no duplicate
+	 * connector is created). Thread-safe: callable from arbitrary application threads; the producer
+	 * backing the resolved subscription is memoised, and per-message thread-safety delegates to the
+	 * connector's producer.</p>
+	 *
+	 * @param topic   the topic string to publish onto; must match a subscription topic
+	 * @param payload the raw message bytes
+	 * @throws EventsException when no subscription declares that topic, or publication fails
+	 */
+	void publish(String topic, byte[] payload) throws EventsException;
+
+	/**
+	 * Returns a reusable producer for the subscription with the given id.
+	 *
+	 * <p>The producer is backed by the engine's own connector instance for that subscription and is
+	 * memoised, so repeated calls for the same subscription id return the same producer. Thread-safe:
+	 * callable from arbitrary application threads.</p>
+	 *
+	 * @param subscriptionId the id of the subscription whose producer is requested
+	 * @return a reusable producer for that subscription, never {@code null}
+	 * @throws EventsException when no subscription has that id, or the producer cannot be created
+	 */
+	IProducer producer(String subscriptionId) throws EventsException;
 }

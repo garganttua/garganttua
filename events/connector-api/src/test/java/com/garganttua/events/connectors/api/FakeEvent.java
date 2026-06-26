@@ -17,6 +17,7 @@ final class FakeEvent implements IEvent {
 
 	private String tenantId;
 	private String userId;
+	private Object in;
 	private Object out;
 	private OperationResponseCode code;
 
@@ -72,12 +73,12 @@ final class FakeEvent implements IEvent {
 
 	@Override
 	public Object getIn() {
-		return null;
+		return this.in;
 	}
 
 	@Override
 	public void setIn(Object in) {
-		// unused
+		this.in = in;
 	}
 
 	@Override

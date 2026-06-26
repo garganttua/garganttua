@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.garganttua.api.commons.event.IEvent;
 import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.core.observability.Logger;
@@ -13,9 +14,15 @@ import com.garganttua.core.observability.Logger;
  * Serialises an api business {@link IEvent} (the payload of an {@code api:operation:*}
  * {@link com.garganttua.core.observability.EndEvent}/{@code ErrorEvent}) to compact JSON bytes.
  *
- * <p>The {@code in}/{@code out} fields of an {@link IEvent} are arbitrary domain objects that may
- * not be Jackson-serialisable, so they are rendered via {@link Object#toString()} rather than
- * deep-serialised. Serialisation never throws: any failure falls back to a minimal JSON object.</p>
+ * <p>The {@code in}/{@code out} fields of an {@link IEvent} are arbitrary domain objects that are
+ * deep-serialised to a nested JSON node via Jackson ({@link ObjectMapper#valueToTree(Object)}), so a
+ * standard POJO/record/Lombok entity becomes a nested object and a dataflow transform stage can
+ * navigate it (e.g. {@code json_path(@exchange, "$.in.email")}). Jackson annotations on the entity
+ * (e.g. {@code @JsonIgnore}) therefore exclude sensitive fields for free — no connector-side
+ * configuration is needed for v1. Each payload is serialised in isolation: if {@code valueToTree}
+ * throws on a non-serialisable object, that single field falls back to its
+ * {@link String#valueOf(Object)} text; {@code null} stays {@code null}. Serialisation never throws:
+ * any remaining failure falls back to a minimal JSON object.</p>
  */
 public final class ApiEventCodec {
 
@@ -58,9 +65,26 @@ public final class ApiEventCodec {
 		json.put("userId", event.getUserId());
 		json.put("inDate", str(event.getInDate()));
 		json.put("outDate", str(event.getOutDate()));
-		json.put("in", str(event.getIn()));
-		json.put("out", str(event.getOut()));
+		// Deep-serialise the business payloads so they nest as JSON objects (json_path navigable).
+		json.put("in", node(event.getIn()));
+		json.put("out", node(event.getOut()));
 		return json;
+	}
+
+	/**
+	 * Deep-serialise a business payload to a Jackson node, isolating any failure: a non-serialisable
+	 * object degrades to its {@link String#valueOf(Object)} text node rather than aborting the codec.
+	 */
+	private JsonNode node(Object value) {
+		if (value == null) {
+			return null;
+		}
+		try {
+			return this.mapper.valueToTree(value);
+		} catch (RuntimeException e) {
+			LOG.debug("Falling back to toString() for non-serialisable payload: {}", e.getMessage());
+			return this.mapper.getNodeFactory().textNode(String.valueOf(value));
+		}
 	}
 
 	private String str(Object value) {

@@ -32,6 +32,7 @@ import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.RouteDef;
 import com.garganttua.events.api.context.RouteStageDef;
 import com.garganttua.events.api.context.SubscriptionDef;
+import com.garganttua.events.api.exceptions.EventsException;
 import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.dsl.IObservableBuilder;
 import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
@@ -54,6 +55,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	private final IObservableBuilder<?, ?> expressionContextBuilder;
 
 	private final Map<String, Map<String, ClusterRuntime>> runtimes = new HashMap<>();
+	private final EventsPublisher publisher = new EventsPublisher(runtimes);
 	private final List<Thread> consumerThreads = new ArrayList<>();
 	private ExecutorService executorService;
 	private IInjectionContext injectionContext;
@@ -105,6 +107,16 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		return RouteDescriptor.describeRoutes(contexts);
 	}
 
+	@Override
+	public void publish(String topic, byte[] payload) throws EventsException {
+		this.publisher.publish(topic, payload);
+	}
+
+	@Override
+	public IProducer producer(String subscriptionId) throws EventsException {
+		return this.publisher.producer(subscriptionId);
+	}
+
 	// --- IBootstrapSummaryContributor implementation ---
 
 	/**
@@ -148,11 +160,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 
 	@Override
 	protected ILifecycle doInit() throws LifecycleException {
-		log.info("============================================");
-		log.info("====== Starting Garganttua Events     ======");
-		log.info("====== ASSET [{}]", assetId);
-		log.info("============================================");
-
+		log.info("==== Starting Garganttua Events — ASSET [{}] ====", assetId);
 		this.executorService = Executors.newCachedThreadPool();
 
 		for (ContextDef context : contexts) {
@@ -440,23 +448,19 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	@Override
 	protected ILifecycle doStop() throws LifecycleException {
 		log.info("==== STOPPING GARGANTTUA EVENTS ====");
-
-		// Stop consumers
 		for (Map.Entry<String, Map<String, ClusterRuntime>> tenantEntry : runtimes.entrySet()) {
 			for (Map.Entry<String, ClusterRuntime> clusterEntry : tenantEntry.getValue().entrySet()) {
 				stopRuntime(clusterEntry.getValue());
 			}
 		}
-
+		this.publisher.close(); // best-effort stop of ad-hoc producers from publish(...)/producer(...)
 		for (Thread t : consumerThreads) {
 			t.interrupt();
 		}
 		consumerThreads.clear();
-
 		if (executorService != null) {
 			executorService.shutdown();
 		}
-
 		log.info("==== GARGANTTUA EVENTS STOPPED ====");
 		return this;
 	}
