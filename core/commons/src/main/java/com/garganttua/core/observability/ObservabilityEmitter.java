@@ -114,11 +114,17 @@ public final class ObservabilityEmitter {
 		}
 
 		/**
-		 * @return whether any observer is registered on the active or local
-		 *         registry; fire methods short-circuit when this is {@code false}.
+		 * @return whether any observer is registered on the process-global firehose, or on the
+		 *         active or local registry; fire methods short-circuit when this is {@code false}.
+		 *         The global check is required so cross-cutting sinks that self-register on
+		 *         {@link GlobalObservers} (e.g. event connectors) — and never on a per-engine
+		 *         registry — still receive every emitted event, honouring the GlobalObservers
+		 *         "captures everything" contract.
 		 */
 		public boolean hasObservers() {
-			return (active != null && active.hasObservers()) || (local != null && local != active && local.hasObservers());
+			return GlobalObservers.hasObservers()
+					|| (active != null && active.hasObservers())
+					|| (local != null && local != active && local.hasObservers());
 		}
 
 		/**

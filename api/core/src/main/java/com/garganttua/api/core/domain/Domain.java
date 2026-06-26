@@ -31,6 +31,7 @@ import com.garganttua.api.commons.service.IRequestBuilder;
 import com.garganttua.api.core.mapper.DefaultMapper;
 import com.garganttua.core.lifecycle.AbstractLifecycle;
 import com.garganttua.core.lifecycle.ILifecycle;
+import com.garganttua.core.observability.GlobalObservers;
 import com.garganttua.core.observability.IObserver;
 import com.garganttua.core.observability.ObservabilityEmitter;
 import com.garganttua.core.observability.ObservableEvent;
@@ -241,11 +242,13 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         ensureStarted();
         long startNanos = System.nanoTime();
 
-        // Fast path: when nothing subscribed to our registry, skip the emit
-        // scope entirely and call doInvoke directly. Production traffic that
-        // opted out of @Observer pays no overhead beyond the hasObservers()
-        // short-circuit on the registry.
-        if (!this.observableRegistry.hasObservers()) {
+        // Fast path: when nothing subscribed to our registry AND nothing is on the process-global
+        // firehose, skip the emit scope entirely and call doInvoke directly. Both must be empty —
+        // event connectors (and other cross-cutting sinks) self-register on GlobalObservers, not on
+        // this Domain's local registry, so checking only the local registry would silently drop
+        // api:operation:* events for them. Production traffic that opted out of @Observer with no
+        // firehose sink pays no overhead beyond the two hasObservers() short-circuits.
+        if (!this.observableRegistry.hasObservers() && !GlobalObservers.hasObservers()) {
             OperationResponse response = doInvoke(request, options);
             return response.withProcessingTime(java.time.Duration.ofNanos(System.nanoTime() - startNanos));
         }

@@ -179,6 +179,30 @@ class ObservabilityEmitterBehaviourTest {
 	}
 
 	@Test
+	void fire_reachesGlobalFirehoseEvenWhenLocalRegistryHasNoObserver() {
+		// Regression: a cross-cutting sink (e.g. an event connector) registers on the process-global
+		// GlobalObservers firehose, NOT on any per-engine registry. The scope's hasObservers() must
+		// therefore consider the firehose, else fire*() short-circuits and the sink is starved —
+		// which silently dropped every api:operation:* event for the events api-connector.
+		List<ObservableEvent> firehose = new ArrayList<>();
+		IObserver<ObservableEvent> globalObs = firehose::add;
+		GlobalObservers.addObserver(globalObs);
+		try {
+			ObservableRegistry bareLocal = new ObservableRegistry(); // no local observer
+			try (Scope scope = ObservabilityEmitter.open(bareLocal, UUID.randomUUID())) {
+				assertTrue(scope.hasObservers(),
+						"a registered global observer must keep the scope active despite an empty local registry");
+				scope.fireEnd("api:operation:contacts:create", 200);
+			}
+			assertEquals(1, firehose.size(),
+					"the firehose observer must receive the event though no local observer is attached");
+			assertEquals("api:operation:contacts:create", firehose.get(0).source());
+		} finally {
+			GlobalObservers.removeObserver(globalObs);
+		}
+	}
+
+	@Test
 	void open_firesToBothActiveAndLocalWhenNested() {
 		// parent active registry + distinct local registry: nested open reuses
 		// parent as "active" but keeps its own "local" registry, so both observe.
