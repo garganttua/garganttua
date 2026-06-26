@@ -250,6 +250,13 @@ public class Workflow implements IWorkflow, IObservable {
             script.setVariable(preset.getKey(), preset.getValue());
         }
 
+        // 2b. Bind named input parameters as named variables too, so stages can reference them as
+        // @name (e.g. the events engine passes the Exchange as the "exchange" parameter for
+        // produce(@exchange, ...)). They remain available positionally via buildArgs below.
+        for (var param : input.parameters().entrySet()) {
+            script.setVariable(param.getKey(), param.getValue());
+        }
+
         // 3. Build positional arguments: payload + parameters
         List<Object> args = buildArgs(input);
 

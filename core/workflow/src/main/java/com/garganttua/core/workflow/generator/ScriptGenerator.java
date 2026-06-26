@@ -142,10 +142,24 @@ public class ScriptGenerator {
         }
         script.append("# Preset variables\n");
         for (var entry : presetVariables.entrySet()) {
+            // Only inline values that have a faithful script-literal form. Object-valued presets
+            // (e.g. a route's producer/exchange instance) cannot be rendered as script: their
+            // toString() is not valid syntax and may contain '$'/'@' that breaks the lexer. Such
+            // presets are bound at execution time via IScript.setVariable(...), so the script just
+            // references them by name (@var) — no inline assignment is emitted for them here.
+            if (!isInlineableLiteral(entry.getValue())) {
+                continue;
+            }
             script.append(entry.getKey()).append(ASSIGN)
                   .append(formatValue(entry.getValue())).append("\n");
         }
         script.append("\n");
+    }
+
+    /** @return whether the value can be rendered as a faithful script literal (else bound at runtime). */
+    private boolean isInlineableLiteral(Object value) {
+        return value == null || value instanceof String || value instanceof Number
+                || value instanceof Boolean || value instanceof Character;
     }
 
     private void appendStage(StringBuilder script, WorkflowStage stage, boolean inlineAll,

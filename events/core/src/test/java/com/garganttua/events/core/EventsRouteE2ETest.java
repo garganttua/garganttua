@@ -184,12 +184,6 @@ class EventsRouteE2ETest {
 	}
 
 	@Test
-	@Disabled("Reproduction in progress. The scripts-builder wiring fix makes route stages EXECUTE "
-			+ "(previously skipped). This now surfaces the NEXT issue: the expression engine resolves "
-			+ "stage functions by the variable's compile-time type — @exchange is typed Object, so "
-			+ "set_header(@exchange,...) resolves to set_header(Object,String,String) and misses the "
-			+ "set_header(Exchange,String,String) overload (Unknown function). Re-enable once route-stage "
-			+ "function-overload resolution against @-variables is addressed.")
 	@DisplayName("a fed message runs the route stages and is produced to the OUT connector")
 	void messageFlowsThroughRouteStagesToOutConnector() throws Exception {
 		ContextDef context = new ContextDef("tenant", "cluster",

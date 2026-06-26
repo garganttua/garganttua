@@ -187,7 +187,12 @@ final class FactoryKeyResolver {
         }
         Class<?> factoryParamType = resolveSimpleTypeName(paramTypeName);
         if (factoryParamType == null) {
-            return NO_MATCH;
+            // Unresolvable param type: an application type (e.g. the events Exchange / IProducer)
+            // absent from the simple-name table, so the resolver cannot compare it at compile time.
+            // Accept it as a weak match (this is the fallback path, reached only after the exact key
+            // missed) and trust the runtime value — covers both an Object-typed @variable and a
+            // concrete instance bound as a preset variable. The runtime still type-checks the call.
+            return 0;
         }
         if (argType == Object.class || factoryParamType == Object.class) {
             return 0;
