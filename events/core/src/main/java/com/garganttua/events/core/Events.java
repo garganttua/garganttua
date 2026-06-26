@@ -3,13 +3,16 @@ package com.garganttua.events.core;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 
+import com.garganttua.core.bootstrap.banner.IBootstrapSummaryContributor;
 import com.garganttua.core.lifecycle.AbstractLifecycle;
 import com.garganttua.core.lifecycle.ILifecycle;
 import com.garganttua.core.lifecycle.LifecycleException;
@@ -40,7 +43,7 @@ import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.events.api.connectors.annotations.Connector;
 
-public class Events extends AbstractLifecycle implements IEvents {
+public class Events extends AbstractLifecycle implements IEvents, IBootstrapSummaryContributor {
 
 	private static final Logger log = Logger.getLogger(Events.class);
 
@@ -90,6 +93,57 @@ public class Events extends AbstractLifecycle implements IEvents {
 	@Override
 	public IReflection reflection() {
 		return IClass.getReflection();
+	}
+
+	@Override
+	public String describeRoute(String routeUuid) {
+		return RouteDescriptor.describeRoute(contexts, routeUuid);
+	}
+
+	@Override
+	public String describeRoutes() {
+		return RouteDescriptor.describeRoutes(contexts);
+	}
+
+	// --- IBootstrapSummaryContributor implementation ---
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @return the {@code "Events"} category label
+	 */
+	@Override
+	public String getSummaryCategory() {
+		return "Events";
+	}
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @return the asset id, cluster count and totals (summed across every context) of
+	 *         routes, connectors, topics, dataflows and subscriptions
+	 */
+	@Override
+	public Map<String, String> getSummaryItems() {
+		Map<String, String> items = new LinkedHashMap<>();
+		items.put("Asset", assetId);
+		items.put("Clusters", String.valueOf(contexts.size()));
+		items.put("Routes", String.valueOf(count(ContextDef::routes)));
+		items.put("Connectors", String.valueOf(count(ContextDef::connectors)));
+		items.put("Topics", String.valueOf(count(ContextDef::topics)));
+		items.put("Dataflows", String.valueOf(count(ContextDef::dataflows)));
+		items.put("Subscriptions", String.valueOf(count(ContextDef::subscriptions)));
+		return items;
+	}
+
+	/** Sums the size of the selected list across all contexts, treating null as empty. */
+	private int count(Function<ContextDef, List<?>> selector) {
+		int total = 0;
+		for (ContextDef context : contexts) {
+			List<?> list = selector.apply(context);
+			total += list == null ? 0 : list.size();
+		}
+		return total;
 	}
 
 	@Override
