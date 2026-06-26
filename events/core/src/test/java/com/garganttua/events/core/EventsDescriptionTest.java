@@ -129,13 +129,19 @@ class EventsDescriptionTest {
 			assertEquals("2", items.get("Topics"));
 			assertEquals("1", items.get("Dataflows"));
 			assertEquals("2", items.get("Subscriptions"));
+			// Per-route / per-connector detail (mirrors ApiSummary's per-domain detail)
+			assertEquals("orders.in (kafka1) → orders.out (kafka1)", items.get("  Route 'r1'"));
+			assertEquals("filter", items.get("    stages"));
+			assertEquals("kafka:1.0", items.get("  Connector 'kafka1'"));
 		}
 
 		@Test
 		@DisplayName("item order is stable")
 		void stableOrder() {
 			List<String> keys = List.copyOf(buildEngine().getSummaryItems().keySet());
-			assertEquals(List.of("Asset", "Clusters", "Routes", "Connectors",
+			assertEquals(List.of("Asset", "Clusters",
+					"Routes", "  Route 'r1'", "    stages",
+					"Connectors", "  Connector 'kafka1'",
 					"Topics", "Dataflows", "Subscriptions"), keys);
 			assertFalse(keys.isEmpty());
 		}
