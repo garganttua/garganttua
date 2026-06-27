@@ -746,12 +746,14 @@ public class Bootstrap extends AbstractAutomaticDependentBuilder<IBootstrap, IBu
         try {
             lifecycleObject.onInit();
         } catch (LifecycleException e) {
-            log.debug("onInit failed for {}: {}", built.getClass().getSimpleName(), e.getMessage());
+            // Raised from debug to warn: a built-but-not-initialised object (e.g. a connector or
+            // engine that fails onInit) must be VISIBLE, not silently "built but not started".
+            log.warn("onInit failed for {}: {}", built.getClass().getName(), e.getMessage(), e);
         }
         try {
             lifecycleObject.onStart();
         } catch (LifecycleException e) {
-            log.debug("onStart failed for {}: {}", built.getClass().getSimpleName(), e.getMessage());
+            log.warn("onStart failed for {}: {}", built.getClass().getName(), e.getMessage(), e);
         }
     }
 

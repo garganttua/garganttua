@@ -26,6 +26,13 @@
             <artifactId>garganttua-events-connector-bus</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Built-in @Expression route-stage functions (log / produce / protocol_* / filter_*).
+             On the classpath so EventExpressions resolves without -Dgarganttua.packages. -->
+        <dependency>
+            <groupId>com.garganttua</groupId>
+            <artifactId>garganttua-events-expressions</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Bootstrap wires reflection + injection + expression + the events module. -->
         <dependency>
             <groupId>com.garganttua.core</groupId>
