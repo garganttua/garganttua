@@ -380,24 +380,18 @@ public class AOTMethod implements IMethod {
     // --- AnnotatedElement ---
 
     @Override
-    @SuppressWarnings("unchecked")
     public <T extends Annotation> T getAnnotation(IClass<T> annotationClass) {
-        for (Annotation a : annotations) {
-            if (a.annotationType().getName().equals(annotationClass.getName())) {
-                return (T) a;
-            }
-        }
-        return null;
+        return AOTMethodAnnotations.get(annotations, this::resolveMethod, annotationClass.getName());
     }
 
     @Override
     public Annotation[] getAnnotations() {
-        return annotations.clone();
+        return AOTMethodAnnotations.merge(annotations, this::resolveMethod);
     }
 
     @Override
     public Annotation[] getDeclaredAnnotations() {
-        return annotations.clone();
+        return AOTMethodAnnotations.merge(annotations, this::resolveMethod);
     }
 
     @Override
