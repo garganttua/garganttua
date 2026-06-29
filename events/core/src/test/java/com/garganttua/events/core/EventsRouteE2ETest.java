@@ -410,6 +410,45 @@ class EventsRouteE2ETest {
 		return e;
 	}
 
+	@Test
+	@DisplayName("filter_in (auto-injected from the consumer config) drops a message addressed elsewhere")
+	void filterInDropsMisaddressedMessage() throws Exception {
+		ObjectMapper mapper = new ObjectMapper();
+		ConsumerConfigurationDef onlyToAsset = new ConsumerConfigurationDef(
+				ProcessMode.EVERYBODY, OriginPolicy.FROM_ANY, DestinationPolicy.ONLY_TO_ASSET, null, 1);
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out")),
+				List.of(new DataflowDef("df-1", "flow", "mem", true, "1", true)), // encapsulated
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(
+						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, onlyToAsset, null, null),
+						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
+				List.of(new RouteDef("route-1", "in", List.of("out"), List.of(), null, null)),
+				null);
+		Map<String, IClass<? extends IConnector>> registry = Map.of(
+				"mem:1.0", IClass.getClass(MemConnector.class));
+		engine = new Events("asset", List.of(context), registry, injectionContextBuilder, scriptsBuilder);
+		engine.onInit();
+		engine.onStart();
+		Consumer<byte[]> handler = awaitHandler();
+
+		// Addressed to ANOTHER asset → filter_in (ONLY_TO_ASSET) drops it.
+		handler.accept(mapper.writeValueAsBytes(envelope("other-asset")));
+		TimeUnit.MILLISECONDS.sleep(300);
+		assertEquals(0, MemConnector.PRODUCED.size(), "a message addressed to another asset is filtered out");
+
+		// Addressed to THIS asset → passes the filter and is produced.
+		handler.accept(mapper.writeValueAsBytes(envelope("asset")));
+		assertNotNull(awaitProduced(), "a message addressed to this asset passes filter_in");
+		assertEquals(1, MemConnector.PRODUCED.size());
+	}
+
+	/** A serialized encapsulated {@link Message} addressed to {@code toUuid}, dataflow version "1". */
+	private static Message envelope(String toUuid) {
+		return new Message(Map.of(), null, null, List.of(), "tenant",
+				"payload".getBytes(StandardCharsets.UTF_8), "application/json", toUuid, "1");
+	}
+
 	private Consumer<byte[]> awaitHandler() throws InterruptedException {
 		Consumer<byte[]> handler = null;
 		for (int i = 0; i < 50 && handler == null; i++) {

@@ -20,6 +20,7 @@ import com.garganttua.events.api.OutboundTarget;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.RouteDef;
 import com.garganttua.events.api.context.RouteStageDef;
+import com.garganttua.events.api.context.ConsumerConfigurationDef;
 import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.events.api.enums.PublicationMode;
 
@@ -84,7 +85,7 @@ final class RouteWorkflowCompiler {
 			DataflowDef fromDf = bindInbound(wb, runtime, fromSub);
 			boolean hasProducer = bindOutbound(routeDef, runtime, wb);
 
-			addStages(routeDef, wb, isEncapsulated(fromDf), hasProducer);
+			addStages(routeDef, wb, fromSub, isEncapsulated(fromDf), hasProducer);
 
 			return wb.build();
 		} catch (DslException e) {
@@ -204,12 +205,26 @@ final class RouteWorkflowCompiler {
 	 * encapsulated destination is envelope-wrapped on the fly). The route author declares only business
 	 * logic; envelope (de)serialisation and emission to one or many destinations are automatic.
 	 */
-	private void addStages(RouteDef routeDef, IWorkflowBuilder wb, boolean fromEncapsulated,
-			boolean hasProducer) throws DslException {
+	private void addStages(RouteDef routeDef, IWorkflowBuilder wb, SubscriptionDef fromSub,
+			boolean fromEncapsulated, boolean hasProducer) throws DslException {
 		if (fromEncapsulated) {
 			addExpressionStage(wb, "protocol_in",
 					"protocol_in(@exchange, @assetId, @clusterId, @subscriptionId, @version)",
 					null, null, null);
+			// Inbound filter (legacy GGInFilterProcessor), opt-in via the subscription's consumer
+			// config. Only on encapsulated inbound flows, where protocol_in has set the dataflow
+			// version that filter_in checks; a non-encapsulated flow has no version to filter on.
+			ConsumerConfigurationDef consumer = fromSub.consumerConfiguration();
+			if (consumer != null) {
+				String destination = consumer.destinationPolicy() != null
+						? consumer.destinationPolicy().name() : "TO_ANY";
+				String origin = consumer.originPolicy() != null
+						? consumer.originPolicy().name() : "FROM_ANY";
+				addExpressionStage(wb, "filter_in",
+						"filter_in(@exchange, \"" + destination + "\", \"" + origin
+								+ "\", @assetId, @clusterId, @version)",
+						null, null, null);
+			}
 		}
 		if (routeDef.stages() != null) {
 			for (RouteStageDef stageDef : routeDef.stages()) {

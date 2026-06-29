@@ -12,8 +12,33 @@ package `com.garganttua.events`, plus de préfixe `GG`).
   moteur **garganttua-core Workflow → Script → Runtime → Expression**. Un `RouteDef` compile en
   `IWorkflow` ; chaque processeur devient un stage `exchange <- <@Expression>(…)`.
 
-Légende statut : ✅ porté · 🟠 implémenté mais non vérifié (collision, voir fin) · ⚠️ partiel ·
-❌ absent · 🔄 en cours · ➕ nouveau en ALPHA04 (absent du legacy).
+Légende statut : ✅ porté · ⚠️ partiel · ❌ absent · ➕ nouveau en ALPHA04 (absent du legacy).
+
+---
+
+## 0. État de la migration (à jour)
+
+**Migration fonctionnellement terminée.** Tout le comportement *réel* du legacy est porté sur
+`main` :
+
+- ✅ Modes de publication `ON_CHANGE` / `TIME_INTERVAL` + `buffered` / `bufferPersisted` (chantier 5,
+  intégré au refactor multi-`.to()` de l'autre agent).
+- ✅ `protocol_in` / `protocol_out` (auto-wrap), `produce` (auto, **multi-cible** : fan-out vers
+  plusieurs `to`).
+- ✅ **`filter_in` auto-injecté** depuis la consumer config (sur flux encapsulé).
+- ✅ Dead-letter d'erreur, `source()` external loading, DSL `processor()`.
+- ✅ Concurrence par subscription, firehose observabilité, auto-détection `@Connector` (nouveautés ALPHA04).
+
+**Constat clé** : `buffered`/`bufferPersisted`, **tenant partitioning policy** et **topic routing**
+étaient des **enums/flags dormants dès le legacy** (jamais agis) — il n'y a donc **rien à porter** ;
+ils sont déjà à parité (déclarés, inertes). Les implémenter serait de **nouvelles features** à
+concevoir, pas de la migration.
+
+**Reliquat réel** (vrai comportement legacy non encore porté) :
+- ⚠️ `filter_out` auto-injecté : entremêlé au `produce` multi-cible (chaque destination est
+  enveloppée à la volée) — à réconcilier avec ce nouveau modèle de sortie.
+- ❌ Lock de synchronisation : `IDistributedLock` n'a qu'un hook engine ; il manque un **SPI
+  lock-provider + une implémentation** (façon connecteurs). Infra à part entière.
 
 ---
 
