@@ -40,6 +40,8 @@ builders (`ContextBuilder`, `RouteBuilder`, …) and JSON context I/O (`JsonCont
  - `org.junit.jupiter:junit-jupiter-engine:${junit.version}:test`
  - `com.garganttua.core:garganttua-runtime-reflection:${garganttua.core.version}:test`
  - `com.garganttua.core:garganttua-configuration:test`
+ - `com.garganttua:garganttua-events-expressions:${project.version}:test`
+ - `com.garganttua.core:garganttua-reflections:${garganttua.core.version}:test`
 
 <!-- AUTO-GENERATED-END -->
 

@@ -21,6 +21,9 @@ Compile-time annotation scanner for AOT class descriptor generation. This module
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
+ - `com.garganttua.core:garganttua-reflection:test`
+ - `com.garganttua.core:garganttua-runtime-reflection:test`
+ - `com.garganttua.core:garganttua-aot-reflection:test`
 
 <!-- AUTO-GENERATED-END -->
 
