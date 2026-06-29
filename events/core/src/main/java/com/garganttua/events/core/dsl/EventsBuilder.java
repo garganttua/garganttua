@@ -13,6 +13,7 @@ import com.garganttua.core.dsl.IObservableBuilder;
 import com.garganttua.core.dsl.annotations.ConfigurableBuilder;
 import com.garganttua.core.dsl.dependency.AbstractAutomaticDependentBuilder;
 import com.garganttua.core.dsl.dependency.DependencySpec;
+import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
 import com.garganttua.core.script.dsl.IScriptsBuilder;
 import com.garganttua.core.injection.BeanReference;
 import com.garganttua.core.injection.BeanStrategy;
@@ -47,9 +48,28 @@ public class EventsBuilder
 	// the full Workflows → Scripts → {Expression, Runtimes, ClassLoader} execution chain, so route
 	// workflows can actually RUN their @Expression stages. A bare ExpressionContextBuilder lacks the
 	// scripts/runtime layers, so stages compiled but never executed.
+	//
+	// ALSO depend on the IExpressionContextBuilder — the SAME shared instance ScriptsBuilder builds
+	// its IExpressionContext from — so events can configure it like garganttua-api does: enable
+	// auto-detect, register the framework function packages, and (via withPackage) propagate
+	// application packages into the scan. Captured + configured in provide(), which the bootstrap
+	// calls during dependency resolution BEFORE any builder.build(), so the configuration lands
+	// before the expression context is scanned. Without it, an app's @Expression methods declared
+	// via the events DSL never reach the scan and route stages fail with "Undefined function".
 	private static final Set<DependencySpec> DEPENDENCIES = Set.of(
 			DependencySpec.require(IClass.getClass(IInjectionContextBuilder.class)),
+			DependencySpec.require(IClass.getClass(IExpressionContextBuilder.class)),
 			DependencySpec.require(IClass.getClass(IScriptsBuilder.class)));
+
+	/**
+	 * Framework {@code @Expression} function packages registered on the shared expression context so
+	 * core built-ins (literal wrappers, script ops, observability markers) resolve in route stages —
+	 * mirrors {@code ApiBuilderBuild.configureExpressionContext} minus the api-specific package.
+	 */
+	private static final List<String> FRAMEWORK_FUNCTION_PACKAGES = List.of(
+			"com.garganttua.core.expression.functions",
+			"com.garganttua.core.script.functions",
+			"com.garganttua.core.observability");
 
 	/** The garganttua bean-provider scope connectors are registered under. */
 	private static final String CONNECTOR_PROVIDER = Predefined.BeanProviders.garganttua.toString();
@@ -84,6 +104,9 @@ public class EventsBuilder
 	private final List<ConnectorReference> connectorReferences = new ArrayList<>();
 	private IObservableBuilder<?, ?> injectionContextBuilder;
 	private IObservableBuilder<?, ?> scriptsBuilder;
+	// The shared expression context builder, captured in provide() and configured for api parity so
+	// route stages resolve framework + application @Expression functions.
+	private IExpressionContextBuilder expressionContextBuilder;
 
 	private EventsBuilder() {
 		super(DEPENDENCIES);
@@ -102,6 +125,12 @@ public class EventsBuilder
 	@Override
 	public IEventsBuilder withPackage(String pkg) {
 		this.packages.add(pkg);
+		// Propagate the application package into the shared expression context so its @Expression
+		// methods resolve in route stages (api parity). If the expression builder is not captured yet
+		// (DSL order), provide() replays the accumulated packages when it arrives.
+		if (this.expressionContextBuilder != null) {
+			this.expressionContextBuilder.withPackage(pkg);
+		}
 		return this;
 	}
 
@@ -386,9 +415,29 @@ public class EventsBuilder
 		// their built contexts are delivered separately via the dependency callbacks.
 		if (dependency instanceof IInjectionContextBuilder) {
 			this.injectionContextBuilder = dependency;
+		} else if (dependency instanceof IExpressionContextBuilder expressionBuilder) {
+			this.expressionContextBuilder = expressionBuilder;
+			configureExpressionContext(expressionBuilder);
 		} else if (dependency instanceof IScriptsBuilder) {
 			this.scriptsBuilder = dependency;
 		}
 		return super.provide(dependency);
+	}
+
+	/**
+	 * Configures the captured shared expression context for api parity: enables auto-detect, registers
+	 * the framework {@code @Expression} function packages, and replays every application package
+	 * already declared via {@link #withPackage(String)} so route stages resolve both framework
+	 * built-ins and application functions. Idempotent — {@code autoDetect} is guarded and packages go
+	 * into a set — so configuring the same shared builder from both events and api is safe.
+	 *
+	 * @param builder the shared expression context builder to configure
+	 */
+	private void configureExpressionContext(IExpressionContextBuilder builder) {
+		if (!builder.isAutoDetected()) {
+			builder.autoDetect(true);
+		}
+		FRAMEWORK_FUNCTION_PACKAGES.forEach(builder::withPackage);
+		this.packages.forEach(builder::withPackage);
 	}
 }
