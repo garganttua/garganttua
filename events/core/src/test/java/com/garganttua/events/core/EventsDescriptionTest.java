@@ -37,7 +37,7 @@ class EventsDescriptionTest {
 		SubscriptionDef out = new SubscriptionDef("out", "df-uuid-1", "orders.out", "kafka1",
 				null, null, null, null);
 		RouteStageDef stage = new RouteStageDef("filter", "filter_in()", null, null, null);
-		RouteDef route = new RouteDef("r1", "in", "out", List.of(stage), null, null);
+		RouteDef route = new RouteDef("r1", "in", List.of("out"), List.of(stage), null, null);
 		ContextDef context = new ContextDef("default", "main",
 				List.of(inTopic, outTopic), List.of(orders), List.of(kafka),
 				List.of(in, out), List.of(route), null);
@@ -75,7 +75,7 @@ class EventsDescriptionTest {
 		void unresolvedReference() {
 			SubscriptionDef in = new SubscriptionDef("in", "ghost-df", "ghost.topic", "ghost-conn",
 					null, null, null, null);
-			RouteDef route = new RouteDef("r2", "in", null, List.of(), null, null);
+			RouteDef route = new RouteDef("r2", "in", List.of(), List.of(), null, null);
 			ContextDef context = new ContextDef("t", "c", List.of(), List.of(), List.of(),
 					List.of(in), List.of(route), null);
 			Events engine = new Events("a", List.of(context), Map.of(), null, null);

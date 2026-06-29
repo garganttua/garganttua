@@ -20,6 +20,7 @@ import com.garganttua.events.api.context.RouteExceptionsDef;
 import com.garganttua.events.api.context.RouteStageDef;
 import com.garganttua.events.api.context.RouteSyncDef;
 import com.garganttua.events.api.context.SubscriptionDef;
+import com.garganttua.events.api.context.TimeIntervalDef;
 import com.garganttua.events.api.context.TopicDef;
 import com.garganttua.events.api.enums.DestinationPolicy;
 import com.garganttua.events.api.enums.HighAvailabilityMode;
@@ -160,10 +161,22 @@ public class JsonContextReader {
 						n.has("publicationMode") ? PublicationMode.valueOf(n.get("publicationMode").asText()) : PublicationMode.ON_CHANGE,
 						parseConsumerConfig(n),
 						parseProducerConfig(n),
-						null));
+						parseTimeInterval(n),
+						n.has("buffered") && n.get("buffered").asBoolean(),
+						n.has("bufferPersisted") && n.get("bufferPersisted").asBoolean()));
 			}
 		}
 		return subscriptions;
+	}
+
+	private static TimeIntervalDef parseTimeInterval(JsonNode n) {
+		if (!n.has("timeInterval")) {
+			return null;
+		}
+		JsonNode ti = n.get("timeInterval");
+		return new TimeIntervalDef(
+				ti.has("interval") ? ti.get("interval").asInt() : 1,
+				ti.has("unit") ? ti.get("unit").asText() : "SECONDS");
 	}
 
 	private static ConsumerConfigurationDef parseConsumerConfig(JsonNode n) {
@@ -196,13 +209,35 @@ public class JsonContextReader {
 				routes.add(new RouteDef(
 						textOrNull(n, "uuid"),
 						textOrNull(n, "from"),
-						textOrNull(n, "to"),
+						parseTo(n),
 						parseStages(n),
 						parseRouteExceptions(n),
 						parseRouteSync(n)));
 			}
 		}
 		return routes;
+	}
+
+	/**
+	 * Reads a route's {@code to} as a {@code List<String>}, tolerating both a single string
+	 * ({@code "to":"sub"} → one element) and an array ({@code "to":["a","b"]}); absent/null → empty.
+	 */
+	private static List<String> parseTo(JsonNode n) {
+		List<String> tos = new ArrayList<>();
+		if (!n.has("to") || n.get("to").isNull()) {
+			return tos;
+		}
+		JsonNode to = n.get("to");
+		if (to.isArray()) {
+			for (JsonNode e : to) {
+				if (!e.isNull()) {
+					tos.add(e.asText());
+				}
+			}
+		} else {
+			tos.add(to.asText());
+		}
+		return tos;
 	}
 
 	private static List<RouteStageDef> parseStages(JsonNode n) {

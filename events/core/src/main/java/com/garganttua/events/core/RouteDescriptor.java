@@ -86,10 +86,35 @@ final class RouteDescriptor {
 				.append(" [tenant=").append(context.tenantId())
 				.append(", cluster=").append(context.clusterId()).append(']').append(nl);
 		sb.append("  from: ").append(renderEndpoint(context, route.from())).append(nl);
-		sb.append("  to:   ").append(renderEndpoint(context, route.to())).append(nl);
+		sb.append("  to:   ").append(renderDestinations(context, route)).append(nl);
 		sb.append("  stages: ").append(renderStages(route)).append(nl);
 		sb.append("  sync: ").append(route.synchronization() != null ? "configured" : NONE)
 				.append(" | exceptions: ").append(route.exceptions() != null ? "configured" : NONE);
+		return sb.toString();
+	}
+
+	/**
+	 * Renders the route's destination subscription(s). A single {@code to} renders as one endpoint; a
+	 * fan-out route renders each destination on its own indented line.
+	 */
+	private static String renderDestinations(ContextDef context, RouteDef route) {
+		List<String> tos = route.to();
+		if (tos == null || tos.isEmpty()) {
+			return NONE;
+		}
+		String nl = System.lineSeparator();
+		StringBuilder sb = new StringBuilder();
+		// The first destination renders inline on the "to:" line; any further ones (fan-out) render on
+		// their own indented lines, so a single-destination route reads exactly as before.
+		boolean first = true;
+		for (String to : tos) {
+			if (first) {
+				sb.append(renderEndpoint(context, to));
+				first = false;
+			} else {
+				sb.append(nl).append("        ").append(renderEndpoint(context, to));
+			}
+		}
 		return sb.toString();
 	}
 

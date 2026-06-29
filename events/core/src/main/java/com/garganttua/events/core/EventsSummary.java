@@ -62,7 +62,7 @@ final class EventsSummary {
 			}
 			for (RouteDef route : context.routes()) {
 				items.put("  Route '" + route.uuid() + "'",
-						endpoint(context, route.from()) + " → " + endpoint(context, route.to()));
+						endpoint(context, route.from()) + " → " + endpoints(context, route.to()));
 				if (route.stages() != null && !route.stages().isEmpty()) {
 					items.put("    stages", route.stages().stream()
 							.map(RouteStageDef::name)
@@ -83,6 +83,16 @@ final class EventsSummary {
 						connector.type() + ":" + connector.version());
 			}
 		}
+	}
+
+	/** Renders the route's destination subscription(s), comma-joined, or {@code —} when empty. */
+	private static String endpoints(ContextDef context, List<String> subscriptionIds) {
+		if (subscriptionIds == null || subscriptionIds.isEmpty()) {
+			return "—";
+		}
+		return subscriptionIds.stream()
+				.map(id -> endpoint(context, id))
+				.collect(Collectors.joining(", "));
 	}
 
 	/** Renders a route endpoint subscription as {@code topic (connector)}, or the raw id as a fallback. */

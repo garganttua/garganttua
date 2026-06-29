@@ -45,10 +45,12 @@ import com.garganttua.events.api.Message;
 import com.garganttua.events.api.connectors.annotations.Connector;
 import com.garganttua.events.api.context.ConsumerConfigurationDef;
 import com.garganttua.events.api.context.RouteExceptionsDef;
+import com.garganttua.events.api.context.TimeIntervalDef;
 import com.garganttua.events.api.enums.DestinationPolicy;
 import com.garganttua.events.api.enums.Direction;
 import com.garganttua.events.api.enums.OriginPolicy;
 import com.garganttua.events.api.enums.ProcessMode;
+import com.garganttua.events.api.enums.PublicationMode;
 import com.garganttua.events.api.context.ConnectorDef;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
@@ -203,7 +205,7 @@ class EventsRouteE2ETest {
 						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
 				// Auto-wrap model: the route declares only the business stage; the engine appends
 				// produce(@exchange, @producer) automatically (and protocol_in/out when encapsulated).
-				List.of(new RouteDef("route-1", "in", "out",
+				List.of(new RouteDef("route-1", "in", List.of("out"),
 						List.of(new RouteStageDef("tag", "set_header(@exchange, \"processed\", \"true\")",
 								null, null, null)),
 						null, null)),
@@ -256,7 +258,7 @@ class EventsRouteE2ETest {
 						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, null, null, null),
 						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
 				// No business stage: the route is pure transport (protocol_in → protocol_out → produce).
-				List.of(new RouteDef("route-1", "in", "out", List.of(), null, null)),
+				List.of(new RouteDef("route-1", "in", List.of("out"), List.of(), null, null)),
 				null);
 
 		Map<String, IClass<? extends IConnector>> registry = Map.of(
@@ -298,7 +300,7 @@ class EventsRouteE2ETest {
 				List.of(
 						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, parallel, null, null),
 						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
-				List.of(new RouteDef("route-1", "in", "out",
+				List.of(new RouteDef("route-1", "in", List.of("out"),
 						List.of(new RouteStageDef("tag", "set_header(@exchange, \"k\", \"v\")", null, null, null)),
 						null, null)),
 				null);
@@ -334,7 +336,7 @@ class EventsRouteE2ETest {
 						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, null, null, null),
 						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null),
 						new SubscriptionDef("error", "df-1", "events.error", "mem1", null, null, null, null)),
-				List.of(new RouteDef("route-1", "in", "out",
+				List.of(new RouteDef("route-1", "in", List.of("out"),
 						List.of(new RouteStageDef("guard",
 								"filter_in(@exchange, \"TO_ANY\", \"FROM_ANY\", @assetId, @clusterId, @version)",
 								null, null, null)),
@@ -356,6 +358,56 @@ class EventsRouteE2ETest {
 				"only the error route produces (the normal produce stage never ran)");
 		assertArrayEquals("hello".getBytes(StandardCharsets.UTF_8), errored,
 				"the original exchange payload is dead-lettered");
+	}
+
+	@Test
+	@DisplayName("TIME_INTERVAL (last-wins): only the latest exchange of the interval is published")
+	void timeIntervalLastWins() throws Exception {
+		engine = startTimeIntervalRoute(false);
+		Consumer<byte[]> handler = awaitHandler();
+		for (int i = 0; i < 5; i++) {
+			handler.accept(("m" + i).getBytes(StandardCharsets.UTF_8));
+		}
+		for (int i = 0; i < 40 && MemConnector.PRODUCED.isEmpty(); i++) {
+			TimeUnit.MILLISECONDS.sleep(40);
+		}
+		assertEquals(1, MemConnector.PRODUCED.size(), "last-wins emits only the latest exchange");
+		assertArrayEquals("m4".getBytes(StandardCharsets.UTF_8), MemConnector.PRODUCED.get(0),
+				"the latest message wins");
+	}
+
+	@Test
+	@DisplayName("TIME_INTERVAL (buffered): the whole batch of the interval is published")
+	void timeIntervalBuffered() throws Exception {
+		engine = startTimeIntervalRoute(true);
+		Consumer<byte[]> handler = awaitHandler();
+		for (int i = 0; i < 5; i++) {
+			handler.accept(("m" + i).getBytes(StandardCharsets.UTF_8));
+		}
+		for (int i = 0; i < 60 && MemConnector.PRODUCED.size() < 5; i++) {
+			TimeUnit.MILLISECONDS.sleep(40);
+		}
+		assertEquals(5, MemConnector.PRODUCED.size(), "buffered emits the whole batch on the tick");
+	}
+
+	/** Builds + starts a route whose OUT subscription publishes on a 200ms TIME_INTERVAL. */
+	private Events startTimeIntervalRoute(boolean buffered) throws Exception {
+		SubscriptionDef out = new SubscriptionDef("out", "df-1", "events.out", "mem1",
+				PublicationMode.TIME_INTERVAL, null, null,
+				new TimeIntervalDef(200, "MILLISECONDS"), buffered, false);
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out")),
+				List.of(new DataflowDef("df-1", "flow", "mem", false, "1", false)),
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(new SubscriptionDef("in", "df-1", "events.in", "mem1", null, null, null, null), out),
+				List.of(new RouteDef("route-1", "in", List.of("out"), List.of(), null, null)),
+				null);
+		Map<String, IClass<? extends IConnector>> registry = Map.of(
+				"mem:1.0", IClass.getClass(MemConnector.class));
+		Events e = new Events("asset", List.of(context), registry, injectionContextBuilder, scriptsBuilder);
+		e.onInit();
+		e.onStart();
+		return e;
 	}
 
 	private Consumer<byte[]> awaitHandler() throws InterruptedException {

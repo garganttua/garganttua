@@ -20,7 +20,7 @@ public class RouteBuilder implements IRouteBuilder {
 	private IContextBuilder parent;
 	private final String uuid;
 	private final String from;
-	private String to;
+	private final List<String> tos = new ArrayList<>();
 	private final List<RouteStageDef> stages = new ArrayList<>();
 	private RouteExceptionsDef exceptions;
 	private RouteSyncDef synchronization;
@@ -32,7 +32,7 @@ public class RouteBuilder implements IRouteBuilder {
 
 	@Override
 	public IRouteBuilder to(String subscriptionRef) {
-		this.to = subscriptionRef;
+		this.tos.add(subscriptionRef);
 		return this;
 	}
 
@@ -74,6 +74,6 @@ public class RouteBuilder implements IRouteBuilder {
 
 	@Override
 	public RouteDef build() throws DslException {
-		return new RouteDef(uuid, from, to, stages, exceptions, synchronization);
+		return new RouteDef(uuid, from, tos, stages, exceptions, synchronization);
 	}
 }

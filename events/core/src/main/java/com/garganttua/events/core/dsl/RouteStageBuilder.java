@@ -5,14 +5,14 @@ import com.garganttua.events.api.context.RouteStageDef;
 import com.garganttua.events.api.dsl.IRouteBuilder;
 import com.garganttua.events.api.dsl.IRouteStageBuilder;
 
-// Fluent DSL: the expression() builder method deliberately mirrors the field it sets; the method
-// name is the public IRouteStageBuilder contract and cannot change.
+// Fluent DSL: the processor() builder method deliberately mirrors the field it sets; the method name
+// is the public IRouteStageBuilder contract and cannot change.
 @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class RouteStageBuilder implements IRouteStageBuilder {
 
 	private IRouteBuilder parent;
 	private final String name;
-	private String expression;
+	private String processor;
 	private String condition;
 	private String catchExpression;
 	private String catchDownstreamExpression;
@@ -22,8 +22,8 @@ public class RouteStageBuilder implements IRouteStageBuilder {
 	}
 
 	@Override
-	public IRouteStageBuilder expression(String expr) {
-		this.expression = expr;
+	public IRouteStageBuilder processor(String processor) {
+		this.processor = processor;
 		return this;
 	}
 
@@ -60,6 +60,6 @@ public class RouteStageBuilder implements IRouteStageBuilder {
 
 	@Override
 	public RouteStageDef build() throws DslException {
-		return new RouteStageDef(name, expression, condition, catchExpression, catchDownstreamExpression);
+		return new RouteStageDef(name, processor, condition, catchExpression, catchDownstreamExpression);
 	}
 }

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -15,6 +16,7 @@ import com.garganttua.events.api.Exchange;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.JourneyStep;
 import com.garganttua.events.api.Message;
+import com.garganttua.events.api.OutboundTarget;
 import com.garganttua.events.api.enums.DestinationPolicy;
 import com.garganttua.events.api.enums.Direction;
 import com.garganttua.events.api.exceptions.ConnectorException;
@@ -71,14 +73,25 @@ public class EventExpressions {
 				.withStep(step);
 	}
 
-	// ReplaceJavaUtilDate: JourneyStep (public API record in garganttua-events-api) declares its
-	// timestamp as java.util.Date, so its canonical constructor requires a Date here.
-	@SuppressWarnings("PMD.ReplaceJavaUtilDate")
 	@Expression(name = "protocol_out", description = "Serialize into encapsulated message envelope")
 	public static Exchange protocolOut(Exchange exchange, String assetId,
 			String clusterId, String topicRef, String version, String dataflowUuid,
 			String connectorName, String subscriptionId) throws HandlingException {
+		return encapsulate(exchange, assetId, clusterId, topicRef, version, dataflowUuid,
+				connectorName, subscriptionId);
+	}
 
+	/**
+	 * Stamps the exchange with the destination addressing + an OUT journey step and serialises it into
+	 * a {@code Message} envelope, returning a copy whose value is the envelope bytes. Shared by
+	 * {@link #protocolOut} and the multi-target {@link #produce(Exchange, List, String, String)} so the
+	 * encapsulation logic lives in exactly one place.
+	 */
+	// ReplaceJavaUtilDate: JourneyStep declares its timestamp as java.util.Date.
+	@SuppressWarnings("PMD.ReplaceJavaUtilDate")
+	private static Exchange encapsulate(Exchange exchange, String assetId, String clusterId,
+			String topicRef, String version, String dataflowUuid, String connectorName,
+			String subscriptionId) throws HandlingException {
 		Exchange updated = exchange
 				.withTo(connectorName, topicRef, dataflowUuid)
 				.withMessageId(UUID.randomUUID().toString());
@@ -186,6 +199,46 @@ public class EventExpressions {
 			throw new HandlingException(e);
 		}
 		return exchange;
+	}
+
+	/**
+	 * Broadcasts the processed exchange to every outbound target: for an encapsulated target the
+	 * exchange is wrapped in a per-target {@code Message} envelope, otherwise its raw value is
+	 * published. One failed destination is logged and does not abort the others, so a multi-{@code .to()}
+	 * route delivers to as many destinations as possible. The expression engine dispatches by argument
+	 * types, so this coexists with the single-producer {@link #produce(Exchange, IProducer)} builtin.
+	 *
+	 * @param exchange  the processed exchange to broadcast
+	 * @param outbounds the resolved destinations to publish to
+	 * @param assetId   the engine asset id (for the OUT journey step when encapsulating)
+	 * @param clusterId the cluster id (for the OUT journey step when encapsulating)
+	 * @return the exchange, unchanged
+	 */
+	@Expression(name = "produce", description = "Broadcast exchange to every outbound target")
+	public static Exchange produce(Exchange exchange, List<OutboundTarget> outbounds,
+			String assetId, String clusterId) {
+		for (OutboundTarget target : outbounds) {
+			publishToTarget(exchange, target, assetId, clusterId);
+		}
+		return exchange;
+	}
+
+	/** Publishes the exchange to one target, encapsulating first when required; failures are logged. */
+	private static void publishToTarget(Exchange exchange, OutboundTarget target,
+			String assetId, String clusterId) {
+		try {
+			byte[] bytes;
+			if (target.encapsulated()) {
+				bytes = encapsulate(exchange, assetId, clusterId, target.topicRef(), target.version(),
+						target.dataflowUuid(), target.connectorName(), target.subscriptionId()).value();
+			} else {
+				bytes = exchange.value();
+			}
+			target.producer().publish(bytes);
+		} catch (ConnectorException | HandlingException e) {
+			LOGGER.warn("Failed to publish exchange to outbound subscription {}",
+					target.subscriptionId(), e);
+		}
 	}
 
 	@Expression(name = "route_to_error", description = "Route exchange to error subscription")

@@ -15,28 +15,17 @@ import com.garganttua.core.lifecycle.AbstractLifecycle;
 import com.garganttua.core.lifecycle.ILifecycle;
 import com.garganttua.core.lifecycle.LifecycleException;
 import com.garganttua.core.workflow.IWorkflow;
-import com.garganttua.core.workflow.WorkflowInput;
-import com.garganttua.core.workflow.WorkflowResult;
-import com.garganttua.core.workflow.dsl.IWorkflowBuilder;
-import com.garganttua.core.workflow.dsl.WorkflowsBuilder;
 import com.garganttua.events.api.ConnectorContext;
-import com.garganttua.events.api.Exchange;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
-import com.garganttua.events.api.IDistributedLock;
 import com.garganttua.events.api.IEvents;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.context.ConnectorDef;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.RouteDef;
-import com.garganttua.events.api.context.RouteExceptionsDef;
-import com.garganttua.events.api.context.RouteStageDef;
-import com.garganttua.events.api.context.RouteSyncDef;
 import com.garganttua.events.api.context.SubscriptionDef;
-import com.garganttua.events.api.exceptions.ConnectorException;
 import com.garganttua.events.api.exceptions.EventsException;
-import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.dsl.IObservableBuilder;
 import com.garganttua.core.injection.BeanReference;
 import com.garganttua.core.injection.IInjectionContext;
@@ -56,18 +45,21 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	private final String assetId;
 	private final List<ContextDef> contexts;
 	private final Map<String, IClass<? extends IConnector>> connectorRegistry;
-	private final IObservableBuilder<?, ?> injectionContextBuilder;
-	private final IObservableBuilder<?, ?> scriptsBuilder;
 
 	private final Map<String, Map<String, ClusterRuntime>> runtimes = new HashMap<>();
 	private final EventsPublisher publisher = new EventsPublisher(runtimes);
 	private final List<Thread> consumerThreads = new ArrayList<>();
 	private final List<RouteDispatcher> routeDispatchers = new java.util.concurrent.CopyOnWriteArrayList<>();
+	private final List<TimeIntervalProducer> timeIntervalProducers = new java.util.concurrent.CopyOnWriteArrayList<>();
+	private final RouteWorkflowCompiler routeCompiler;
+	private java.util.concurrent.ScheduledExecutorService scheduledExecutor;
 
 	// Local registry for the events:route:* ObservableEvents emitted around message routing;
 	// observers attached via addObserver receive correlated Start/End/Error events.
 	private final ObservableRegistry observableRegistry = new ObservableRegistry();
 	private final RouteObserver routeObserver = new RouteObserver(observableRegistry);
+	private final RouteMessageProcessor messageProcessor =
+			new RouteMessageProcessor(routeObserver, routeDispatchers);
 	private ExecutorService executorService;
 	private IInjectionContext injectionContext;
 
@@ -80,10 +72,11 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		// configuration; callers must not be able to mutate engine internals afterwards.
 		this.contexts = new ArrayList<>(contexts);
 		this.connectorRegistry = new HashMap<>(connectorRegistry);
-		this.injectionContextBuilder = injectionContextBuilder;
 		// The scripts builder carries the full Workflows → Scripts → {Expression, Runtimes}
-		// execution chain, so route-stage scripts actually run (a bare expression builder does not).
-		this.scriptsBuilder = scriptsBuilder;
+		// execution chain, so route-stage scripts actually run (a bare expression builder does not);
+		// it and the injection-context builder are handed to the route compiler, the sole user.
+		this.routeCompiler = new RouteWorkflowCompiler(assetId, injectionContextBuilder, scriptsBuilder,
+				timeIntervalProducers);
 	}
 
 	/**
@@ -167,6 +160,11 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	protected ILifecycle doInit() throws LifecycleException {
 		log.info("==== Starting Garganttua Events — ASSET [{}] ====", assetId);
 		this.executorService = Executors.newCachedThreadPool();
+		this.scheduledExecutor = Executors.newScheduledThreadPool(1, runnable -> {
+			Thread thread = new Thread(runnable, "events-publication-scheduler");
+			thread.setDaemon(true);
+			return thread;
+		});
 
 		for (ContextDef context : contexts) {
 			initContext(context);
@@ -202,7 +200,8 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 
 		if (context.routes() != null) {
 			for (RouteDef routeDef : context.routes()) {
-				IWorkflow workflow = buildRouteWorkflow(routeDef, runtime, tenantId, clusterId);
+				IWorkflow workflow = routeCompiler.compile(routeDef, runtime, tenantId, clusterId);
+				registerConsumer(routeDef, runtime, runtime.getSubscriptions().get(routeDef.from()));
 				runtime.getRouteWorkflows().put(routeDef.uuid(), workflow);
 				log.info("[{}][{}][{}] Route {} workflow built", assetId, tenantId, clusterId, routeDef.uuid());
 			}
@@ -289,142 +288,16 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		}
 	}
 
-	private IWorkflow buildRouteWorkflow(RouteDef routeDef, ClusterRuntime runtime,
-			String tenantId, String clusterId) throws LifecycleException {
-		try {
-			SubscriptionDef fromSub = runtime.getSubscriptions().get(routeDef.from());
-			if (fromSub == null) {
-				throw new LifecycleException("From subscription not found: " + routeDef.from());
-			}
-
-			IWorkflowBuilder wb = WorkflowsBuilder.builder()
-					.provide(injectionContextBuilder)
-					.provide(scriptsBuilder)
-					.workflow("route-" + routeDef.uuid())
-					.variable("assetId", assetId)
-					.variable("tenantId", tenantId)
-					.variable("clusterId", clusterId)
-					.variable("subscriptionId", fromSub.id())
-					.inlineAll();
-
-			DataflowDef fromDf = bindInbound(wb, runtime, fromSub);
-			OutboundBinding outbound = bindOutbound(routeDef, runtime, wb);
-
-			registerConsumer(routeDef, runtime, fromSub);
-			addStages(routeDef, wb, isEncapsulated(fromDf), outbound.encapsulated(), outbound.hasProducer());
-
-			return wb.build();
-		} catch (DslException e) {
-			throw new LifecycleException(new RuntimeException("Failed to build route workflow: " + routeDef.uuid(), e));
-		}
-	}
-
-	/** Binds the inbound (from) workflow variables and returns the inbound dataflow (or {@code null}). */
-	private DataflowDef bindInbound(IWorkflowBuilder wb, ClusterRuntime runtime, SubscriptionDef fromSub) {
-		DataflowDef fromDf = runtime.getDataflows().get(fromSub.dataflow());
-		if (fromDf != null) {
-			wb.variable("version", fromDf.version());
-			wb.variable("dataflowUuid", fromDf.uuid());
-		}
-		wb.variable("connectorName", fromSub.connector());
-		return fromDf;
-	}
-
-	/**
-	 * Creates the outbound producer for {@code routeDef.to()} (when set) and binds the outbound (to)
-	 * workflow variables that the auto-injected {@code protocol_out} / {@code produce} stages read.
-	 *
-	 * @return whether a producer was bound and whether the outbound dataflow is encapsulated
-	 */
-	private OutboundBinding bindOutbound(RouteDef routeDef, ClusterRuntime runtime, IWorkflowBuilder wb) {
-		if (routeDef.to() == null) {
-			return OutboundBinding.NONE;
-		}
-		SubscriptionDef toSub = runtime.getSubscriptions().get(routeDef.to());
-		if (toSub == null) {
-			return OutboundBinding.NONE;
-		}
-		IConnector toConnector = runtime.getConnectors().get(toSub.connector());
-		DataflowDef toDf = runtime.getDataflows().get(toSub.dataflow());
-		if (toConnector == null || toDf == null) {
-			return OutboundBinding.NONE;
-		}
-		IProducer producer = toConnector.createProducer(toSub, toDf);
-		runtime.getProducers().put(routeDef.uuid() + ":" + toSub.id(), producer);
-		wb.variable("producer", producer);
-		wb.variable("topicRef", toSub.topic());
-		wb.variable("outVersion", toDf.version());
-		wb.variable("outDataflowUuid", toDf.uuid());
-		wb.variable("outConnectorName", toSub.connector());
-		wb.variable("outSubscriptionId", toSub.id());
-		return new OutboundBinding(true, toDf.encapsulated());
-	}
-
-	private static boolean isEncapsulated(DataflowDef df) {
-		return df != null && df.encapsulated();
-	}
-
-	/** Outcome of {@link #bindOutbound}: whether a producer exists and whether its dataflow is encapsulated. */
-	private record OutboundBinding(boolean hasProducer, boolean encapsulated) {
-		static final OutboundBinding NONE = new OutboundBinding(false, false);
-	}
-
 	private void registerConsumer(RouteDef routeDef, ClusterRuntime runtime, SubscriptionDef fromSub) {
+		if (fromSub == null) {
+			return;
+		}
 		IConnector fromConnector = runtime.getConnectors().get(fromSub.connector());
 		DataflowDef fromDfForConsumer = runtime.getDataflows().get(fromSub.dataflow());
 		if (fromConnector != null && fromDfForConsumer != null) {
 			IConsumer consumer = fromConnector.createConsumer(fromSub, fromDfForConsumer);
 			runtime.getConsumers().put(routeDef.uuid() + ":" + fromSub.id(), consumer);
 		}
-	}
-
-	/**
-	 * Compiles the route into the workflow, auto-wrapping the declared business stages with the
-	 * transport stages the engine owns: {@code protocol_in} first when the inbound dataflow is
-	 * encapsulated, then the declared stages, then {@code protocol_out} when the outbound dataflow is
-	 * encapsulated, and finally {@code produce} to the {@code to} connector. The route author
-	 * therefore declares only business logic; envelope (de)serialisation and emission are automatic.
-	 */
-	private void addStages(RouteDef routeDef, IWorkflowBuilder wb, boolean fromEncapsulated,
-			boolean toEncapsulated, boolean hasProducer) throws DslException {
-		if (fromEncapsulated) {
-			addExpressionStage(wb, "protocol_in",
-					"protocol_in(@exchange, @assetId, @clusterId, @subscriptionId, @version)",
-					null, null, null);
-		}
-		if (routeDef.stages() != null) {
-			for (RouteStageDef stageDef : routeDef.stages()) {
-				addExpressionStage(wb, stageDef.name(), stageDef.expression(), stageDef.condition(),
-						stageDef.catchExpression(), stageDef.catchDownstreamExpression());
-			}
-		}
-		if (toEncapsulated) {
-			addExpressionStage(wb, "protocol_out",
-					"protocol_out(@exchange, @assetId, @clusterId, @topicRef, @outVersion, "
-							+ "@outDataflowUuid, @outConnectorName, @outSubscriptionId)",
-					null, null, null);
-		}
-		if (hasProducer) {
-			addExpressionStage(wb, "produce", "produce(@exchange, @producer)", null, null, null);
-		}
-	}
-
-	/** Adds one inline stage {@code exchange <- expression} with optional condition / catch handlers. */
-	private void addExpressionStage(IWorkflowBuilder wb, String name, String expression,
-			String condition, String catchExpression, String catchDownstreamExpression) throws DslException {
-		var stageBuilder = wb.stage(name);
-		var scriptBuilder = stageBuilder.script("exchange <- " + expression).name(name).inline();
-		if (condition != null) {
-			scriptBuilder.when(condition);
-		}
-		if (catchExpression != null) {
-			scriptBuilder.catch_(catchExpression);
-		}
-		if (catchDownstreamExpression != null) {
-			scriptBuilder.catchDownstream(catchDownstreamExpression);
-		}
-		scriptBuilder.up(); // → stage
-		stageBuilder.up();  // → workflow
 	}
 
 	@Override
@@ -436,6 +309,11 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 				startConnectors(clusterEntry.getValue(), tenantEntry.getKey(), clusterEntry.getKey());
 				startConsumers(clusterEntry.getValue(), tenantEntry.getKey(), clusterEntry.getKey());
 			}
+		}
+
+		// Connectors are up — start the TIME_INTERVAL publication schedules.
+		for (TimeIntervalProducer producer : timeIntervalProducers) {
+			producer.start(scheduledExecutor);
 		}
 
 		log.info("==== GARGANTTUA EVENTS STARTED ====");
@@ -470,7 +348,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 				DataflowDef fromDf = runtime.getDataflows().get(fromSub.dataflow());
 
 				Thread consumerThread = new Thread(
-						() -> runConsumer(consumer, workflow, fromSub, fromDf, routeDef, runtime),
+						() -> messageProcessor.runConsumer(consumer, workflow, fromSub, fromDf, routeDef, runtime),
 						"consumer-" + routeDef.uuid());
 				consumerThread.setDaemon(true);
 				consumerThread.start();
@@ -480,130 +358,6 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 			}
 		}
 	}
-
-	private void runConsumer(IConsumer consumer, IWorkflow workflow, SubscriptionDef fromSub,
-			DataflowDef fromDf, RouteDef routeDef, ClusterRuntime runtime) {
-		int concurrency = fromSub.consumerConfiguration() != null
-				? fromSub.consumerConfiguration().concurrency() : 1;
-		boolean guaranteeOrder = fromDf != null && fromDf.garanteeOrder();
-		RouteDispatcher dispatcher = new RouteDispatcher(routeDef.uuid(), concurrency, guaranteeOrder);
-		routeDispatchers.add(dispatcher);
-		RouteHandlers handlers = resolveHandlers(routeDef, runtime);
-		try {
-			consumer.start(rawBytes -> {
-				Exchange exchange = Exchange.create(
-						fromSub.connector(), fromSub.topic(),
-						fromDf != null ? fromDf.uuid() : null, rawBytes);
-				Map<String, Object> params = new HashMap<>();
-				params.put("exchange", exchange);
-				WorkflowInput input = WorkflowInput.of(exchange, params);
-				// Sequential (ordered) inline, or submitted to the worker pool (parallel).
-				dispatcher.dispatch(() -> processMessage(routeDef.uuid(), workflow, input, exchange, handlers));
-			});
-		} catch (Exception e) {
-			log.error("Consumer thread error for route {}", routeDef.uuid(), e);
-		}
-	}
-
-	/**
-	 * Processes one routed message under the route's synchronization lock (when configured and
-	 * resolvable) and routes the exchange to the error subscription when the workflow fails or
-	 * throws — honouring {@code RouteDef.synchronization} and {@code RouteDef.exceptions}.
-	 */
-	private void processMessage(String routeUuid, IWorkflow workflow, WorkflowInput input,
-			Exchange exchange, RouteHandlers handlers) {
-		acquire(routeUuid, handlers);
-		try {
-			WorkflowResult result = routeObserver.execute(routeUuid, workflow, input, exchange);
-			if (result == null || !result.isSuccess()) {
-				routeToError(routeUuid, exchange, handlers.errorProducer());
-			}
-		} catch (RuntimeException e) {
-			log.error("Route {} execution failed", routeUuid, e);
-			routeToError(routeUuid, exchange, handlers.errorProducer());
-		} finally {
-			release(routeUuid, handlers);
-		}
-	}
-
-	private void acquire(String routeUuid, RouteHandlers handlers) {
-		if (handlers.lock() == null) {
-			return;
-		}
-		try {
-			handlers.lock().lock(handlers.lockObject());
-		} catch (EventsException e) {
-			log.warn("Route {}: failed to acquire lock '{}': {}", routeUuid,
-					handlers.lock().getName(), e.getMessage());
-		}
-	}
-
-	private void release(String routeUuid, RouteHandlers handlers) {
-		if (handlers.lock() == null) {
-			return;
-		}
-		try {
-			handlers.lock().unlock(handlers.lockObject());
-		} catch (EventsException e) {
-			log.warn("Route {}: failed to release lock '{}': {}", routeUuid,
-					handlers.lock().getName(), e.getMessage());
-		}
-	}
-
-	private void routeToError(String routeUuid, Exchange exchange, IProducer errorProducer) {
-		if (errorProducer == null) {
-			return;
-		}
-		try {
-			errorProducer.publish(exchange.value());
-			log.debug("Route {}: failed exchange routed to its error subscription", routeUuid);
-		} catch (ConnectorException e) {
-			log.error("Route {}: could not route failed exchange to the error subscription", routeUuid, e);
-		}
-	}
-
-	/**
-	 * Resolves the route's per-message error producer ({@code RouteDef.exceptions.to}) and
-	 * synchronization lock ({@code RouteDef.synchronization}). The lock is looked up in the cluster
-	 * runtime's lock registry; it stays {@code null} until a lock provider populates that registry.
-	 */
-	private RouteHandlers resolveHandlers(RouteDef routeDef, ClusterRuntime runtime) {
-		IProducer errorProducer = resolveErrorProducer(routeDef, runtime);
-		IDistributedLock lock = null;
-		String lockObject = null;
-		RouteSyncDef sync = routeDef.synchronization();
-		if (sync != null && sync.lock() != null) {
-			lock = runtime.getLocks().get(sync.lock());
-			lockObject = sync.lockObject();
-			if (lock == null) {
-				log.warn("Route {}: synchronization lock '{}' is not resolvable (no lock provider "
-						+ "registered); the route runs without synchronization", routeDef.uuid(), sync.lock());
-			}
-		}
-		return new RouteHandlers(errorProducer, lock, lockObject);
-	}
-
-	private IProducer resolveErrorProducer(RouteDef routeDef, ClusterRuntime runtime) {
-		RouteExceptionsDef exceptions = routeDef.exceptions();
-		if (exceptions == null || exceptions.to() == null) {
-			return null;
-		}
-		SubscriptionDef errorSub = runtime.getSubscriptions().get(exceptions.to());
-		if (errorSub == null) {
-			log.warn("Route {}: error subscription '{}' not found; failures will not be routed",
-					routeDef.uuid(), exceptions.to());
-			return null;
-		}
-		IConnector connector = runtime.getConnectors().get(errorSub.connector());
-		DataflowDef df = runtime.getDataflows().get(errorSub.dataflow());
-		if (connector == null || df == null) {
-			return null;
-		}
-		return connector.createProducer(errorSub, df);
-	}
-
-	/** Per-route runtime handlers: the error-subscription producer and the synchronization lock. */
-	private record RouteHandlers(IProducer errorProducer, IDistributedLock lock, String lockObject) {}
 
 	@Override
 	protected ILifecycle doStop() throws LifecycleException {
@@ -622,6 +376,17 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 			dispatcher.close();
 		}
 		routeDispatchers.clear();
+		for (TimeIntervalProducer producer : timeIntervalProducers) {
+			try {
+				producer.stop();
+			} catch (Exception e) {
+				log.warn("Error stopping TIME_INTERVAL producer", e);
+			}
+		}
+		timeIntervalProducers.clear();
+		if (scheduledExecutor != null) {
+			scheduledExecutor.shutdown();
+		}
 		if (executorService != null) {
 			executorService.shutdown();
 		}
