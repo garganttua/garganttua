@@ -19,6 +19,13 @@ public class ConsumerConfigBuilder implements IConsumerConfigBuilder {
 	private OriginPolicy originPolicy = OriginPolicy.FROM_ANY;
 	private DestinationPolicy destinationPolicy = DestinationPolicy.TO_ANY;
 	private HighAvailabilityMode highAvailabilityMode;
+	private int concurrency = 1;
+
+	@Override
+	public IConsumerConfigBuilder concurrency(int concurrency) {
+		this.concurrency = concurrency;
+		return this;
+	}
 
 	@Override
 	public IConsumerConfigBuilder processMode(ProcessMode mode) {
@@ -59,6 +66,7 @@ public class ConsumerConfigBuilder implements IConsumerConfigBuilder {
 
 	@Override
 	public ConsumerConfigurationDef build() throws DslException {
-		return new ConsumerConfigurationDef(processMode, originPolicy, destinationPolicy, highAvailabilityMode);
+		return new ConsumerConfigurationDef(processMode, originPolicy, destinationPolicy,
+				highAvailabilityMode, concurrency);
 	}
 }

@@ -43,7 +43,11 @@ import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.Message;
 import com.garganttua.events.api.connectors.annotations.Connector;
+import com.garganttua.events.api.context.ConsumerConfigurationDef;
+import com.garganttua.events.api.enums.DestinationPolicy;
 import com.garganttua.events.api.enums.Direction;
+import com.garganttua.events.api.enums.OriginPolicy;
+import com.garganttua.events.api.enums.ProcessMode;
 import com.garganttua.events.api.context.ConnectorDef;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
@@ -277,6 +281,43 @@ class EventsRouteE2ETest {
 		assertEquals(2, out.steps().size(), "protocol_in (IN) + protocol_out (OUT) each add a journey step");
 		assertEquals(Direction.IN, out.steps().get(0).direction(), "first step is the inbound stamp");
 		assertEquals(Direction.OUT, out.steps().get(1).direction(), "second step is the outbound stamp");
+	}
+
+	@Test
+	@DisplayName("concurrency>1 on an unordered dataflow processes messages on a worker pool")
+	void parallelConcurrencyProcessesAllMessages() throws Exception {
+		int messages = 30;
+		ConsumerConfigurationDef parallel = new ConsumerConfigurationDef(
+				ProcessMode.EVERYBODY, OriginPolicy.FROM_ANY, DestinationPolicy.TO_ANY, null, 4);
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out")),
+				// garanteeOrder = false → concurrency is honoured (parallel workers).
+				List.of(new DataflowDef("df-1", "flow", "mem", false, "1", false)),
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(
+						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, parallel, null, null),
+						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
+				List.of(new RouteDef("route-1", "in", "out",
+						List.of(new RouteStageDef("tag", "set_header(@exchange, \"k\", \"v\")", null, null, null)),
+						null, null)),
+				null);
+
+		Map<String, IClass<? extends IConnector>> registry = Map.of(
+				"mem:1.0", IClass.getClass(MemConnector.class));
+		engine = new Events("asset", List.of(context), registry, injectionContextBuilder, scriptsBuilder);
+		engine.onInit();
+		engine.onStart();
+
+		Consumer<byte[]> handler = awaitHandler();
+		for (int i = 0; i < messages; i++) {
+			handler.accept(("msg-" + i).getBytes(StandardCharsets.UTF_8));
+		}
+
+		for (int i = 0; i < 100 && MemConnector.PRODUCED.size() < messages; i++) {
+			TimeUnit.MILLISECONDS.sleep(40);
+		}
+		assertEquals(messages, MemConnector.PRODUCED.size(),
+				"every message must be produced (parallel workers, order not asserted)");
 	}
 
 	private Consumer<byte[]> awaitHandler() throws InterruptedException {

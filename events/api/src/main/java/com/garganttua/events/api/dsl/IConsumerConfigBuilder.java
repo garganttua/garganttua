@@ -16,4 +16,13 @@ public interface IConsumerConfigBuilder extends ILinkedBuilder<ISubscriptionBuil
 	IConsumerConfigBuilder destinationPolicy(DestinationPolicy policy);
 
 	IConsumerConfigBuilder highAvailabilityMode(HighAvailabilityMode mode);
+
+	/**
+	 * Sets the number of parallel workers for this subscription's routes ({@code 1} = sequential).
+	 * Honoured only when the dataflow does not guarantee order.
+	 *
+	 * @param concurrency the worker count ({@code <= 1} means sequential)
+	 * @return this builder
+	 */
+	IConsumerConfigBuilder concurrency(int concurrency);
 }

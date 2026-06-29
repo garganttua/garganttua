@@ -175,7 +175,8 @@ public class JsonContextReader {
 				cc.has("processMode") ? ProcessMode.valueOf(cc.get("processMode").asText()) : ProcessMode.EVERYBODY,
 				cc.has("originPolicy") ? OriginPolicy.valueOf(cc.get("originPolicy").asText()) : OriginPolicy.FROM_ANY,
 				cc.has(FIELD_DESTINATION_POLICY) ? DestinationPolicy.valueOf(cc.get(FIELD_DESTINATION_POLICY).asText()) : DestinationPolicy.TO_ANY,
-				cc.has("highAvailabilityMode") ? HighAvailabilityMode.valueOf(cc.get("highAvailabilityMode").asText()) : null);
+				cc.has("highAvailabilityMode") ? HighAvailabilityMode.valueOf(cc.get("highAvailabilityMode").asText()) : null,
+				cc.has("concurrency") ? cc.get("concurrency").asInt() : 1);
 	}
 
 	private static ProducerConfigurationDef parseProducerConfig(JsonNode n) {

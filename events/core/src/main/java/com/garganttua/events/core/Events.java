@@ -57,6 +57,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	private final Map<String, Map<String, ClusterRuntime>> runtimes = new HashMap<>();
 	private final EventsPublisher publisher = new EventsPublisher(runtimes);
 	private final List<Thread> consumerThreads = new ArrayList<>();
+	private final List<RouteDispatcher> routeDispatchers = new java.util.concurrent.CopyOnWriteArrayList<>();
 
 	// Local registry for the events:route:* ObservableEvents emitted around message routing;
 	// observers attached via addObserver receive correlated Start/End/Error events.
@@ -477,6 +478,11 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 
 	private void runConsumer(IConsumer consumer, IWorkflow workflow, SubscriptionDef fromSub,
 			DataflowDef fromDf, RouteDef routeDef) {
+		int concurrency = fromSub.consumerConfiguration() != null
+				? fromSub.consumerConfiguration().concurrency() : 1;
+		boolean guaranteeOrder = fromDf != null && fromDf.garanteeOrder();
+		RouteDispatcher dispatcher = new RouteDispatcher(routeDef.uuid(), concurrency, guaranteeOrder);
+		routeDispatchers.add(dispatcher);
 		try {
 			consumer.start(rawBytes -> {
 				Exchange exchange = Exchange.create(
@@ -485,7 +491,8 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 				Map<String, Object> params = new HashMap<>();
 				params.put("exchange", exchange);
 				WorkflowInput input = WorkflowInput.of(exchange, params);
-				routeObserver.execute(routeDef.uuid(), workflow, input, exchange);
+				// Sequential (ordered) inline, or submitted to the worker pool (parallel).
+				dispatcher.dispatch(() -> routeObserver.execute(routeDef.uuid(), workflow, input, exchange));
 			});
 		} catch (Exception e) {
 			log.error("Consumer thread error for route {}", routeDef.uuid(), e);
@@ -505,6 +512,10 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 			t.interrupt();
 		}
 		consumerThreads.clear();
+		for (RouteDispatcher dispatcher : routeDispatchers) {
+			dispatcher.close();
+		}
+		routeDispatchers.clear();
 		if (executorService != null) {
 			executorService.shutdown();
 		}
