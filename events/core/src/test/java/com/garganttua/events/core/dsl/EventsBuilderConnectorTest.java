@@ -252,6 +252,25 @@ class EventsBuilderConnectorTest {
 		}
 	}
 
+	@Nested
+	@DisplayName("source(type, configuration) — external context loading")
+	class Source {
+
+		@Test
+		@DisplayName("loads a JSON context string into the builder")
+		void loadsJsonString() {
+			int before = builder.contextCount();
+			builder.source("json", "{\"tenantId\":\"t1\",\"clusterId\":\"c1\"}");
+			assertEquals(before + 1, builder.contextCount(), "a context is added from the json source");
+		}
+
+		@Test
+		@DisplayName("rejects an unknown source type")
+		void unknownTypeThrows() {
+			assertThrows(DslException.class, () -> builder.source("bogus", "x"));
+		}
+	}
+
 	/** Minimal {@link ISupplier} yielding a {@link TestConnector}. */
 	static final class TestConnectorSupplier implements ISupplier<IConnector> {
 		@Override

@@ -29,6 +29,8 @@ import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IEvents;
 import com.garganttua.events.api.connectors.annotations.Connector;
 import com.garganttua.events.api.context.ContextDef;
+import com.garganttua.events.api.exceptions.EventsException;
+import com.garganttua.events.core.context.JsonContextReader;
 import com.garganttua.events.api.dsl.IContextBuilder;
 import com.garganttua.events.api.dsl.IEventsBuilder;
 import com.garganttua.events.core.Events;
@@ -143,9 +145,22 @@ public class EventsBuilder
 
 	@Override
 	public IEventsBuilder source(String type, String configuration) {
-		// Context source loading will be handled by JsonContextReader
-		// For now, this is a placeholder for external source loading
-		log.info("Context source registered: type={}, configuration={}", type, configuration);
+		String kind = type == null ? "" : type.toLowerCase(java.util.Locale.ROOT);
+		try {
+			ContextDef context = switch (kind) {
+				case "file" -> JsonContextReader.readFromFile(configuration);
+				case "resource", "classpath" -> JsonContextReader.readFromResource(configuration);
+				case "json", "string", "inline" -> JsonContextReader.readFromString(configuration);
+				default -> throw new DslException("Unknown events context source type '" + type
+						+ "' (expected: file, resource/classpath, json/string)");
+			};
+			addContext(context);
+			log.info("Loaded events context from source type={} (tenant {}, cluster {})",
+					type, context.tenantId(), context.clusterId());
+		} catch (EventsException e) {
+			throw new DslException("Failed to load events context from source type=" + type
+					+ ", configuration=" + configuration + ": " + e.getMessage(), e);
+		}
 		return this;
 	}
 

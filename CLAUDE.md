@@ -326,6 +326,15 @@ Dependency graph: `api` ← `expressions`, `core`, `connector-*`.
 - **connectors** — all extend `AbstractLifecycle` + implement `IConnector`: Kafka (auto topic
   creation, consumer groups), Bus (BigQueue, for testing), Mail (Angus Mail, producer-only).
 
-> The DSL `connector(...)` overloads are honest stubs pending a connector-resolution design decision.
+> The DSL `connector(...)` overloads resolve and register connectors (by `@Connector` class,
+> instance, supplier builder, or bean-reference URL); `source(type, configuration)` loads a context
+> from a `file` / `resource` / `json` source via `JsonContextReader`. Routes compile under the
+> **auto-wrap** model: the engine injects `protocol_in` / `protocol_out` (when the dataflow is
+> `encapsulated`) and the final `produce` around the declared business stages — the route author
+> writes only business logic. Per-subscription `concurrency` runs messages on a worker pool unless
+> the dataflow `garanteeOrder`s (then sequential — there is no parallel-keyed mode, as the byte[]
+> consumer SPI exposes no partition key). `RouteDef.exceptions` dead-letters a failed exchange to an
+> error subscription; `RouteDef.synchronization` locks per message **once a lock provider exists**
+> (the `IDistributedLock` SPI + implementations are not built yet).
 > events now follows the platform conventions (de-Lombok'd, observable `Logger`, Java 25) — any
 > remaining Java-21/Lombok/SLF4J note in old docs is stale; the root rules win.
