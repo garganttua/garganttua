@@ -16,6 +16,10 @@ package com.garganttua.events.api;
  * @param dataflowUuid   the destination dataflow UUID
  * @param connectorName  the destination connector name
  * @param subscriptionId the destination subscription id
+ * @param destinationPolicy the outbound {@code DestinationPolicy} name (from the destination's
+ *                       producer config) used to normalise the exchange address before publishing —
+ *                       {@code TO_ANY} broadcasts (clears {@code toUuid}), {@code ONLY_TO_*} keeps it;
+ *                       {@code null} means no normalisation (legacy GGOutFilterProcessor behaviour)
  */
 public record OutboundTarget(
 		IProducer producer,
@@ -24,5 +28,12 @@ public record OutboundTarget(
 		String version,
 		String dataflowUuid,
 		String connectorName,
-		String subscriptionId) {
+		String subscriptionId,
+		String destinationPolicy) {
+
+	/** Backward-compatible constructor: no outbound destination policy (no filter_out normalisation). */
+	public OutboundTarget(IProducer producer, boolean encapsulated, String topicRef, String version,
+			String dataflowUuid, String connectorName, String subscriptionId) {
+		this(producer, encapsulated, topicRef, version, dataflowUuid, connectorName, subscriptionId, null);
+	}
 }

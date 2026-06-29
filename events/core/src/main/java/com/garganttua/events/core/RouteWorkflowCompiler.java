@@ -149,8 +149,12 @@ final class RouteWorkflowCompiler {
 		}
 		IProducer producer = wrapForPublicationMode(routeDef, toSub, toConnector.createProducer(toSub, toDf));
 		runtime.getProducers().put(routeDef.uuid() + ":" + toSub.id(), producer);
+		String destinationPolicy = toSub.producerConfiguration() != null
+				&& toSub.producerConfiguration().destinationPolicy() != null
+						? toSub.producerConfiguration().destinationPolicy().name()
+						: null;
 		return Optional.of(new OutboundTarget(producer, toDf.encapsulated(), toSub.topic(),
-				toDf.version(), toDf.uuid(), toSub.connector(), toSub.id()));
+				toDf.version(), toDf.uuid(), toSub.connector(), toSub.id(), destinationPolicy));
 	}
 
 	/** Binds the legacy single-target {@code @producer}/{@code @topicRef}/... variables to one target. */

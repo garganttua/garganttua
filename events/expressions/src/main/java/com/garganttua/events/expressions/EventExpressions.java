@@ -227,12 +227,15 @@ public class EventExpressions {
 	private static void publishToTarget(Exchange exchange, OutboundTarget target,
 			String assetId, String clusterId) {
 		try {
+			// filter_out (legacy GGOutFilterProcessor): per-target address normalisation —
+			// TO_ANY broadcasts (clears toUuid), ONLY_TO_* keeps the address stamped on the envelope.
+			Exchange addressed = filterOut(exchange, target.destinationPolicy());
 			byte[] bytes;
 			if (target.encapsulated()) {
-				bytes = encapsulate(exchange, assetId, clusterId, target.topicRef(), target.version(),
+				bytes = encapsulate(addressed, assetId, clusterId, target.topicRef(), target.version(),
 						target.dataflowUuid(), target.connectorName(), target.subscriptionId()).value();
 			} else {
-				bytes = exchange.value();
+				bytes = addressed.value();
 			}
 			target.producer().publish(bytes);
 		} catch (ConnectorException | HandlingException e) {

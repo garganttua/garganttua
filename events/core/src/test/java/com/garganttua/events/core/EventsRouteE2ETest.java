@@ -3,6 +3,7 @@ package com.garganttua.events.core;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -44,6 +45,7 @@ import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.Message;
 import com.garganttua.events.api.connectors.annotations.Connector;
 import com.garganttua.events.api.context.ConsumerConfigurationDef;
+import com.garganttua.events.api.context.ProducerConfigurationDef;
 import com.garganttua.events.api.context.RouteExceptionsDef;
 import com.garganttua.events.api.context.TimeIntervalDef;
 import com.garganttua.events.api.enums.DestinationPolicy;
@@ -441,6 +443,47 @@ class EventsRouteE2ETest {
 		handler.accept(mapper.writeValueAsBytes(envelope("asset")));
 		assertNotNull(awaitProduced(), "a message addressed to this asset passes filter_in");
 		assertEquals(1, MemConnector.PRODUCED.size());
+	}
+
+	@Test
+	@DisplayName("filter_out (auto-injected from the producer config) normalises the outbound address per target")
+	void filterOutNormalisesOutboundAddress() throws Exception {
+		// TO_ANY → broadcast: the produced envelope's destination address is cleared.
+		assertNull(producedEnvelope(DestinationPolicy.TO_ANY).toUuid(),
+				"TO_ANY clears the destination address (broadcast)");
+		// ONLY_TO_ASSET → addressed: the envelope keeps the toUuid stamped by the inbound message.
+		assertEquals("addr-1", producedEnvelope(DestinationPolicy.ONLY_TO_ASSET).toUuid(),
+				"ONLY_TO_ASSET keeps the destination address");
+	}
+
+	/**
+	 * Builds a one-target encapsulated route whose OUT producer carries {@code outPolicy}, feeds an
+	 * envelope addressed to {@code "addr-1"}, and returns the decoded produced envelope.
+	 */
+	private Message producedEnvelope(DestinationPolicy outPolicy) throws Exception {
+		MemConnector.IN_HANDLER.set(null);
+		MemConnector.PRODUCED.clear();
+		ObjectMapper mapper = new ObjectMapper();
+		ProducerConfigurationDef producerCfg = new ProducerConfigurationDef(outPolicy, null);
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out")),
+				List.of(new DataflowDef("df-1", "flow", "mem", true, "1", true)), // encapsulated
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(
+						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, null, null, null),
+						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, producerCfg, null)),
+				List.of(new RouteDef("route-1", "in", List.of("out"), List.of(), null, null)),
+				null);
+		Map<String, IClass<? extends IConnector>> registry = Map.of(
+				"mem:1.0", IClass.getClass(MemConnector.class));
+		if (engine != null) {
+			engine.onStop();
+		}
+		engine = new Events("asset", List.of(context), registry, injectionContextBuilder, scriptsBuilder);
+		engine.onInit();
+		engine.onStart();
+		awaitHandler().accept(mapper.writeValueAsBytes(envelope("addr-1")));
+		return mapper.readValue(awaitProduced(), Message.class);
 	}
 
 	/** A serialized encapsulated {@link Message} addressed to {@code toUuid}, dataflow version "1". */

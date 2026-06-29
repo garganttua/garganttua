@@ -26,6 +26,9 @@ Légende statut : ✅ porté · ⚠️ partiel · ❌ absent · ➕ nouveau en A
 - ✅ `protocol_in` / `protocol_out` (auto-wrap), `produce` (auto, **multi-cible** : fan-out vers
   plusieurs `to`).
 - ✅ **`filter_in` auto-injecté** depuis la consumer config (sur flux encapsulé).
+- ✅ **`filter_out` auto-injecté** depuis la producer config, appliqué **par cible** dans
+  `publishToTarget` (`TO_ANY` → broadcast/`toUuid` effacé ; `ONLY_TO_*` → adresse conservée) —
+  correct pour le fan-out multi-`.to()` (chaque destination porte sa propre policy via `OutboundTarget`).
 - ✅ Dead-letter d'erreur, `source()` external loading, DSL `processor()`.
 - ✅ Concurrence par subscription, firehose observabilité, auto-détection `@Connector` (nouveautés ALPHA04).
 
@@ -34,11 +37,10 @@ Légende statut : ✅ porté · ⚠️ partiel · ❌ absent · ➕ nouveau en A
 ils sont déjà à parité (déclarés, inertes). Les implémenter serait de **nouvelles features** à
 concevoir, pas de la migration.
 
-**Reliquat réel** (vrai comportement legacy non encore porté) :
-- ⚠️ `filter_out` auto-injecté : entremêlé au `produce` multi-cible (chaque destination est
-  enveloppée à la volée) — à réconcilier avec ce nouveau modèle de sortie.
+**Reliquat réel** (le seul vrai écart restant) :
 - ❌ Lock de synchronisation : `IDistributedLock` n'a qu'un hook engine ; il manque un **SPI
-  lock-provider + une implémentation** (façon connecteurs). Infra à part entière.
+  lock-provider + une implémentation** (façon connecteurs). Infra à part entière, à concevoir —
+  pas un simple portage.
 
 ---
 
