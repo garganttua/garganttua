@@ -17,5 +17,20 @@
             <groupId>com.garganttua.core</groupId>
             <artifactId>garganttua-commons</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-reflection</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-runtime-reflection</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-aot-reflection</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
