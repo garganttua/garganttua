@@ -301,17 +301,11 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 					.variable("subscriptionId", fromSub.id())
 					.inlineAll();
 
-			DataflowDef fromDf = runtime.getDataflows().get(fromSub.dataflow());
-			if (fromDf != null) {
-				wb.variable("version", fromDf.version());
-				wb.variable("dataflowUuid", fromDf.uuid());
-			}
+			DataflowDef fromDf = bindInbound(wb, runtime, fromSub);
+			OutboundBinding outbound = bindOutbound(routeDef, runtime, wb);
 
-			wb.variable("connectorName", fromSub.connector());
-
-			registerProducer(routeDef, runtime, wb);
 			registerConsumer(routeDef, runtime, fromSub);
-			addStages(routeDef, wb);
+			addStages(routeDef, wb, isEncapsulated(fromDf), outbound.encapsulated(), outbound.hasProducer());
 
 			return wb.build();
 		} catch (DslException e) {
@@ -319,22 +313,54 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		}
 	}
 
-	private void registerProducer(RouteDef routeDef, ClusterRuntime runtime, IWorkflowBuilder wb) {
+	/** Binds the inbound (from) workflow variables and returns the inbound dataflow (or {@code null}). */
+	private DataflowDef bindInbound(IWorkflowBuilder wb, ClusterRuntime runtime, SubscriptionDef fromSub) {
+		DataflowDef fromDf = runtime.getDataflows().get(fromSub.dataflow());
+		if (fromDf != null) {
+			wb.variable("version", fromDf.version());
+			wb.variable("dataflowUuid", fromDf.uuid());
+		}
+		wb.variable("connectorName", fromSub.connector());
+		return fromDf;
+	}
+
+	/**
+	 * Creates the outbound producer for {@code routeDef.to()} (when set) and binds the outbound (to)
+	 * workflow variables that the auto-injected {@code protocol_out} / {@code produce} stages read.
+	 *
+	 * @return whether a producer was bound and whether the outbound dataflow is encapsulated
+	 */
+	private OutboundBinding bindOutbound(RouteDef routeDef, ClusterRuntime runtime, IWorkflowBuilder wb) {
 		if (routeDef.to() == null) {
-			return;
+			return OutboundBinding.NONE;
 		}
 		SubscriptionDef toSub = runtime.getSubscriptions().get(routeDef.to());
 		if (toSub == null) {
-			return;
+			return OutboundBinding.NONE;
 		}
 		IConnector toConnector = runtime.getConnectors().get(toSub.connector());
 		DataflowDef toDf = runtime.getDataflows().get(toSub.dataflow());
-		if (toConnector != null && toDf != null) {
-			IProducer producer = toConnector.createProducer(toSub, toDf);
-			runtime.getProducers().put(routeDef.uuid() + ":" + toSub.id(), producer);
-			wb.variable("producer", producer);
-			wb.variable("topicRef", toSub.topic());
+		if (toConnector == null || toDf == null) {
+			return OutboundBinding.NONE;
 		}
+		IProducer producer = toConnector.createProducer(toSub, toDf);
+		runtime.getProducers().put(routeDef.uuid() + ":" + toSub.id(), producer);
+		wb.variable("producer", producer);
+		wb.variable("topicRef", toSub.topic());
+		wb.variable("outVersion", toDf.version());
+		wb.variable("outDataflowUuid", toDf.uuid());
+		wb.variable("outConnectorName", toSub.connector());
+		wb.variable("outSubscriptionId", toSub.id());
+		return new OutboundBinding(true, toDf.encapsulated());
+	}
+
+	private static boolean isEncapsulated(DataflowDef df) {
+		return df != null && df.encapsulated();
+	}
+
+	/** Outcome of {@link #bindOutbound}: whether a producer exists and whether its dataflow is encapsulated. */
+	private record OutboundBinding(boolean hasProducer, boolean encapsulated) {
+		static final OutboundBinding NONE = new OutboundBinding(false, false);
 	}
 
 	private void registerConsumer(RouteDef routeDef, ClusterRuntime runtime, SubscriptionDef fromSub) {
@@ -346,31 +372,53 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		}
 	}
 
-	private void addStages(RouteDef routeDef, IWorkflowBuilder wb) throws DslException {
-		if (routeDef.stages() == null) {
-			return;
+	/**
+	 * Compiles the route into the workflow, auto-wrapping the declared business stages with the
+	 * transport stages the engine owns: {@code protocol_in} first when the inbound dataflow is
+	 * encapsulated, then the declared stages, then {@code protocol_out} when the outbound dataflow is
+	 * encapsulated, and finally {@code produce} to the {@code to} connector. The route author
+	 * therefore declares only business logic; envelope (de)serialisation and emission are automatic.
+	 */
+	private void addStages(RouteDef routeDef, IWorkflowBuilder wb, boolean fromEncapsulated,
+			boolean toEncapsulated, boolean hasProducer) throws DslException {
+		if (fromEncapsulated) {
+			addExpressionStage(wb, "protocol_in",
+					"protocol_in(@exchange, @assetId, @clusterId, @subscriptionId, @version)",
+					null, null, null);
 		}
-		for (RouteStageDef stageDef : routeDef.stages()) {
-			String scriptContent = "exchange <- " + stageDef.expression();
-
-			var stageBuilder = wb.stage(stageDef.name());
-			var scriptBuilder = stageBuilder.script(scriptContent)
-					.name(stageDef.name())
-					.inline();
-
-			if (stageDef.condition() != null) {
-				scriptBuilder.when(stageDef.condition());
+		if (routeDef.stages() != null) {
+			for (RouteStageDef stageDef : routeDef.stages()) {
+				addExpressionStage(wb, stageDef.name(), stageDef.expression(), stageDef.condition(),
+						stageDef.catchExpression(), stageDef.catchDownstreamExpression());
 			}
-			if (stageDef.catchExpression() != null) {
-				scriptBuilder.catch_(stageDef.catchExpression());
-			}
-			if (stageDef.catchDownstreamExpression() != null) {
-				scriptBuilder.catchDownstream(stageDef.catchDownstreamExpression());
-			}
-
-			scriptBuilder.up(); // → stage
-			stageBuilder.up();  // → workflow
 		}
+		if (toEncapsulated) {
+			addExpressionStage(wb, "protocol_out",
+					"protocol_out(@exchange, @assetId, @clusterId, @topicRef, @outVersion, "
+							+ "@outDataflowUuid, @outConnectorName, @outSubscriptionId)",
+					null, null, null);
+		}
+		if (hasProducer) {
+			addExpressionStage(wb, "produce", "produce(@exchange, @producer)", null, null, null);
+		}
+	}
+
+	/** Adds one inline stage {@code exchange <- expression} with optional condition / catch handlers. */
+	private void addExpressionStage(IWorkflowBuilder wb, String name, String expression,
+			String condition, String catchExpression, String catchDownstreamExpression) throws DslException {
+		var stageBuilder = wb.stage(name);
+		var scriptBuilder = stageBuilder.script("exchange <- " + expression).name(name).inline();
+		if (condition != null) {
+			scriptBuilder.when(condition);
+		}
+		if (catchExpression != null) {
+			scriptBuilder.catch_(catchExpression);
+		}
+		if (catchDownstreamExpression != null) {
+			scriptBuilder.catchDownstream(catchDownstreamExpression);
+		}
+		scriptBuilder.up(); // → stage
+		stageBuilder.up();  // → workflow
 	}
 
 	@Override

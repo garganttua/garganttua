@@ -36,11 +36,14 @@ import com.garganttua.core.runtime.dsl.IRuntimesBuilder;
 import com.garganttua.core.runtime.dsl.RuntimesBuilder;
 import com.garganttua.core.script.dsl.IScriptsBuilder;
 import com.garganttua.core.script.dsl.ScriptsBuilder;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
+import com.garganttua.events.api.Message;
 import com.garganttua.events.api.connectors.annotations.Connector;
+import com.garganttua.events.api.enums.Direction;
 import com.garganttua.events.api.context.ConnectorDef;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
@@ -193,12 +196,11 @@ class EventsRouteE2ETest {
 				List.of(
 						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, null, null, null),
 						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
+				// Auto-wrap model: the route declares only the business stage; the engine appends
+				// produce(@exchange, @producer) automatically (and protocol_in/out when encapsulated).
 				List.of(new RouteDef("route-1", "in", "out",
-						List.of(
-								new RouteStageDef("tag", "set_header(@exchange, \"processed\", \"true\")",
-										null, null, null),
-								new RouteStageDef("emit", "produce(@exchange, @producer)",
-										null, null, null)),
+						List.of(new RouteStageDef("tag", "set_header(@exchange, \"processed\", \"true\")",
+								null, null, null)),
 						null, null)),
 				null);
 
@@ -234,5 +236,68 @@ class EventsRouteE2ETest {
 		assertEquals(1, MemConnector.PRODUCED.size(), "exactly one message produced");
 		assertArrayEquals(payload, produced, "the produced payload is the routed exchange value");
 		assertTrue(true, "route stages executed end-to-end");
+	}
+
+	@Test
+	@DisplayName("encapsulated dataflow: protocol_in/out are auto-injected and enrich the journey steps")
+	void encapsulatedRouteAutoInjectsProtocolStagesAndSteps() throws Exception {
+		ObjectMapper mapper = new ObjectMapper();
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out")),
+				// encapsulated = true → the engine auto-wraps with protocol_in / protocol_out.
+				List.of(new DataflowDef("df-1", "flow", "mem", true, "1", true)),
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(
+						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, null, null, null),
+						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
+				// No business stage: the route is pure transport (protocol_in → protocol_out → produce).
+				List.of(new RouteDef("route-1", "in", "out", List.of(), null, null)),
+				null);
+
+		Map<String, IClass<? extends IConnector>> registry = Map.of(
+				"mem:1.0", IClass.getClass(MemConnector.class));
+		engine = new Events("asset", List.of(context), registry, injectionContextBuilder, scriptsBuilder);
+		engine.onInit();
+		engine.onStart();
+
+		Consumer<byte[]> handler = awaitHandler();
+
+		// Feed a serialized Message envelope (what an encapsulated upstream emits).
+		Message inbound = Message.create("tenant-x",
+				com.garganttua.events.api.enums.MediaType.APPLICATION_JSON, "1",
+				"hello".getBytes(StandardCharsets.UTF_8));
+		handler.accept(mapper.writeValueAsBytes(inbound));
+
+		byte[] produced = awaitProduced();
+		assertNotNull(produced, "the encapsulated route must produce a Message envelope");
+
+		Message out = mapper.readValue(produced, Message.class);
+		assertArrayEquals("hello".getBytes(StandardCharsets.UTF_8), out.value(),
+				"the payload survives the protocol round-trip");
+		assertEquals(2, out.steps().size(), "protocol_in (IN) + protocol_out (OUT) each add a journey step");
+		assertEquals(Direction.IN, out.steps().get(0).direction(), "first step is the inbound stamp");
+		assertEquals(Direction.OUT, out.steps().get(1).direction(), "second step is the outbound stamp");
+	}
+
+	private Consumer<byte[]> awaitHandler() throws InterruptedException {
+		Consumer<byte[]> handler = null;
+		for (int i = 0; i < 50 && handler == null; i++) {
+			handler = MemConnector.IN_HANDLER.get();
+			if (handler == null) {
+				TimeUnit.MILLISECONDS.sleep(40);
+			}
+		}
+		assertNotNull(handler, "engine must start the route consumer and capture its handler");
+		return handler;
+	}
+
+	private byte[] awaitProduced() throws InterruptedException {
+		for (int i = 0; i < 50; i++) {
+			if (!MemConnector.PRODUCED.isEmpty()) {
+				return MemConnector.PRODUCED.get(0);
+			}
+			TimeUnit.MILLISECONDS.sleep(40);
+		}
+		return null;
 	}
 }
