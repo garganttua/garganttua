@@ -23,6 +23,22 @@
 			<artifactId>garganttua-api-commons</artifactId>
 			<version>3.0.0-ALPHA04</version>
 		</dependency>
+		<!-- TEST-ONLY: the api-core Filter factories build the IFilter trees the tests assert against.
+		     Main scope must stay free of api-core — the evaluator works against the IFilter interface. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-core</artifactId>
+			<version>3.0.0-ALPHA04</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- TEST-ONLY: a JVM reflection provider so IClass.getClass(...) can build the
+		     OperationDefinition fixtures the filter tests assert against. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-runtime-reflection</artifactId>
+			<version>${garganttua.core.version}</version>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>com.garganttua.core</groupId>
 			<artifactId>garganttua-commons</artifactId>

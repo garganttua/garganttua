@@ -13,11 +13,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.api.commons.service.OperationResponseCode;
+import com.garganttua.api.core.filter.Filter;
 import com.garganttua.core.observability.EndEvent;
 import com.garganttua.core.observability.GlobalObservers;
+import com.garganttua.core.reflection.IClass;
 import com.garganttua.events.api.exceptions.ConnectorException;
 
 /**
@@ -27,6 +31,11 @@ import com.garganttua.events.api.exceptions.ConnectorException;
  * pipeline handler as serialised bytes.
  */
 class ApiEventsConsumerTest {
+
+	@BeforeAll
+	static void installReflection() {
+		TestReflection.install();
+	}
 
 	@Test
 	void endEventWithBusinessPayloadReachesHandlerWithNoAppWiring() throws Exception {
@@ -110,6 +119,54 @@ class ApiEventsConsumerTest {
 		String json = new String(received.get(), StandardCharsets.UTF_8);
 		assertTrue(json.contains("contact-tenant"), "must forward the contacts event: " + json);
 		assertFalse(json.contains("newsletter-tenant"), "must not forward the newsletters event: " + json);
+
+		consumer.stop();
+		worker.join(5_000);
+	}
+
+	@Test
+	void ifilterForwardsMatchingOperationAndDropsTheRest() throws Exception {
+		// The connector's IFilter keeps only create/update/readAll: a delete event is dropped, the
+		// following create event is forwarded — proving operation-based filtering end to end.
+		Filter filter = Filter.in("operation", "create", "update", "readAll");
+		ApiEventsConsumer consumer = new ApiEventsConsumer(null, null, filter);
+		AtomicReference<byte[]> received = new AtomicReference<>();
+		CountDownLatch gotMessage = new CountDownLatch(1);
+
+		Thread worker = new Thread(() -> {
+			try {
+				consumer.start(bytes -> {
+					received.compareAndSet(null, bytes);
+					gotMessage.countDown();
+				});
+			} catch (ConnectorException e) {
+				fail(e);
+			}
+		});
+		worker.setDaemon(true);
+		worker.start();
+		TimeUnit.MILLISECONDS.sleep(100);
+
+		IClass<?> entity = IClass.getClass(FakeEvent.class);
+
+		FakeEvent deleted = new FakeEvent();
+		deleted.setTenantId("delete-tenant");
+		deleted.setCode(OperationResponseCode.OK);
+		deleted.setOperation(OperationDefinition.deleteOneWithStandardSecurity("contacts", entity));
+		GlobalObservers.fire(new EndEvent(UUID.randomUUID(), Instant.now(),
+				"api:operation:contacts:delete-one-contact", Duration.ofMillis(2), 0, deleted));
+
+		FakeEvent created = new FakeEvent();
+		created.setTenantId("create-tenant");
+		created.setCode(OperationResponseCode.OK);
+		created.setOperation(OperationDefinition.createOneWithStandardSecurity("contacts", entity));
+		GlobalObservers.fire(new EndEvent(UUID.randomUUID(), Instant.now(),
+				"api:operation:contacts:create-one-contact", Duration.ofMillis(2), 0, created));
+
+		assertTrue(gotMessage.await(5, TimeUnit.SECONDS), "the create event should be forwarded");
+		String json = new String(received.get(), StandardCharsets.UTF_8);
+		assertTrue(json.contains("create-tenant"), "must forward the create event: " + json);
+		assertFalse(json.contains("delete-tenant"), "must not forward the delete event: " + json);
 
 		consumer.stop();
 		worker.join(5_000);

@@ -9,6 +9,7 @@ import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.events.api.connectors.annotations.Connector;
 import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
@@ -38,6 +39,15 @@ import com.garganttua.events.api.context.SubscriptionDef;
  * payload is self-describing — {@link ApiEventCodec} emits {@code domain}, {@code businessOperation}
  * and {@code useCase} fields, so a dataflow transform stage can route on them too.</p>
  *
+ * <p><b>Programmatic {@link IFilter} filtering.</b> Beyond the string {@code domain}/{@code operations}
+ * config keys, an application can build a rich {@link IFilter} with the api-core {@code Filter}
+ * factories (e.g. {@code Filter.in("operation","create","update","readAll")}) and set it on the
+ * connector <i>instance</i> via {@link #filter(IFilter)} before registering that instance with the
+ * events DSL {@code connector(IConnector)} direct-object path. The engine then uses the pre-configured
+ * instance, so the filter is honoured per business event ({@link ApiEventFilter}). The filter is
+ * <b>additional and optional</b>: a {@code null} filter preserves the existing all-pass behaviour, and
+ * the {@code domain}/{@code operations} source filtering keeps working alongside it.</p>
+ *
  * <p>This connector is <b>read-only</b>: {@link #createProducer(SubscriptionDef, DataflowDef)}
  * returns a producer whose {@code publish} throws.</p>
  */
@@ -50,10 +60,25 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	private String name = "api-events";
 	private String operations;
 	private String domain;
+	private IFilter eventFilter;
 
 	@Override
 	public IReflection reflection() {
 		return IClass.getReflection();
+	}
+
+	/**
+	 * Sets the optional application-built {@link IFilter} this connector applies to every forwarded
+	 * business event, on top of the {@code domain}/{@code operations} source filtering.
+	 *
+	 * @param filter the filter tree to apply, or {@code null} to forward all matching events
+	 * @return this connector, for fluent chaining
+	 */
+	public ApiEventsConnector filter(IFilter filter) {
+		// Defensive copy: the filter tree is mutable, so we snapshot it to stay immune to
+		// post-registration mutation by the application.
+		this.eventFilter = ApiEventFilter.snapshot(filter);
+		return this;
 	}
 
 	@Override
@@ -72,7 +97,7 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 
 	@Override
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
-		return new ApiEventsConsumer(this.operations, this.domain);
+		return new ApiEventsConsumer(this.operations, this.domain, this.eventFilter);
 	}
 
 	@Override

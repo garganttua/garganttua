@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.garganttua.api.commons.event.IEvent;
+import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.core.observability.EndEvent;
 import com.garganttua.core.observability.ErrorEvent;
 import com.garganttua.core.observability.GlobalObservers;
@@ -32,6 +33,11 @@ import com.garganttua.events.api.exceptions.ConnectorException;
  *
  * <p>On queue overflow the event is dropped with a single throttled warn — the emitting thread is
  * never blocked.</p>
+ *
+ * <p>When the connector carries an application {@link IFilter}, a business event is forwarded only if
+ * it also satisfies {@link ApiEventFilter#matches(IFilter, IEvent)} (e.g. a filter on
+ * {@code operation} keeps only {@code create}/{@code update}/{@code readAll} events). A {@code null}
+ * filter forwards every event that passes the source filtering, preserving the prior behaviour.</p>
  */
 public final class ApiEventsConsumer implements IConsumer {
 
@@ -43,6 +49,7 @@ public final class ApiEventsConsumer implements IConsumer {
 
 	private final String operation;
 	private final String domain;
+	private final IFilter filter;
 	private final ApiEventCodec codec;
 	private final BlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
 
@@ -62,8 +69,21 @@ public final class ApiEventsConsumer implements IConsumer {
 	 * @param domain    optional domain filter; {@code null}/blank matches every domain
 	 */
 	public ApiEventsConsumer(String operation, String domain) {
+		this(operation, domain, null);
+	}
+
+	/**
+	 * @param operation optional operation-key filter; {@code null}/blank matches every operation
+	 * @param domain    optional domain filter; {@code null}/blank matches every domain
+	 * @param filter    optional application {@link IFilter}; {@code null} forwards every event that
+	 *                  already passes the source filtering ({@link ApiEventFilter})
+	 */
+	public ApiEventsConsumer(String operation, String domain, IFilter filter) {
 		this.operation = normalize(operation);
 		this.domain = normalize(domain);
+		// Defensive copy: the filter tree is mutable; snapshot it so the consumer's matching is
+		// stable for its whole lifetime.
+		this.filter = ApiEventFilter.snapshot(filter);
 		this.codec = new ApiEventCodec();
 	}
 
@@ -104,7 +124,10 @@ public final class ApiEventsConsumer implements IConsumer {
 		if (event == null || !isTerminal(event) || !sourceMatches(event)) {
 			return Optional.empty();
 		}
-		return event.payload() instanceof IEvent business ? Optional.of(business) : Optional.empty();
+		if (!(event.payload() instanceof IEvent business)) {
+			return Optional.empty();
+		}
+		return ApiEventFilter.matches(this.filter, business) ? Optional.of(business) : Optional.empty();
 	}
 
 	private boolean isTerminal(ObservableEvent event) {

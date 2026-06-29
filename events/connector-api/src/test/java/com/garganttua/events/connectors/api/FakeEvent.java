@@ -16,19 +16,21 @@ import com.garganttua.api.commons.service.OperationResponseCode;
 final class FakeEvent implements IEvent {
 
 	private String tenantId;
+	private String ownerId;
 	private String userId;
 	private Object in;
 	private Object out;
 	private OperationResponseCode code;
+	private OperationDefinition operation;
 
 	@Override
 	public OperationDefinition getOperation() {
-		return null;
+		return this.operation;
 	}
 
 	@Override
 	public void setOperation(OperationDefinition operation) {
-		// unused
+		this.operation = operation;
 	}
 
 	@Override
@@ -113,12 +115,12 @@ final class FakeEvent implements IEvent {
 
 	@Override
 	public String getOwnerId() {
-		return null;
+		return this.ownerId;
 	}
 
 	@Override
 	public void setOwnerId(String ownerId) {
-		// unused
+		this.ownerId = ownerId;
 	}
 
 	@Override
