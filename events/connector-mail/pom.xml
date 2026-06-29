@@ -74,6 +74,17 @@
 							<includeTestSourceDirectory>false</includeTestSourceDirectory>
 						</configuration>
 					</plugin>
+					<!-- MailProducer stores MailSender, an internally-owned collaborator (created by
+					     MailConnector, never shared externally), so its EI_EXPOSE_REP2 is accepted
+					     noise. Exclude just that field via a module-local filter; the shared
+					     config/spotbugs/exclude.xml is off-limits. -->
+					<plugin>
+						<groupId>com.github.spotbugs</groupId>
+						<artifactId>spotbugs-maven-plugin</artifactId>
+						<configuration>
+							<excludeFilterFile>${project.basedir}/spotbugs-exclude.xml</excludeFilterFile>
+						</configuration>
+					</plugin>
 				</plugins>
 			</build>
 		</profile>

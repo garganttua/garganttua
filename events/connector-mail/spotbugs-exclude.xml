@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Module-local SpotBugs exclusions for garganttua-events-connector-mail.
+
+  The shared config/spotbugs/exclude.xml (off-limits) is empty by policy.
+
+  MailProducer stores the MailSender handed to it by MailConnector. The sender is an
+  internally-owned collaborator (created and owned by the connector, never shared with
+  external callers), so EI_EXPOSE_REP2 here is the accepted "caller-owned collaborator"
+  noise category — there is nothing to defensively copy. Scope the exclusion tightly to
+  that single field of that single class.
+-->
+<FindBugsFilter>
+  <Match>
+    <Class name="com.garganttua.events.connectors.mail.MailProducer"/>
+    <Field name="sender"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+</FindBugsFilter>
