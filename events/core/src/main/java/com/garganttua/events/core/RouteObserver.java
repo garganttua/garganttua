@@ -7,6 +7,7 @@ import com.garganttua.core.observability.ObservabilityEmitter;
 import com.garganttua.core.observability.ObservableRegistry;
 import com.garganttua.core.workflow.IWorkflow;
 import com.garganttua.core.workflow.WorkflowInput;
+import com.garganttua.core.workflow.WorkflowResult;
 import com.garganttua.events.api.Exchange;
 
 /**
@@ -54,10 +55,9 @@ final class RouteObserver {
 	@SuppressFBWarnings(value = "THROWS_METHOD_THROWS_RUNTIMEEXCEPTION",
 			justification = "Observability pattern: the original RuntimeException is rethrown unchanged "
 					+ "after firing the events:route Error event, to propagate the failure to the consumer.")
-	void execute(String routeUuid, IWorkflow workflow, WorkflowInput input, Exchange exchange) {
+	WorkflowResult execute(String routeUuid, IWorkflow workflow, WorkflowInput input, Exchange exchange) {
 		if (!this.observableRegistry.hasObservers() && !GlobalObservers.hasObservers()) {
-			workflow.execute(input);
-			return;
+			return workflow.execute(input);
 		}
 
 		UUID executionUuid = UUID.randomUUID();
@@ -65,8 +65,9 @@ final class RouteObserver {
 		try (var scope = ObservabilityEmitter.open(this.observableRegistry, executionUuid)) {
 			scope.fireStart(source);
 			try {
-				workflow.execute(input);
+				WorkflowResult result = workflow.execute(input);
 				scope.fireEnd(source, null, exchange);
+				return result;
 			} catch (RuntimeException e) {
 				scope.fireError(source, e, exchange);
 				throw e;

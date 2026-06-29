@@ -44,6 +44,7 @@ import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.Message;
 import com.garganttua.events.api.connectors.annotations.Connector;
 import com.garganttua.events.api.context.ConsumerConfigurationDef;
+import com.garganttua.events.api.context.RouteExceptionsDef;
 import com.garganttua.events.api.enums.DestinationPolicy;
 import com.garganttua.events.api.enums.Direction;
 import com.garganttua.events.api.enums.OriginPolicy;
@@ -318,6 +319,43 @@ class EventsRouteE2ETest {
 		}
 		assertEquals(messages, MemConnector.PRODUCED.size(),
 				"every message must be produced (parallel workers, order not asserted)");
+	}
+
+	@Test
+	@DisplayName("a failing stage routes the exchange to the route's error subscription")
+	void failedRouteSendsExchangeToErrorSubscription() throws Exception {
+		// filter_in fails (the exchange carries no dataflowVersion, so it mismatches version "1"),
+		// aborting the route. RouteDef.exceptions sends the exchange to the "error" subscription.
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out"), new TopicDef("events.error")),
+				List.of(new DataflowDef("df-1", "flow", "mem", true, "1", false)),
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(
+						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, null, null, null),
+						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null),
+						new SubscriptionDef("error", "df-1", "events.error", "mem1", null, null, null, null)),
+				List.of(new RouteDef("route-1", "in", "out",
+						List.of(new RouteStageDef("guard",
+								"filter_in(@exchange, \"TO_ANY\", \"FROM_ANY\", @assetId, @clusterId, @version)",
+								null, null, null)),
+						new RouteExceptionsDef("error", null, null), null)),
+				null);
+
+		Map<String, IClass<? extends IConnector>> registry = Map.of(
+				"mem:1.0", IClass.getClass(MemConnector.class));
+		engine = new Events("asset", List.of(context), registry, injectionContextBuilder, scriptsBuilder);
+		engine.onInit();
+		engine.onStart();
+
+		Consumer<byte[]> handler = awaitHandler();
+		handler.accept("hello".getBytes(StandardCharsets.UTF_8));
+
+		byte[] errored = awaitProduced();
+		assertNotNull(errored, "the failing exchange must be routed to the error subscription");
+		assertEquals(1, MemConnector.PRODUCED.size(),
+				"only the error route produces (the normal produce stage never ran)");
+		assertArrayEquals("hello".getBytes(StandardCharsets.UTF_8), errored,
+				"the original exchange payload is dead-lettered");
 	}
 
 	private Consumer<byte[]> awaitHandler() throws InterruptedException {
