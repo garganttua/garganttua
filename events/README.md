@@ -34,17 +34,57 @@ L'auteur de route ne déclare **que la logique métier** ; le moteur encadre aut
 
 ```
 [début]  protocol_in   (UNIQUEMENT si le dataflow entrant est encapsulated)
+[début]  filter_in     (UNIQUEMENT si entrée encapsulated, depuis la consumer config)
          … stages métier déclarés (dans l'ordre) …
 [fin]    produce(@exchange, @outbounds, @assetId, @clusterId)   (si ≥1 cible to)
+            └─ par cible : filter_out(policy) → encapsulate (si encapsulated) → publish
 ```
 
 - `protocol_in` est injecté **seulement** si le dataflow entrant porte le flag `encapsulated`.
+- **`filter_in` est auto-injecté** (port du legacy `GGInFilterProcessor`) juste après `protocol_in`,
+  depuis la consumer config de la subscription d'entrée — donc **uniquement** sur les flux entrants
+  `encapsulated` (un flux non encapsulé n'a pas de version à filtrer). Il applique la `version` du
+  dataflow puis les `destinationPolicy` / `originPolicy` de la consumer config.
 - La **sérialisation d'enveloppe de sortie n'est plus un stage `protocol_out` distinct** : elle est
   faite **par cible** à l'intérieur du `produce` multi-cible (`publishToTarget` → `encapsulate`),
   uniquement pour les cibles dont le dataflow est `encapsulated`. La fonction `@Expression
   protocol_out` reste disponible pour un usage manuel.
-- Les filtres `filter_in` / `filter_out` **ne sont pas auto-injectés** (à déclarer en stage manuel —
-  voir [Tips and best practices](#tips-and-best-practices)).
+- **`filter_out` est auto-injecté par cible sortante** (port du legacy `GGOutFilterProcessor`) :
+  `produce` appelle `filterOut(exchange, target.destinationPolicy())` dans `publishToTarget` **avant**
+  l'encapsulation/publication de chaque cible. La `destinationPolicy` est portée par chaque
+  `OutboundTarget` (résolue depuis la producer config de la subscription de sortie par
+  `RouteWorkflowCompiler.resolveOutboundTarget`) — `TO_ANY` efface `toUuid` (broadcast), `ONLY_TO_*`
+  conserve l'adressage. Correct pour le fan-out multi-`.to()` (chaque cible porte sa propre policy).
+
+### Processeurs implémentés (legacy GGEvents → ALPHA04)
+
+La chaîne de processeurs transactionnelle du legacy `GGEvents` est **entièrement portée** sur le
+moteur core Workflow/Script. Chaque ancien processeur a une réalisation ALPHA04 (souvent une
+`@Expression`), câblée soit en **auto-wrap** (injectée par `RouteWorkflowCompiler`), soit en **stage
+manuel** déclaré via le DSL `processor(...)`. Légende : ✅ porté · ➕ nouveau en ALPHA04.
+
+| Processeur legacy | Réalisation ALPHA04 | Câblage | Statut |
+|---|---|---|---|
+| `GGProtocolInProcessor` | `@Expression protocol_in` | **auto-wrap** en début de route si le dataflow entrant est `encapsulated` (`addStages`) | ✅ |
+| `GGProtocolOutProcessor` | `@Expression protocol_out` / helper `encapsulate` | **par cible sortante** intégré au `produce` multi-cible (`publishToTarget`) ; `protocol_out` reste disponible en **stage manuel** | ✅ |
+| `GGInFilterProcessor` | `@Expression filter_in` | **auto-injecté** depuis la consumer config, après `protocol_in`, sur flux entrant `encapsulated` (`addStages`, `0dc70dd`) | ✅ |
+| `GGOutFilterProcessor` | `@Expression filter_out` | **auto-injecté par cible sortante** : `produce` → `publishToTarget` appelle `filterOut(exchange, target.destinationPolicy())` avant encapsulation (`e5b08cd`) | ✅ |
+| `GGOnChangeProducer` | stage `produce(@exchange, @outbounds, @assetId, @clusterId)` | **auto-wrap** en fin de route si ≥1 cible `to` ; publication **immédiate** (`PublicationMode.ON_CHANGE`) | ✅ |
+| `GGTimeIntervalProducer` | décorateur `TimeIntervalProducer` | `PublicationMode.TIME_INTERVAL` : `wrapForPublicationMode` décore le producteur (last-wins / `buffered` mémoire / `bufferPersisted` fichier) ; flush cadencé par `timeInterval` | ✅ |
+| `GGOnChangeConsumer` | thread consumer + `RouteDispatcher` | un **thread daemon par route** (`consumer-<uuid>`) ; concurrence par subscription (`concurrency`) ; `garanteeOrder ⇒ séquentiel` | ✅ |
+| `GGLockObject` (synchronisation) | **mutex garganttua-core** (`IMutexManager` / `IMutex`) | `RouteSyncDef.synchronization(lock, lockObject)` → `MutexName` ; le workflow par message tourne dans `IMutex.acquire(...)` (`RouteMessageProcessor`) | ✅ |
+| chaîne d'exception legacy (dead-letter) | routage d'erreur **niveau engine** | si le `WorkflowResult` échoue ou lève, l'exchange est republié sur la subscription d'erreur `RouteDef.exceptions.to` (`RouteMessageProcessor.routeToError`) | ✅ |
+| `GGCoreFilterException` | `FilterException extends HandlingException` | un message filtré (`filter_in`/`filter_out`) interrompt la route en **drop propre**, sans erreur | ✅ |
+| `GGTimeIntervalConsumer` | — | commenté **dès le legacy** (jamais actif) — rien à porter | — |
+
+**Stages utilitaires `@Expression`** disponibles pour un **déclaratif manuel** via `processor(...)`
+(non auto-injectés) : `set_header`, `get_header`, `json_path`, `log`, `protocol_out`, `route_to_error`,
+`not_null` (typiquement en `when(...)`), plus la surcharge `produce(@exchange, <producer>)` mono-cible.
+Voir le [Catalogue des fonctions `@Expression`](#catalogue-des-fonctions-expression).
+
+> Concurrence par subscription, firehose d'observabilité (`GlobalObservers`) et auto-détection
+> `@Connector` sont des ➕ **nouveautés ALPHA04** (absentes du legacy). Détail processeur par
+> processeur dans [`MIGRATION.md`](MIGRATION.md) §1 / §3.
 
 ### Engine : Asset → Tenant → Cluster
 
@@ -52,7 +92,8 @@ L'auteur de route ne déclare **que la logique métier** ; le moteur encadre aut
 carte `runtimes : Map<tenantId, Map<clusterId, ClusterRuntime>>`. Pour chaque `ContextDef` :
 
 - un **`ClusterRuntime`** est créé : registres in-place de `connectors`, `topics`, `dataflows`,
-  `subscriptions`, `routeWorkflows`, `consumers`, `producers`, `locks`.
+  `subscriptions`, `routeWorkflows`, `consumers`, `producers` (la synchronisation passe par le mutex
+  de core — il n'y a plus de registre `locks` interne).
 - `initContext` enregistre topics + dataflows, configure les connecteurs (`initConnector`),
   enregistre les subscriptions, puis compile chaque route en workflow.
 
@@ -72,9 +113,10 @@ Au **stop** (`doStop`) : arrêt consumers/producers/connectors, interruption des
    - si `dataflow.garanteeOrder()` ⇒ **exécution séquentielle inline** (l'ordre prime, la
      parallélisation est désactivée avec un warning) ;
    - sinon, si `concurrency > 1` ⇒ pool borné `route-worker-<uuid>` (parallèle).
-3. `processMessage` exécute le workflow **sous le verrou de synchro** (si configuré et résolu — voir
-   `RouteSyncDef`/`IDistributedLock`), via `RouteObserver.execute(...)` qui émet les events
-   `events:route:<uuid>` Start/End/Error.
+3. `processMessage` exécute le workflow **sous le mutex de synchro garganttua-core** (si configuré —
+   `RouteSyncDef` résolu en `MutexName`, exécution dans `IMutex.acquire(...)` ; voir
+   [Synchronisation](#synchronisation-via-le-mutex-garganttua-core)), via `RouteObserver.execute(...)`
+   qui émet les events `events:route:<uuid>` Start/End/Error.
 4. **Dead-letter** : si le `WorkflowResult` n'est pas succès, ou si une `RuntimeException` est levée,
    l'exchange est republié sur la **subscription d'erreur** (`RouteDef.exceptions.to`).
 
@@ -127,7 +169,7 @@ Tous les `*Def` sont des **records immuables** (`com.garganttua.events.api.conte
 | `TopicDef` | `String ref` | Référence logique d'un topic |
 | `DataflowDef` | `String uuid`, `String name`, `String type`, `boolean garanteeOrder`, `String version`, `boolean encapsulated` | Flux : `garanteeOrder` (ordre garanti ⇒ séquentiel), `encapsulated` (enveloppe `Message`), `version` (vérifiée par `filter_in`) |
 | `ConnectorDef` | `String name`, `String type`, `String version`, `Map<String,String> configuration` | Déclaration d'un connecteur (résolu en bean `connector:type:version`) |
-| `LockDef` | `String name`, `String type`, `String version`, `Map<String,String> configuration` | Déclaration d'un verrou distribué (aucun provider encore — voir [Tips and best practices](#tips-and-best-practices)) |
+| `LockDef` | `String name`, `String type`, `String version`, `Map<String,String> configuration` | Déclaration d'un verrou (parsée/construite dans `ContextDef.locks`). La synchronisation effective passe désormais par le **mutex garganttua-core** — voir [Synchronisation](#synchronisation-via-le-mutex-garganttua-core) |
 
 #### Subscription & configurations
 
@@ -450,12 +492,27 @@ subscriptions (avec `timeInterval`/`buffered`/`bufferPersisted`/consumer/produce
 (`to` string **ou** array via `parseTo`, stages avec `catch`/`catchDownstream`, exceptions, synchro)
 et locks.
 
-#### `IDistributedLock` (hook de synchronisation — sans provider)
+#### Synchronisation via le mutex garganttua-core
 
-`IDistributedLock extends ILifecycle` : `getName()`, `configure(Map)`, `lock(String)`,
-`unlock(String)`. `RouteMessageProcessor` acquiert/relâche le verrou de `RouteSyncDef` autour de
-chaque message **si** il est résolu dans `ClusterRuntime.getLocks()`. **Aucun provider ne peuple ce
-registre aujourd'hui** ⇒ hook seul (voir [Tips and best practices](#tips-and-best-practices)).
+La synchronisation de route s'appuie **entièrement sur le mutex de garganttua-core**
+(`com.garganttua.core.mutex` : `IMutexManager` / `IMutex`) — il n'y a **plus** d'abstraction de
+verrou interne à events (l'ancien `IDistributedLock` et le registre `ClusterRuntime.locks` ont été
+**supprimés** en `d8f7756`).
+
+- `Events.doInit` construit l'`IMutexManager` via `MutexManagerBuilder` (auto-détection des
+  `@MutexFactory` du classpath), avec repli sur un `MutexManager` local.
+- `RouteMessageProcessor.resolveMutex` mappe `RouteSyncDef.synchronization(lock, lockObject)` en
+  `MutexName` (`toMutexName`) : un `lock` simple utilise le **`InterruptibleLeaseMutex`** par défaut ;
+  un `lock` qualifié **`Type::name`** sélectionne une factory `@MutexFactory` enregistrée ; un
+  `lockObject` non vide **affine** le nom (`name:lockObject`) pour sérialiser des clés indépendantes
+  sous un même verrou logique.
+- Le workflow par message tourne dans `IMutex.acquire(...)` (le mutex bloque, exécute, relâche) ; un
+  lock malformé/non résolu est **logué** et la route tourne sans synchro plutôt que d'échouer au
+  démarrage.
+
+Pour un **lock distribué** (Redis / DB / Zookeeper), il suffit de fournir une implémentation
+`IMutex` + `@MutexFactory` côté garganttua-core et de référencer son type dans le `lock` qualifié de
+la route — **aucune** modification d'events requise (le SPI mutex du core fait le branchement).
 
 ### API programmatique (IEvents)
 
@@ -624,28 +681,38 @@ pièce jointe (`content` Base64 décodé, disposition `ATTACHMENT`). Sans `attac
 - **Réutiliser les primitives de core** (Workflow / Script / Runtime / Expression, observabilité,
   injection) plutôt que bâtir un mécanisme parallèle : une route **est** un `IWorkflow`, un stage
   **est** un script inline. C'est la règle « decalque le chemin existant » héritée d'api.
-- **Filtres `filter_in`/`filter_out` non auto-injectés** : contrairement au legacy, ils ne sont pas
-  câblés depuis les consumer/producer configs. Déclarez-les en **stage manuel** si vous voulez le
-  filtrage version/destination/origine.
-- **Synchronisation distribuée non opérationnelle** : `LockDef` + `RouteSyncDef` + `IDistributedLock`
-  + le hook acquire/release de `RouteMessageProcessor` existent, mais **aucun provider** ne peuple
-  `ClusterRuntime.getLocks()` ⇒ les routes tournent sans synchro effective (un warning est émis).
+- **Filtres `filter_in`/`filter_out` auto-injectés** : comme le legacy, ils sont câblés
+  automatiquement — `filter_in` depuis la consumer config (sur flux entrant `encapsulated`),
+  `filter_out` **par cible sortante** depuis la producer config (`OutboundTarget.destinationPolicy`).
+  Inutile de les déclarer en stage manuel pour le filtrage version/destination/origine standard ; les
+  `@Expression filter_in`/`filter_out` restent disponibles pour un filtrage ad-hoc supplémentaire.
+- **Synchronisation via le mutex de core** : `RouteSyncDef.synchronization(lock, lockObject)` exécute
+  le workflow par message dans un `IMutex` de garganttua-core (`InterruptibleLeaseMutex` par défaut,
+  `Type::name` pour une factory `@MutexFactory`). Pour un lock **distribué**, fournir une
+  implémentation `IMutex` + `@MutexFactory` côté core — voir
+  [Synchronisation](#synchronisation-via-le-mutex-garganttua-core).
 
 ### État & gaps
 
 Synthèse de l'état réel du code courant. Pour la table legacy↔ALPHA04 processeur par processeur et le
 détail des chantiers, voir [`MIGRATION.md`](MIGRATION.md).
 
-> **Écart MIGRATION.md ⇄ code.** `MIGRATION.md` liste plusieurs items comme « en cours » / « non
-> commités » qui sont en réalité **déjà mergés** à HEAD : le **multi-`.to()`** (fan-out,
-> `OutboundTarget`, `StringOrListDeserializer`) et le **`TIME_INTERVAL` + buffered/bufferPersisted**
-> (`TimeIntervalProducer`, DSL `processor()`, `SubscriptionDef.buffered/bufferPersisted`). Les statuts
-> de `MIGRATION.md` sont donc partiellement périmés sur ces deux points.
+> **MIGRATION.md ⇄ code : alignés.** La migration legacy → ALPHA04 est **fonctionnellement terminée**
+> (`MIGRATION.md` §0). Tout le comportement réel du legacy est porté à HEAD : multi-`.to()` (fan-out,
+> `OutboundTarget`), `TIME_INTERVAL` + buffered/bufferPersisted (`TimeIntervalProducer`),
+> auto-injection `filter_in`/`filter_out`, et synchronisation via le **mutex garganttua-core** (l'ancien
+> `IDistributedLock` supprimé). Reliquats = features jamais agies même en legacy (voir ❌ ci-dessous).
 
 **✅ Porté / présent**
 
 - Compilation route → core Workflow (`RouteWorkflowCompiler`), stages `exchange <- @Expression`.
 - Auto-wrap `protocol_in` (si entrée `encapsulated`) + `produce` ; encapsulation de sortie par cible.
+- **Auto-injection `filter_in`** depuis la consumer config (sur flux entrant `encapsulated`,
+  `addStages`, `0dc70dd`) et **`filter_out` par cible sortante** depuis la producer config
+  (`publishToTarget` → `filterOut`, `e5b08cd`).
+- **Synchronisation de route** via le **mutex garganttua-core** (`IMutexManager`/`IMutex`,
+  `RouteMessageProcessor`, `d8f7756`) — l'`IDistributedLock` interne et `ClusterRuntime.locks` ont
+  été supprimés ; un lock distribué se branche par `@MutexFactory` côté core, sans code events.
 - Publication `ON_CHANGE` (immédiate).
 - **`TIME_INTERVAL` + buffered/bufferPersisted** (`TimeIntervalProducer` : last-wins / batch mémoire /
   batch persisté fichier), scheduler, parse JSON — **mergé** (MIGRATION.md le note « non commité »).
@@ -663,16 +730,9 @@ détail des chantiers, voir [`MIGRATION.md`](MIGRATION.md).
 - **`protocol_in`/`protocol_out`** conditionnés au flag `encapsulated` (le legacy les ajoutait
   toujours). `protocol_out` n'est plus un stage auto distinct (encapsulation intégrée au `produce`
   multi-cible).
-- **Synchronisation / lock** : `LockDef` + `RouteSyncDef` + `IDistributedLock` + hook acquire/release
-  existent, mais **aucun provider** ne peuple `ClusterRuntime.getLocks()` ⇒ routes sans synchro
-  effective (warning émis).
 
 **❌ Absent**
 
-- **Auto-injection `filter_in` / `filter_out`** : les `@Expression` existent mais ne sont **pas**
-  auto-câblées (à déclarer en stage manuel). Le legacy les ajoutait depuis les consumer/producer
-  configs.
-- **SPI lock-provider** : pas d'implémentation/résolution de `IDistributedLock` (hook seul).
 - **Tenant partitioning policy** (legacy `GGContextTenantPartitioningPolicy`) : absent.
 - **Topic routing** (legacy `GGContextTopicRouting`) : absent.
 - **Parallel-keyed** (concurrence + ordre simultanés) : impossible tant que le SPI consumer `byte[]`
