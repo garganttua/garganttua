@@ -27,6 +27,14 @@ import com.garganttua.events.api.context.SubscriptionDef;
  * <p>Configuration keys:</p>
  * <ul>
  *   <li>{@code name} — connector name (default {@code api-events}).</li>
+ *   <li>{@code filter} — optional declarative {@link IFilter} as JSON (the exact shape api-core
+ *       {@code Filter} serialises to: {@code name}/{@code value}/{@code literals}). When present and
+ *       non-blank it is parsed by {@link JsonFilterParser} and applied per business event, so each
+ *       per-domain connector can declare its own filter in the topology config with no application
+ *       code and no api-core dependency on the main classpath. The programmatic
+ *       {@link #filter(IFilter)} setter, if already called, <b>takes precedence</b> over this key; a
+ *       malformed {@code filter} JSON is logged at warn and ignored (pass-all), never aborts
+ *       {@code configure}.</li>
  *   <li>{@code domain} — optional domain filter; only events whose source domain segment
  *       ({@code api:operation:<domain>:<op>}) equals this value are forwarded (default: all
  *       domains). This is the discriminator that lets two dataflows react to the same operation on
@@ -61,6 +69,7 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	private String operations;
 	private String domain;
 	private IFilter eventFilter;
+	private boolean programmaticFilterSet;
 
 	@Override
 	public IReflection reflection() {
@@ -71,6 +80,10 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	 * Sets the optional application-built {@link IFilter} this connector applies to every forwarded
 	 * business event, on top of the {@code domain}/{@code operations} source filtering.
 	 *
+	 * <p>An explicit (even {@code null}) programmatic filter <b>takes precedence</b> over a
+	 * {@code filter} config key: once this setter is called, {@link #configure} will not override the
+	 * filter from config.</p>
+	 *
 	 * @param filter the filter tree to apply, or {@code null} to forward all matching events
 	 * @return this connector, for fluent chaining
 	 */
@@ -78,6 +91,7 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 		// Defensive copy: the filter tree is mutable, so we snapshot it to stay immune to
 		// post-registration mutation by the application.
 		this.eventFilter = ApiEventFilter.snapshot(filter);
+		this.programmaticFilterSet = true;
 		return this;
 	}
 
@@ -91,8 +105,28 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 		this.name = configuration.getOrDefault("name", "api-events");
 		this.operations = configuration.get("operations");
 		this.domain = configuration.get("domain");
+		configureFilter(configuration.get("filter"));
 		LOG.debug("Configured api events connector {} (domain={}, operations={})",
 				this.name, this.domain, this.operations);
+	}
+
+	/**
+	 * Applies the declarative {@code filter} config key. A programmatic {@link #filter(IFilter)}
+	 * wins, so config is ignored once the setter has been called. A malformed or empty JSON yields a
+	 * {@code null} filter (pass-all) and never throws.
+	 *
+	 * @param json the raw {@code filter} config value, may be {@code null}/blank/malformed
+	 */
+	private void configureFilter(String json) {
+		if (this.programmaticFilterSet) {
+			LOG.debug("Programmatic filter set on api events connector {}; ignoring config filter key",
+					this.name);
+			return;
+		}
+		if (json == null || json.isBlank()) {
+			return;
+		}
+		this.eventFilter = ApiEventFilter.snapshot(JsonFilterParser.parse(json));
 	}
 
 	@Override
