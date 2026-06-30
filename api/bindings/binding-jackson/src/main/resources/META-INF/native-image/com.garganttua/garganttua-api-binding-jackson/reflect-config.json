@@ -1,0 +1,18 @@
+[
+  {
+    "comment": "Jackson databind types instantiated reflectively by the binding's serializer. binding-jackson owns jackson-databind (compile scope), so it ships this metadata under META-INF/native-image and it travels to native consumers.",
+    "name": "com.fasterxml.jackson.databind.ObjectMapper",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "com.fasterxml.jackson.databind.node.ObjectNode",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "com.fasterxml.jackson.databind.node.JsonNodeFactory",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  }
+]

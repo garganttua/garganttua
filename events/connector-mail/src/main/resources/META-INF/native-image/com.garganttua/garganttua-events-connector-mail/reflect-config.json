@@ -1,0 +1,54 @@
+[
+  {
+    "comment": "Angus / Jakarta Mail provider and handler types resolved reflectively via the JavaMail provider/handler SPI. connector-mail owns angus-mail (compile scope), so it ships this metadata under META-INF/native-image and it travels to native consumers.",
+    "name": "com.sun.mail.smtp.SMTPTransport",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "com.sun.mail.smtp.SMTPProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "com.sun.mail.imap.IMAPProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "com.sun.mail.pop3.POP3Provider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "jakarta.mail.Session",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "jakarta.mail.internet.MimeMessage",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "com.sun.mail.handlers.text_plain",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.sun.mail.handlers.text_html",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.sun.mail.handlers.text_xml",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.sun.mail.handlers.multipart_mixed",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "com.sun.mail.handlers.message_rfc822",
+    "allDeclaredConstructors": true
+  }
+]

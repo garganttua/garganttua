@@ -4,5 +4,55 @@
     "name": "io.javalin.http.servlet.JavalinServletContext",
     "allDeclaredMethods": true,
     "allDeclaredConstructors": true
+  },
+  {
+    "comment": "Jetty server types reachable through Javalin's embedded server. Javalin brings Jetty transitively (compile scope), so the binding owns this metadata and it travels to native consumers under META-INF/native-image.",
+    "name": "org.eclipse.jetty.server.Server",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.eclipse.jetty.server.handler.ContextHandler",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.eclipse.jetty.server.handler.ResourceHandler",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.eclipse.jetty.server.ServerConnector",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.eclipse.jetty.server.HttpConnectionFactory",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.eclipse.jetty.server.HttpConfiguration",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.eclipse.jetty.util.thread.QueuedThreadPool",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.eclipse.jetty.io.SelectorManager",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.eclipse.jetty.io.ManagedSelector",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
   }
 ]

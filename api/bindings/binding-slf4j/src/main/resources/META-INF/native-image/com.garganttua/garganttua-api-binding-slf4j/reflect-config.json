@@ -1,0 +1,13 @@
+[
+  {
+    "comment": "slf4j-simple provider types loaded reflectively via the SLF4J ServiceLoader provider mechanism. binding-slf4j bundles slf4j-simple (compile scope, non-optional), so it owns this metadata and ships it under META-INF/native-image for native consumers.",
+    "name": "org.slf4j.simple.SimpleServiceProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.slf4j.simple.SimpleLogger",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  }
+]
