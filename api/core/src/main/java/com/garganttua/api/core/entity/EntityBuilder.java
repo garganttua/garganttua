@@ -25,6 +25,7 @@ import com.garganttua.core.reflection.IReflectionProvider;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.ReflectionException;
 import com.garganttua.core.reflection.fields.FieldResolver;
+import com.garganttua.core.reflection.methods.MethodResolver;
 import com.garganttua.core.reflection.query.ObjectQueryFactory;
 
 import com.garganttua.core.observability.Logger;
@@ -34,7 +35,6 @@ import com.garganttua.core.observability.Logger;
 @SuppressWarnings({"PMD.AvoidFieldNameMatchingMethodName", "PMD.AvoidDuplicateLiterals"})
 public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
 	private static final Logger log = Logger.getLogger(EntityBuilder.class);
-
 
     // Reflection provider is whatever the user installed via IClass.setReflection().
     // Resolved lazily per call so the framework never picks an implementation.
@@ -392,9 +392,18 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
     public IEntityBuilder<E> annotation(IMethod method, IClass<? extends Annotation> annotation) throws ApiException {
         Objects.requireNonNull(method, "Method cannot be null");
         Objects.requireNonNull(annotation, "Annotation cannot be null");
-
-        // TODO: Implement when MethodResolver API is clarified
-        throw new UnsupportedOperationException("Unimplemented method 'annotation(Method, IClass)'");
+        ObjectAddress address;
+        try {
+            address = MethodResolver.methodByMethod(this.entityClass, provider(), method).address();
+        } catch (ReflectionException e) {
+            throw new ApiException(e.getMessage(), e);
+        }
+        Pair<ObjectAddress, IClass<? extends Annotation>> candidate = new Pair<>(address, annotation);
+        if (this.annotatedMethods.contains(candidate)) {
+            return this;
+        }
+        this.annotatedMethods.add(candidate);
+        return this;
     }
 
     @Override

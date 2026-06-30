@@ -10,11 +10,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.annotation.Annotation;
+
 import com.garganttua.api.commons.context.IEntityContext;
 import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.context.dsl.IEntityBuilder;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.core.entity.EntityContext;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IMethod;
 import com.garganttua.core.reflection.dsl.ReflectionBuilder;
 import com.garganttua.core.reflection.runtime.RuntimeReflectionProvider;
 import com.garganttua.core.reflections.ReflectionsAnnotationScanner;
@@ -180,6 +184,72 @@ class EntityBuilderTest {
                     .up();
 
             assertSame(domainBuilder, parent);
+        }
+    }
+
+    @Nested
+    @DisplayName("Method Annotation")
+    class MethodAnnotation {
+
+        @Test
+        @DisplayName("annotation(IMethod, IClass) no longer throws UnsupportedOperationException")
+        void methodAnnotationDoesNotThrowUnsupported() throws Exception {
+            IMethod getName = IClass.getClass(TestEntity.class).getMethod("getName");
+            IClass<? extends Annotation> deprecated = IClass.getClass(Deprecated.class);
+
+            assertDoesNotThrow(() -> entityBuilder.annotation(getName, deprecated));
+        }
+
+        @Test
+        @DisplayName("annotation(IMethod, IClass) returns the builder for chaining")
+        void methodAnnotationReturnsBuilder() throws Exception {
+            IMethod getName = IClass.getClass(TestEntity.class).getMethod("getName");
+            IClass<? extends Annotation> deprecated = IClass.getClass(Deprecated.class);
+
+            IEntityBuilder<TestEntity> result = entityBuilder.annotation(getName, deprecated);
+            assertSame(entityBuilder, result);
+        }
+
+        @Test
+        @DisplayName("annotation(IMethod, IClass) records the pair into the method-annotation storage")
+        void methodAnnotationIsRecordedInDefinition() throws Exception {
+            IMethod getName = IClass.getClass(TestEntity.class).getMethod("getName");
+            IClass<? extends Annotation> deprecated = IClass.getClass(Deprecated.class);
+
+            entityBuilder.id("id").uuid("uuid").tenantId("tenantId").annotation(getName, deprecated);
+
+            IEntityContext<TestEntity> context = entityBuilder.build();
+            EntityContext<TestEntity> entityContext = (EntityContext<TestEntity>) context;
+
+            assertEquals(1, entityContext.getEntityDefinition().annotatedMethods().size());
+            assertEquals(deprecated, entityContext.getEntityDefinition().annotatedMethods().get(0).getValue1());
+            assertTrue(entityContext.getEntityDefinition().annotatedFields().isEmpty());
+        }
+
+        @Test
+        @DisplayName("annotation(IMethod, IClass) de-duplicates identical pairs")
+        void methodAnnotationDeduplicates() throws Exception {
+            IMethod getName = IClass.getClass(TestEntity.class).getMethod("getName");
+            IClass<? extends Annotation> deprecated = IClass.getClass(Deprecated.class);
+
+            entityBuilder.id("id").uuid("uuid").tenantId("tenantId")
+                    .annotation(getName, deprecated)
+                    .annotation(getName, deprecated);
+
+            IEntityContext<TestEntity> context = entityBuilder.build();
+            EntityContext<TestEntity> entityContext = (EntityContext<TestEntity>) context;
+
+            assertEquals(1, entityContext.getEntityDefinition().annotatedMethods().size());
+        }
+
+        @Test
+        @DisplayName("annotation(IMethod, IClass) rejects null arguments")
+        void methodAnnotationRejectsNull() throws Exception {
+            IMethod getName = IClass.getClass(TestEntity.class).getMethod("getName");
+            IClass<? extends Annotation> deprecated = IClass.getClass(Deprecated.class);
+
+            assertThrows(NullPointerException.class, () -> entityBuilder.annotation((IMethod) null, deprecated));
+            assertThrows(NullPointerException.class, () -> entityBuilder.annotation(getName, null));
         }
     }
 
