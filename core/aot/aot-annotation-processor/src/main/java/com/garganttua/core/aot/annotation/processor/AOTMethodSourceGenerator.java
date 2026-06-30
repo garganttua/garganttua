@@ -21,19 +21,22 @@ final class AOTMethodSourceGenerator {
     private final Types types;
     private final String packageName;
     private final String enclosingSimpleName;
+    private final String enclosingSourceName;
     private final String enclosingQualifiedName;
     private final String generatedSimpleName;
     private final boolean isStatic;
     private final boolean isVoid;
 
-    AOTMethodSourceGenerator(Types types, TypeElement enclosing, ExecutableElement method, String generatedSimpleName) {
+    AOTMethodSourceGenerator(Types types, TypeElement enclosing, String packageName,
+            ExecutableElement method, String generatedSimpleName) {
         this.types = types;
         this.method = method;
         this.generatedSimpleName = generatedSimpleName;
         this.enclosingQualifiedName = enclosing.getQualifiedName().toString();
         this.enclosingSimpleName = enclosing.getSimpleName().toString();
-        int lastDot = enclosingQualifiedName.lastIndexOf('.');
-        this.packageName = lastDot > 0 ? enclosingQualifiedName.substring(0, lastDot) : "";
+        this.packageName = packageName;
+        // Source-form reference to the enclosing type from its own package.
+        this.enclosingSourceName = AOTNaming.sourceName(enclosing, packageName);
         this.isStatic = method.getModifiers().contains(Modifier.STATIC);
         this.isVoid = method.getReturnType().getKind() == TypeKind.VOID;
     }
@@ -98,8 +101,8 @@ final class AOTMethodSourceGenerator {
         src.append("    @Override\n");
         src.append("    public Object invoke(Object obj, Object... args) {\n");
         String receiver = isStatic
-                ? enclosingSimpleName
-                : "((" + enclosingSimpleName + ") obj)";
+                ? enclosingSourceName
+                : "((" + enclosingSourceName + ") obj)";
         String call = receiver + "." + method.getSimpleName() + "(" + buildArgCasts(params) + ")";
         if (hasChecked) {
             src.append("        try {\n");

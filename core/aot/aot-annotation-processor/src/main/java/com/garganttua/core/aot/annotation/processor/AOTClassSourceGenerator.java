@@ -35,6 +35,7 @@ public final class AOTClassSourceGenerator {
     private final TypeElement typeElement;
     private final String packageName;
     private final String simpleName;
+    private final String typeSourceName;
     private final String qualifiedName;
     private final String generatedSimpleName;
 
@@ -49,6 +50,9 @@ public final class AOTClassSourceGenerator {
      *
      * @param types            the type utilities used to erase generic types
      * @param typeElement      the {@code @Reflected} type to describe
+     * @param packageName      the type's <em>true</em> package (empty for the default package),
+     *                         resolved via {@code Elements.getPackageOf} — never a string-stripped
+     *                         qualified name, which for a nested type would name the enclosing class
      * @param fields           the fields to expose, in source order
      * @param methods          the methods to expose, in source order
      * @param methodNames      mapping of each method to its generated descriptor class name
@@ -57,6 +61,7 @@ public final class AOTClassSourceGenerator {
      */
     public AOTClassSourceGenerator(Types types,
                                    TypeElement typeElement,
+                                   String packageName,
                                    List<VariableElement> fields,
                                    List<ExecutableElement> methods,
                                    Map<ExecutableElement, String> methodNames,
@@ -66,10 +71,11 @@ public final class AOTClassSourceGenerator {
         this.typeElement = typeElement;
         this.qualifiedName = typeElement.getQualifiedName().toString();
         this.simpleName = typeElement.getSimpleName().toString();
-        this.generatedSimpleName = AOTNaming.classDescriptorName(typeElement);
-
-        int lastDot = qualifiedName.lastIndexOf('.');
-        this.packageName = lastDot > 0 ? qualifiedName.substring(0, lastDot) : "";
+        this.packageName = packageName;
+        // Source-form reference to the described type from its own package:
+        // "Bar" for a top-level type, "Outer.Inner" for a nested one.
+        this.typeSourceName = AOTNaming.sourceName(typeElement, packageName);
+        this.generatedSimpleName = AOTNaming.classDescriptorName(typeElement, packageName);
 
         // Defensive copies — the generator must not be affected by, nor mutate,
         // the caller's collections after construction.
@@ -127,7 +133,7 @@ public final class AOTClassSourceGenerator {
         src.append(" */\n");
         src.append("@SuppressWarnings(\"all\")\n");
         src.append("public final class ").append(generatedSimpleName)
-           .append(" extends AOTClass<").append(simpleName).append("> {\n\n");
+           .append(" extends AOTClass<").append(typeSourceName).append("> {\n\n");
         src.append("    public static final ").append(generatedSimpleName)
            .append(" INSTANCE = new ").append(generatedSimpleName).append("();\n\n");
         src.append("    static {\n");
@@ -191,8 +197,8 @@ public final class AOTClassSourceGenerator {
     /** Appends the {@code getType()} override and the closing brace of the class. */
     private void appendGetTypeAndFooter(StringBuilder src) {
         src.append("    @Override\n");
-        src.append("    public Class<").append(simpleName).append("> getType() {\n");
-        src.append("        return ").append(simpleName).append(".class;\n");
+        src.append("    public Class<").append(typeSourceName).append("> getType() {\n");
+        src.append("        return ").append(typeSourceName).append(".class;\n");
         src.append("    }\n\n");
         src.append("}\n");
     }
@@ -203,7 +209,7 @@ public final class AOTClassSourceGenerator {
         for (int i = 0; i < fields.size(); i++) {
             if (i > 0) sb.append(",\n");
             sb.append("            ")
-              .append(AOTNaming.fieldDescriptorName(typeElement, fields.get(i)))
+              .append(AOTNaming.fieldDescriptorName(typeElement, packageName, fields.get(i)))
               .append(".INSTANCE");
         }
         sb.append("\n        }");

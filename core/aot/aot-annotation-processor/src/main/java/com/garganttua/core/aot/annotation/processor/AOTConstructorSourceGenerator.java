@@ -19,17 +19,21 @@ final class AOTConstructorSourceGenerator {
     private final Types types;
     private final String packageName;
     private final String enclosingSimpleName;
+    private final String enclosingSourceName;
     private final String enclosingQualifiedName;
     private final String generatedSimpleName;
 
-    AOTConstructorSourceGenerator(Types types, TypeElement enclosing, ExecutableElement constructor, String generatedSimpleName) {
+    AOTConstructorSourceGenerator(Types types, TypeElement enclosing, String packageName,
+            ExecutableElement constructor, String generatedSimpleName) {
         this.types = types;
         this.constructor = constructor;
         this.generatedSimpleName = generatedSimpleName;
         this.enclosingQualifiedName = enclosing.getQualifiedName().toString();
         this.enclosingSimpleName = enclosing.getSimpleName().toString();
-        int lastDot = enclosingQualifiedName.lastIndexOf('.');
-        this.packageName = lastDot > 0 ? enclosingQualifiedName.substring(0, lastDot) : "";
+        this.packageName = packageName;
+        // Source-form reference to the enclosing type from its own package:
+        // "Bar" for top-level, "Outer.Inner" for nested.
+        this.enclosingSourceName = AOTNaming.sourceName(enclosing, packageName);
     }
 
     String getGeneratedQualifiedName() {
@@ -49,7 +53,7 @@ final class AOTConstructorSourceGenerator {
            .append("(...)} — generated, do not edit. */\n");
         src.append("@SuppressWarnings(\"all\")\n");
         src.append("public final class ").append(generatedSimpleName)
-           .append(" extends AOTConstructor<").append(enclosingSimpleName).append("> {\n\n");
+           .append(" extends AOTConstructor<").append(enclosingSourceName).append("> {\n\n");
         src.append("    public static final ").append(generatedSimpleName)
            .append(" INSTANCE = new ").append(generatedSimpleName).append("();\n\n");
 
@@ -65,8 +69,8 @@ final class AOTConstructorSourceGenerator {
 
         // newInstance(Object...)
         src.append("    @Override\n");
-        src.append("    public ").append(enclosingSimpleName).append(" newInstance(Object... args) {\n");
-        src.append("        return new ").append(enclosingSimpleName)
+        src.append("    public ").append(enclosingSourceName).append(" newInstance(Object... args) {\n");
+        src.append("        return new ").append(enclosingSourceName)
            .append("(").append(buildArgCasts(params)).append(");\n");
         src.append("    }\n");
 

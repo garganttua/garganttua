@@ -546,6 +546,152 @@ class DirectBinderGeneratorTest {
         assertTrue(aotClass.contains("new AOTConstructor[0]"), () -> aotClass);
     }
 
+    // --- Nested types: binders are flat in the parent package (no package/class clash) ---
+
+    @Test
+    void nestedClassBinderIsFlatInParentPackageNotEnclosingClassPackage(@TempDir Path tmp) throws IOException {
+        // A @Reflected STATIC NESTED class. Before the fix, the package was
+        // string-stripped from the qualified name (sample.Outer.Inner ->
+        // "sample.Outer"), so the binder declared `package sample.Outer;` which
+        // clashes with class sample.Outer ("class ... clashes with package of
+        // same name"). The descriptor must instead live in the TRUE package
+        // (sample) with a FLATTENED name (AOTClass_Outer_Inner).
+        String src = """
+                package sample;
+                import com.garganttua.core.reflection.annotations.Reflected;
+                public class Outer {
+                    @Reflected(queryAllDeclaredConstructors = true,
+                               queryAllDeclaredMethods = true,
+                               allDeclaredFields = true)
+                    public static class Inner {
+                        String label;
+                        public Inner(String label) { this.label = label; }
+                        public String label() { return label; }
+                    }
+                }
+                """;
+        CompileResult r = compile(tmp, "sample.Outer", src);
+        assertCompiled(r);
+
+        // The descriptor file lands in the parent package under a flat name.
+        Path classFile = r.outputDir.resolve("sample/AOTClass_Outer_Inner.java");
+        assertTrue(Files.exists(classFile),
+                () -> "expected flat descriptor sample/AOTClass_Outer_Inner.java; diagnostics: " + diagSummary(r));
+        // NOT in the enclosing-class "package".
+        assertFalse(Files.exists(r.outputDir.resolve("sample/Outer/AOTClass_Inner.java")),
+                "binder must not be emitted under a package named after the enclosing class");
+
+        String aotClass = Files.readString(classFile);
+        // TRUE package, never `package sample.Outer;` (the clash).
+        assertTrue(aotClass.contains("package sample;"),
+                () -> "expected `package sample;` (the true package); got:\n" + aotClass);
+        assertFalse(aotClass.contains("package sample.Outer;"),
+                () -> "the enclosing-class package clash must be gone; got:\n" + aotClass);
+        // The type is referenced by its source-form nested name, which compiles.
+        assertTrue(aotClass.contains("extends AOTClass<Outer.Inner>"),
+                () -> "nested type must be referenced as Outer.Inner; got:\n" + aotClass);
+        assertTrue(aotClass.contains("return Outer.Inner.class;"),
+                () -> "getType() must return Outer.Inner.class; got:\n" + aotClass);
+    }
+
+    @Test
+    void nestedClassEmitsConstructorAndFieldBinders(@TempDir Path tmp) throws IOException {
+        // The bug's second half: allDeclaredConstructors=true only registered
+        // the nested TYPE, not its ctor/field binders, so Jackson could not
+        // instantiate it in native. Confirm the member binders are emitted —
+        // flat, in the parent package — and reference the nested type correctly.
+        String src = """
+                package sample;
+                import com.garganttua.core.reflection.annotations.Reflected;
+                public class Holder {
+                    @Reflected(queryAllDeclaredConstructors = true,
+                               allDeclaredFields = true)
+                    public static class Dto {
+                        String name;
+                        public Dto(String name) { this.name = name; }
+                    }
+                }
+                """;
+        CompileResult r = compile(tmp, "sample.Holder", src);
+        assertCompiled(r);
+
+        // Constructor binder: flat name, parent package, `new Holder.Dto(...)`.
+        Path ctorFile = r.outputDir.resolve("sample/AOTConstructor_Holder_Dto_0.java");
+        assertTrue(Files.exists(ctorFile),
+                () -> "expected nested constructor binder; diagnostics: " + diagSummary(r));
+        String ctorSrc = Files.readString(ctorFile);
+        assertTrue(ctorSrc.contains("package sample;"),
+                () -> "ctor binder must be in true package; got:\n" + ctorSrc);
+        assertTrue(ctorSrc.contains("return new Holder.Dto((java.lang.String) args[0]);"),
+                () -> "ctor binder must instantiate Holder.Dto; got:\n" + ctorSrc);
+
+        // Field binder: flat name, parent package, `((Holder.Dto) obj).name`.
+        Path fieldFile = r.outputDir.resolve("sample/AOTField_Holder_Dto_name.java");
+        assertTrue(Files.exists(fieldFile),
+                () -> "expected nested field binder; diagnostics: " + diagSummary(r));
+        String fieldSrc = Files.readString(fieldFile);
+        assertTrue(fieldSrc.contains("package sample;"),
+                () -> "field binder must be in true package; got:\n" + fieldSrc);
+        assertTrue(fieldSrc.contains("((Holder.Dto) obj).name"),
+                () -> "field binder must access Holder.Dto.name; got:\n" + fieldSrc);
+
+        // The class descriptor references the flat member binder names.
+        String aotClass = Files.readString(r.outputDir.resolve("sample/AOTClass_Holder_Dto.java"));
+        assertTrue(aotClass.contains("AOTConstructor_Holder_Dto_0.INSTANCE"),
+                () -> "class descriptor must wire the nested ctor binder; got:\n" + aotClass);
+        assertTrue(aotClass.contains("AOTField_Holder_Dto_name.INSTANCE"),
+                () -> "class descriptor must wire the nested field binder; got:\n" + aotClass);
+    }
+
+    @Test
+    void nestedRecordBinderIsFlatAndCompilable(@TempDir Path tmp) throws IOException {
+        // A static nested record — the exact Jackson-instantiated shape — must
+        // also get flat binders in the parent package with a valid nested ref.
+        String src = """
+                package sample;
+                import com.garganttua.core.reflection.annotations.Reflected;
+                public class Envelope {
+                    @Reflected(queryAllDeclaredConstructors = true, allDeclaredFields = true)
+                    public record Payload(String id) {}
+                }
+                """;
+        CompileResult r = compile(tmp, "sample.Envelope", src);
+        assertCompiled(r);
+        String aotClass = Files.readString(r.outputDir.resolve("sample/AOTClass_Envelope_Payload.java"));
+        assertTrue(aotClass.contains("package sample;"),
+                () -> "record descriptor must be in the true package; got:\n" + aotClass);
+        assertTrue(aotClass.contains("extends AOTClass<Envelope.Payload>"),
+                () -> "record descriptor must reference Envelope.Payload; got:\n" + aotClass);
+        assertTrue(Files.exists(r.outputDir.resolve("sample/AOTConstructor_Envelope_Payload_0.java")),
+                "expected nested record constructor binder");
+    }
+
+    @Test
+    void topLevelNamingIsUnchanged(@TempDir Path tmp) throws IOException {
+        // Regression guard: a top-level type's package and descriptor names must
+        // be byte-for-byte what they were before the flattening change.
+        String src = """
+                package sample;
+                import com.garganttua.core.reflection.annotations.Reflected;
+                @Reflected(queryAllDeclaredConstructors = true, allDeclaredFields = true)
+                public class TopLevel {
+                    String tag;
+                    public TopLevel(String tag) { this.tag = tag; }
+                }
+                """;
+        CompileResult r = compile(tmp, "sample.TopLevel", src);
+        assertCompiled(r);
+        String aotClass = Files.readString(r.outputDir.resolve("sample/AOTClass_TopLevel.java"));
+        assertTrue(aotClass.contains("package sample;"), () -> aotClass);
+        assertTrue(aotClass.contains("extends AOTClass<TopLevel>"),
+                () -> "top-level type reference must stay the simple name; got:\n" + aotClass);
+        assertTrue(aotClass.contains("return TopLevel.class;"), () -> aotClass);
+        assertTrue(Files.exists(r.outputDir.resolve("sample/AOTConstructor_TopLevel_0.java")),
+                "top-level ctor binder name must be unchanged");
+        assertTrue(Files.exists(r.outputDir.resolve("sample/AOTField_TopLevel_tag.java")),
+                "top-level field binder name must be unchanged");
+    }
+
     // --- harness ---
 
     private record CompileResult(boolean success, Path outputDir,

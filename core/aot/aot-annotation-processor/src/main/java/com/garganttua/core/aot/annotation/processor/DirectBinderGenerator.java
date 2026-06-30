@@ -40,17 +40,18 @@ import javax.tools.StandardLocation;
  * If the option is missing or not {@code "true"} the processor does nothing.</p>
  *
  * <p>For each {@code @Reflected} type, the processor emits an
- * {@code AOTClass_<SimpleName>} referencing per-member descriptor singletons
- * ({@code AOTField_*}, {@code AOTMethod_*}, {@code AOTConstructor_*} with direct,
- * no-reflection access) plus a listing entry in
+ * {@code AOTClass_<FlatName>} (the flattened nesting path — {@code AOTClass_Outer_Inner}
+ * for a nested type — see {@link AOTNaming}) in the type's true package, referencing
+ * per-member descriptor singletons ({@code AOTField_*}, {@code AOTMethod_*},
+ * {@code AOTConstructor_*} with direct, no-reflection access) plus a listing entry in
  * {@code META-INF/garganttua/aot/classes/<fqn>}. Members may carry an explicit
  * {@code @Reflected} in addition to the class-level
  * {@code queryAll* / allDeclaredFields} flags; the enclosing type must itself be
  * {@code @Reflected} or a member-only annotation is rejected at compile time.</p>
  *
  * <p><strong>Visibility constraint:</strong> an explicitly-{@code @Reflected}
- * {@code private} member causes a compile-time error — direct binders cannot
- * bypass Java visibility; privates pulled in by {@code queryAll*} are filtered.</p>
+ * {@code private} member is a compile-time error (direct binders cannot bypass Java
+ * visibility); privates pulled in by {@code queryAll*} are filtered.</p>
  *
  * @since 2.0.0-ALPHA01
  */
@@ -118,9 +119,8 @@ public class DirectBinderGenerator extends AbstractProcessor {
             }
         }
 
-        // Pass 2: auto-promote classes carrying any @Indexed-meta annotation
-        // (class- or member-level) but no @Reflected — closes the "index says
-        // yes, descriptor says no" gap that crashes such classes in pure-AOT.
+        // Pass 2: auto-promote @Indexed-meta classes lacking @Reflected — closes the
+        // "index says yes, descriptor says no" gap that crashes them in pure-AOT.
         for (Element root : roundEnv.getRootElements()) {
             if (root instanceof TypeElement type) {
                 autoPromoteIfIndexed(type);
@@ -194,10 +194,7 @@ public class DirectBinderGenerator extends AbstractProcessor {
      */
     private void autoPromoteIfIndexed(TypeElement type) {
         String fqn = type.getQualifiedName().toString();
-        if (processedTypes.contains(fqn)) {
-            return;
-        }
-        if (!hasIndexedMetaAnnotation(type)) {
+        if (processedTypes.contains(fqn) || !hasIndexedMetaAnnotation(type)) {
             return;
         }
         MemberInclusion.Flags flags = new MemberInclusion.Flags(
@@ -302,43 +299,44 @@ public class DirectBinderGenerator extends AbstractProcessor {
         if (!processedTypes.add(qualifiedName)) {
             return; // already generated in a previous round
         }
-
         List<VariableElement> fields = MemberInclusion.includedFields(typeElement, flags, explicitMembers);
         List<ExecutableElement> methods = MemberInclusion.includedMethods(typeElement, flags, explicitMembers);
         List<ExecutableElement> constructors = MemberInclusion.includedConstructors(typeElement, flags, explicitMembers);
-
         warnOnRedundantMembers(explicitMembers, flags);
-
         if (strict && rejectExplicitPrivateMembers(explicitMembers)) {
             return;
         }
-        // Filter privates silently (queryAll*-pulled and auto-promote paths).
-        fields = fields.stream()
-                .filter(f -> !f.getModifiers().contains(Modifier.PRIVATE))
-                .toList();
-        methods = methods.stream()
-                .filter(m -> !m.getModifiers().contains(Modifier.PRIVATE))
-                .toList();
-        constructors = constructors.stream()
-                .filter(c -> !c.getModifiers().contains(Modifier.PRIVATE))
-                .toList();
+        // Drop privates silently (queryAll*-pulled and auto-promote paths).
+        fields = filterNonPrivate(fields);
+        methods = filterNonPrivate(methods);
+        constructors = filterNonPrivate(constructors);
+        // TRUE package via Elements — never a string-stripped qualified name (which
+        // for a nested type names the enclosing class → "clashes with package").
+        String packageName = processingEnv.getElementUtils()
+                .getPackageOf(typeElement).getQualifiedName().toString();
 
-        Map<ExecutableElement, String> methodNames = AOTNaming.methodDescriptorNames(typeElement, methods);
-        Map<ExecutableElement, String> constructorNames = AOTNaming.constructorDescriptorNames(typeElement, constructors);
-
+        Map<ExecutableElement, String> methodNames =
+                AOTNaming.methodDescriptorNames(typeElement, packageName, methods);
+        Map<ExecutableElement, String> constructorNames =
+                AOTNaming.constructorDescriptorNames(typeElement, packageName, constructors);
         javax.lang.model.util.Types types = processingEnv.getTypeUtils();
-        writeMemberDescriptors(typeElement, fields, methods, constructors, methodNames, constructorNames, types);
-
-        // The class descriptor (refers to the per-member descriptors above)
+        writeMemberDescriptors(typeElement, packageName, fields, methods, constructors,
+                methodNames, constructorNames, types);
+        // The class descriptor refers to the per-member descriptors above.
         AOTClassSourceGenerator classGen = new AOTClassSourceGenerator(
-                types, typeElement, fields, methods, methodNames, constructors, constructorNames);
+                types, typeElement, packageName, fields, methods, methodNames, constructors, constructorNames);
         writeSource(classGen.getGeneratedQualifiedName(), classGen.generate(), typeElement);
-
         messager.printMessage(Diagnostic.Kind.NOTE,
                 "[garganttua-aot] Generated AOT descriptor: " + classGen.getGeneratedQualifiedName());
-
         writeListingEntry(qualifiedName, classGen.getGeneratedQualifiedName());
         this.generatedDescriptorFqns.add(classGen.getGeneratedQualifiedName());
+    }
+
+    /** Drops {@code private} members — direct binders cannot bypass Java visibility. */
+    private static <E extends Element> List<E> filterNonPrivate(List<E> members) {
+        return members.stream()
+                .filter(m -> !m.getModifiers().contains(Modifier.PRIVATE))
+                .toList();
     }
 
     /**
@@ -365,20 +363,22 @@ public class DirectBinderGenerator extends AbstractProcessor {
     }
 
     /** Emits the per-field, per-method and per-constructor descriptor source files. */
-    private void writeMemberDescriptors(TypeElement typeElement, List<VariableElement> fields,
+    private void writeMemberDescriptors(TypeElement typeElement, String packageName, List<VariableElement> fields,
             List<ExecutableElement> methods, List<ExecutableElement> constructors,
             Map<ExecutableElement, String> methodNames, Map<ExecutableElement, String> constructorNames,
             javax.lang.model.util.Types types) throws IOException {
         for (VariableElement field : fields) {
-            AOTFieldSourceGenerator gen = new AOTFieldSourceGenerator(types, typeElement, field);
+            AOTFieldSourceGenerator gen = new AOTFieldSourceGenerator(types, typeElement, packageName, field);
             writeSource(gen.getGeneratedQualifiedName(), gen.generate(), typeElement);
         }
         for (ExecutableElement method : methods) {
-            AOTMethodSourceGenerator gen = new AOTMethodSourceGenerator(types, typeElement, method, methodNames.get(method));
+            AOTMethodSourceGenerator gen = new AOTMethodSourceGenerator(
+                    types, typeElement, packageName, method, methodNames.get(method));
             writeSource(gen.getGeneratedQualifiedName(), gen.generate(), typeElement);
         }
         for (ExecutableElement ctor : constructors) {
-            AOTConstructorSourceGenerator gen = new AOTConstructorSourceGenerator(types, typeElement, ctor, constructorNames.get(ctor));
+            AOTConstructorSourceGenerator gen = new AOTConstructorSourceGenerator(
+                    types, typeElement, packageName, ctor, constructorNames.get(ctor));
             writeSource(gen.getGeneratedQualifiedName(), gen.generate(), typeElement);
         }
     }

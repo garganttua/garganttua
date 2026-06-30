@@ -22,6 +22,7 @@ final class AOTFieldSourceGenerator {
     private final VariableElement field;
     private final String packageName;
     private final String enclosingSimpleName;
+    private final String enclosingSourceName;
     private final String enclosingQualifiedName;
     private final String generatedSimpleName;
     private final String fieldTypeName;
@@ -29,13 +30,14 @@ final class AOTFieldSourceGenerator {
     private final boolean isStatic;
     private final boolean isFinal;
 
-    AOTFieldSourceGenerator(Types types, TypeElement enclosing, VariableElement field) {
+    AOTFieldSourceGenerator(Types types, TypeElement enclosing, String packageName, VariableElement field) {
         this.field = field;
         this.enclosingQualifiedName = enclosing.getQualifiedName().toString();
         this.enclosingSimpleName = enclosing.getSimpleName().toString();
-        int lastDot = enclosingQualifiedName.lastIndexOf('.');
-        this.packageName = lastDot > 0 ? enclosingQualifiedName.substring(0, lastDot) : "";
-        this.generatedSimpleName = AOTNaming.fieldDescriptorName(enclosing, field);
+        this.packageName = packageName;
+        // Source-form reference to the enclosing type from its own package.
+        this.enclosingSourceName = AOTNaming.sourceName(enclosing, packageName);
+        this.generatedSimpleName = AOTNaming.fieldDescriptorName(enclosing, packageName, field);
         TypeMirror type = field.asType();
         this.fieldTypeName = TypeNames.getTypeName(types, type);
         this.primitiveKind = TypeNames.primitiveKind(type);
@@ -192,8 +194,8 @@ final class AOTFieldSourceGenerator {
 
     private String readAccess() {
         return isStatic
-                ? enclosingSimpleName + "." + field.getSimpleName()
-                : "((" + enclosingSimpleName + ") obj)." + field.getSimpleName();
+                ? enclosingSourceName + "." + field.getSimpleName()
+                : "((" + enclosingSourceName + ") obj)." + field.getSimpleName();
     }
 
     private String writeTarget() {
