@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.garganttua.core.reflection.annotations.Reflected;
 import com.garganttua.events.api.enums.MediaType;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -14,6 +15,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 // by reference (and may be null) through the routing pipeline; a defensive copy would
 // change runtime behaviour and break the null contract relied on by the expression layer.
 @SuppressFBWarnings("EI_EXPOSE_REP")
+@Reflected(queryAllDeclaredConstructors = true, queryAllDeclaredMethods = true, allDeclaredFields = true)
 public record Message(
 		Map<String, String> headers,
 		String correlationId,

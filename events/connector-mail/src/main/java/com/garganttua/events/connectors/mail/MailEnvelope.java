@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.garganttua.core.reflection.annotations.Reflected;
 
 /**
  * Self-describing mail envelope carried in the message payload, letting each event drive its own
@@ -28,6 +29,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * @param attachments the attachments ("pièces jointes"); {@code null} is normalised to an empty,
  *                    unmodifiable list, so this accessor never returns {@code null}
  */
+@Reflected(queryAllDeclaredConstructors = true, queryAllDeclaredMethods = true, allDeclaredFields = true)
 public record MailEnvelope(String to, String from, String subject, String contentType, String body,
 		List<MailAttachment> attachments) {
 

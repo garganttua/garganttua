@@ -1,5 +1,7 @@
 package com.garganttua.events.connectors.mail;
 
+import com.garganttua.core.reflection.annotations.Reflected;
+
 /**
  * A single mail attachment ("pièce jointe") carried inside a {@link MailEnvelope}. The raw bytes are
  * transported as a Base64 string so the attachment stays JSON-friendly inside the message payload.
@@ -14,5 +16,6 @@ package com.garganttua.events.connectors.mail;
  * @param content     the Base64 encoding of the attachment's raw bytes; content that is not valid
  *                    Base64 causes the attachment to be skipped rather than failing the mail
  */
+@Reflected(queryAllDeclaredConstructors = true, queryAllDeclaredMethods = true, allDeclaredFields = true)
 public record MailAttachment(String filename, String contentType, String content) {
 }

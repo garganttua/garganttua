@@ -2,6 +2,7 @@ package com.garganttua.events.api;
 
 import java.util.Date;
 
+import com.garganttua.core.reflection.annotations.Reflected;
 import com.garganttua.events.api.enums.Direction;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -10,6 +11,7 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 // (transport value object); the date is never mutated after construction, so a defensive
 // copy would change no observable behaviour and only add churn.
 @SuppressFBWarnings("EI_EXPOSE_REP")
+@Reflected(queryAllDeclaredConstructors = true, queryAllDeclaredMethods = true, allDeclaredFields = true)
 public record JourneyStep(
 		Date date,
 		String assetId,
