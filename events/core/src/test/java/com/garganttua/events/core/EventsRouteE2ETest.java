@@ -58,6 +58,7 @@ import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.RouteDef;
 import com.garganttua.events.api.context.RouteStageDef;
+import com.garganttua.events.api.context.RouteSyncDef;
 import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.events.api.context.TopicDef;
 
@@ -81,6 +82,14 @@ class EventsRouteE2ETest {
 
 		static final AtomicReference<Consumer<byte[]>> IN_HANDLER = new AtomicReference<>();
 		static final List<byte[]> PRODUCED = new CopyOnWriteArrayList<>();
+		// Concurrency probes (used by the synchronization test): publish() runs inside the route
+		// workflow, hence inside the route mutex when one is configured, so PUBLISH_MAX == 1 proves
+		// the mutex serialized message processing. PUBLISH_DELAY_MS widens the overlap window.
+		static final java.util.concurrent.atomic.AtomicInteger PUBLISH_CONCURRENT =
+				new java.util.concurrent.atomic.AtomicInteger();
+		static final java.util.concurrent.atomic.AtomicInteger PUBLISH_MAX =
+				new java.util.concurrent.atomic.AtomicInteger();
+		static volatile long PUBLISH_DELAY_MS;
 
 		public MemConnector() {
 			// public no-arg ctor for the reflective registry path
@@ -123,7 +132,18 @@ class EventsRouteE2ETest {
 			return new IProducer() {
 				@Override
 				public void publish(byte[] value) {
+					int now = PUBLISH_CONCURRENT.incrementAndGet();
+					PUBLISH_MAX.accumulateAndGet(now, Math::max);
+					long delay = PUBLISH_DELAY_MS;
+					if (delay > 0) {
+						try {
+							Thread.sleep(delay);
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+						}
+					}
 					PRODUCED.add(value);
+					PUBLISH_CONCURRENT.decrementAndGet();
 				}
 
 				@Override
@@ -163,6 +183,9 @@ class EventsRouteE2ETest {
 	void setUp() throws Exception {
 		MemConnector.IN_HANDLER.set(null);
 		MemConnector.PRODUCED.clear();
+		MemConnector.PUBLISH_CONCURRENT.set(0);
+		MemConnector.PUBLISH_MAX.set(0);
+		MemConnector.PUBLISH_DELAY_MS = 0;
 
 		reflectionBuilder = ReflectionBuilder.builder()
 				.withProvider(new RuntimeReflectionProvider())
@@ -323,6 +346,47 @@ class EventsRouteE2ETest {
 		}
 		assertEquals(messages, MemConnector.PRODUCED.size(),
 				"every message must be produced (parallel workers, order not asserted)");
+	}
+
+	@Test
+	@DisplayName("synchronization serializes processing through a core mutex (peak in-flight 1)")
+	void synchronizationSerializesProcessingThroughCoreMutex() throws Exception {
+		int messages = 8;
+		// Widen the in-flight window so unsynchronized workers would overlap (peak > 1).
+		MemConnector.PUBLISH_DELAY_MS = 60;
+		ConsumerConfigurationDef parallel = new ConsumerConfigurationDef(
+				ProcessMode.EVERYBODY, OriginPolicy.FROM_ANY, DestinationPolicy.TO_ANY, null, 4);
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out")),
+				// Unordered dataflow + concurrency 4 → the dispatcher uses 4 parallel workers...
+				List.of(new DataflowDef("df-1", "flow", "mem", false, "1", false)),
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(
+						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, parallel, null, null),
+						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
+				// ...but synchronization makes every message run under the same core IMutex.
+				List.of(new RouteDef("route-1", "in", List.of("out"),
+						List.of(new RouteStageDef("tag", "set_header(@exchange, \"k\", \"v\")", null, null, null)),
+						null, new RouteSyncDef("route-1-lock", null))),
+				null);
+
+		Map<String, IClass<? extends IConnector>> registry = Map.of(
+				"mem:1.0", IClass.getClass(MemConnector.class));
+		engine = new Events("asset", List.of(context), registry, injectionContextBuilder, scriptsBuilder);
+		engine.onInit();
+		engine.onStart();
+
+		Consumer<byte[]> handler = awaitHandler();
+		for (int i = 0; i < messages; i++) {
+			handler.accept(("msg-" + i).getBytes(StandardCharsets.UTF_8));
+		}
+		for (int i = 0; i < 200 && MemConnector.PRODUCED.size() < messages; i++) {
+			TimeUnit.MILLISECONDS.sleep(40);
+		}
+		assertEquals(messages, MemConnector.PRODUCED.size(),
+				"every message is still produced under synchronization");
+		assertEquals(1, MemConnector.PUBLISH_MAX.get(),
+				"the route mutex serializes processing: never more than one message in flight at once");
 	}
 
 	@Test

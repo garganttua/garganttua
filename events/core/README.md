@@ -31,6 +31,7 @@ builders (`ContextBuilder`, `RouteBuilder`, …) and JSON context I/O (`JsonCont
  - `com.garganttua.core:garganttua-workflow`
  - `com.garganttua.core:garganttua-expression`
  - `com.garganttua.core:garganttua-injection`
+ - `com.garganttua.core:garganttua-mutex`
  - `com.garganttua.core:garganttua-lifecycle`
  - `com.garganttua.core:garganttua-script`
  - `com.fasterxml.jackson.core:jackson-databind`

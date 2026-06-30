@@ -5,7 +5,6 @@ import java.util.Map;
 
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
-import com.garganttua.events.api.IDistributedLock;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
@@ -27,7 +26,6 @@ public class ClusterRuntime {
 	private final Map<String, IWorkflow> routeWorkflows = new HashMap<>();
 	private final Map<String, IConsumer> consumers = new HashMap<>();
 	private final Map<String, IProducer> producers = new HashMap<>();
-	private final Map<String, IDistributedLock> locks = new HashMap<>();
 
 	public ClusterRuntime(ContextDef context) {
 		this.context = context;
@@ -63,9 +61,5 @@ public class ClusterRuntime {
 
 	public Map<String, IProducer> getProducers() {
 		return producers;
-	}
-
-	public Map<String, IDistributedLock> getLocks() {
-		return locks;
 	}
 }

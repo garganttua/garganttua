@@ -4,14 +4,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.garganttua.core.mutex.IMutex;
+import com.garganttua.core.mutex.IMutexManager;
+import com.garganttua.core.mutex.InterruptibleLeaseMutex;
+import com.garganttua.core.mutex.MutexException;
+import com.garganttua.core.mutex.MutexName;
 import com.garganttua.core.observability.Logger;
+import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.workflow.IWorkflow;
 import com.garganttua.core.workflow.WorkflowInput;
 import com.garganttua.core.workflow.WorkflowResult;
 import com.garganttua.events.api.Exchange;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
-import com.garganttua.events.api.IDistributedLock;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.RouteDef;
@@ -19,14 +24,21 @@ import com.garganttua.events.api.context.RouteExceptionsDef;
 import com.garganttua.events.api.context.RouteSyncDef;
 import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.events.api.exceptions.ConnectorException;
-import com.garganttua.events.api.exceptions.EventsException;
 
 /**
  * Bridges an inbound {@link IConsumer} to a route's compiled {@link IWorkflow}: for each raw message
  * it builds an {@link Exchange}, dispatches the workflow execution through a per-route
  * {@link RouteDispatcher} (sequential when the dataflow guarantees order, otherwise on a worker
  * pool), and on failure dead-letters the exchange to the route's error subscription — all under the
- * route's synchronization lock when one is configured and resolvable.
+ * route's synchronization mutex when one is configured.
+ *
+ * <p>Synchronization reuses garganttua-core's {@link IMutexManager} / {@link IMutex} rather than any
+ * events-local lock abstraction: a route's {@code synchronization} resolves to a {@link MutexName}
+ * and the per-message workflow runs inside {@link IMutex#acquire(IMutex.ThrowingFunction)} so the
+ * mutex blocks, runs, and auto-releases. A plain {@code lock} name uses the default
+ * {@link InterruptibleLeaseMutex}; a qualified {@code Type::name} lock selects a registered
+ * distributed mutex factory, so distributed locking plugs in through the core mutex SPI with no
+ * events-side mechanism.</p>
  *
  * <p>Extracted from {@code Events} as a cohesive per-message processing collaborator so the engine
  * class stays under the file-size gate. It shares the engine's {@link RouteObserver} (for correlated
@@ -38,10 +50,13 @@ final class RouteMessageProcessor {
 
 	private final RouteObserver routeObserver;
 	private final List<RouteDispatcher> routeDispatchers;
+	private final IMutexManager mutexManager;
 
-	RouteMessageProcessor(RouteObserver routeObserver, List<RouteDispatcher> routeDispatchers) {
+	RouteMessageProcessor(RouteObserver routeObserver, List<RouteDispatcher> routeDispatchers,
+			IMutexManager mutexManager) {
 		this.routeObserver = routeObserver;
 		this.routeDispatchers = routeDispatchers;
+		this.mutexManager = mutexManager;
 	}
 
 	/**
@@ -79,13 +94,30 @@ final class RouteMessageProcessor {
 	}
 
 	/**
-	 * Processes one routed message under the route's synchronization lock (when configured and
-	 * resolvable) and routes the exchange to the error subscription when the workflow fails or
-	 * throws — honouring {@code RouteDef.synchronization} and {@code RouteDef.exceptions}.
+	 * Processes one routed message under the route's synchronization mutex (when configured) and
+	 * routes the exchange to the error subscription when the workflow fails or throws — honouring
+	 * {@code RouteDef.synchronization} and {@code RouteDef.exceptions}.
 	 */
 	private void processMessage(String routeUuid, IWorkflow workflow, WorkflowInput input,
 			Exchange exchange, RouteHandlers handlers) {
-		acquire(routeUuid, handlers);
+		if (handlers.mutex() == null) {
+			executeAndHandle(routeUuid, workflow, input, exchange, handlers);
+			return;
+		}
+		try {
+			handlers.mutex().acquire(() -> {
+				executeAndHandle(routeUuid, workflow, input, exchange, handlers);
+				return null;
+			});
+		} catch (MutexException e) {
+			log.error("Route {}: synchronized execution failed under its mutex", routeUuid, e);
+			routeToError(routeUuid, exchange, handlers.errorProducer());
+		}
+	}
+
+	/** Runs the workflow and dead-letters on failure; never throws (so it is safe inside a mutex). */
+	private void executeAndHandle(String routeUuid, IWorkflow workflow, WorkflowInput input,
+			Exchange exchange, RouteHandlers handlers) {
 		try {
 			WorkflowResult result = routeObserver.execute(routeUuid, workflow, input, exchange);
 			if (result == null || !result.isSuccess()) {
@@ -94,32 +126,6 @@ final class RouteMessageProcessor {
 		} catch (RuntimeException e) {
 			log.error("Route {} execution failed", routeUuid, e);
 			routeToError(routeUuid, exchange, handlers.errorProducer());
-		} finally {
-			release(routeUuid, handlers);
-		}
-	}
-
-	private void acquire(String routeUuid, RouteHandlers handlers) {
-		if (handlers.lock() == null) {
-			return;
-		}
-		try {
-			handlers.lock().lock(handlers.lockObject());
-		} catch (EventsException e) {
-			log.warn("Route {}: failed to acquire lock '{}': {}", routeUuid,
-					handlers.lock().getName(), e.getMessage());
-		}
-	}
-
-	private void release(String routeUuid, RouteHandlers handlers) {
-		if (handlers.lock() == null) {
-			return;
-		}
-		try {
-			handlers.lock().unlock(handlers.lockObject());
-		} catch (EventsException e) {
-			log.warn("Route {}: failed to release lock '{}': {}", routeUuid,
-					handlers.lock().getName(), e.getMessage());
 		}
 	}
 
@@ -137,23 +143,55 @@ final class RouteMessageProcessor {
 
 	/**
 	 * Resolves the route's per-message error producer ({@code RouteDef.exceptions.to}) and
-	 * synchronization lock ({@code RouteDef.synchronization}). The lock is looked up in the cluster
-	 * runtime's lock registry; it stays {@code null} until a lock provider populates that registry.
+	 * synchronization mutex ({@code RouteDef.synchronization}). The mutex is obtained from the core
+	 * {@link IMutexManager}; it stays {@code null} when no synchronization is configured.
 	 */
 	private RouteHandlers resolveHandlers(RouteDef routeDef, ClusterRuntime runtime) {
 		IProducer errorProducer = resolveErrorProducer(routeDef, runtime);
-		IDistributedLock lock = null;
-		String lockObject = null;
+		IMutex mutex = resolveMutex(routeDef);
+		return new RouteHandlers(errorProducer, mutex);
+	}
+
+	/**
+	 * Resolves the route's synchronization mutex from the core mutex manager, or {@code null} when the
+	 * route declares no synchronization. A malformed or unresolvable lock is logged and the route runs
+	 * unsynchronized rather than failing to start.
+	 */
+	private IMutex resolveMutex(RouteDef routeDef) {
 		RouteSyncDef sync = routeDef.synchronization();
-		if (sync != null && sync.lock() != null) {
-			lock = runtime.getLocks().get(sync.lock());
-			lockObject = sync.lockObject();
-			if (lock == null) {
-				log.warn("Route {}: synchronization lock '{}' is not resolvable (no lock provider "
-						+ "registered); the route runs without synchronization", routeDef.uuid(), sync.lock());
-			}
+		if (sync == null || sync.lock() == null || sync.lock().isBlank() || mutexManager == null) {
+			return null;
 		}
-		return new RouteHandlers(errorProducer, lock, lockObject);
+		try {
+			return mutexManager.mutex(toMutexName(sync));
+		} catch (RuntimeException e) {
+			log.warn("Route {}: cannot resolve synchronization mutex '{}': {}; running without "
+					+ "synchronization", routeDef.uuid(), sync.lock(), e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Maps {@code synchronization(lock, lockObject)} to a {@link MutexName}. A qualified {@code lock}
+	 * ({@code Type::name}) selects a registered mutex factory type; a plain {@code lock} uses the
+	 * default {@link InterruptibleLeaseMutex}. A non-blank {@code lockObject} narrows the name (e.g.
+	 * per tenant/entity), so independent keys serialize independently under one logical lock.
+	 */
+	private MutexName toMutexName(RouteSyncDef sync) {
+		IClass<? extends IMutex> type;
+		String name;
+		if (sync.lock().contains(MutexName.SEPARATOR)) {
+			MutexName qualified = MutexName.fromString(sync.lock());
+			type = qualified.type();
+			name = qualified.name();
+		} else {
+			type = IClass.getClass(InterruptibleLeaseMutex.class);
+			name = sync.lock();
+		}
+		if (sync.lockObject() != null && !sync.lockObject().isBlank()) {
+			name = name + ":" + sync.lockObject();
+		}
+		return new MutexName(type, name);
 	}
 
 	private IProducer resolveErrorProducer(RouteDef routeDef, ClusterRuntime runtime) {
@@ -175,6 +213,6 @@ final class RouteMessageProcessor {
 		return connector.createProducer(errorSub, df);
 	}
 
-	/** Per-route runtime handlers: the error-subscription producer and the synchronization lock. */
-	private record RouteHandlers(IProducer errorProducer, IDistributedLock lock, String lockObject) {}
+	/** Per-route runtime handlers: the error-subscription producer and the synchronization mutex. */
+	private record RouteHandlers(IProducer errorProducer, IMutex mutex) {}
 }

@@ -30,6 +30,13 @@ Légende statut : ✅ porté · ⚠️ partiel · ❌ absent · ➕ nouveau en A
   `publishToTarget` (`TO_ANY` → broadcast/`toUuid` effacé ; `ONLY_TO_*` → adresse conservée) —
   correct pour le fan-out multi-`.to()` (chaque destination porte sa propre policy via `OutboundTarget`).
 - ✅ Dead-letter d'erreur, `source()` external loading, DSL `processor()`.
+- ✅ **Synchronisation `route(...).synchronization(lock, lockObject)`** : branchée sur le **mutex de
+  garganttua-core** (`IMutexManager` / `IMutex`), **pas** de mécanisme interne à events. Le workflow
+  par message tourne dans `IMutex.acquire(...)` (bloque, exécute, relâche). Un `lock` simple utilise
+  le `InterruptibleLeaseMutex` par défaut ; un `lock` qualifié `Type::name` sélectionne une factory
+  `@MutexFactory` enregistrée — donc le **lock distribué se branche via le SPI mutex du core**, sans
+  rien d'events. L'ancien `IDistributedLock` (abstraction interne) et le registre `ClusterRuntime.locks`
+  ont été **supprimés**.
 - ✅ Concurrence par subscription, firehose observabilité, auto-détection `@Connector` (nouveautés ALPHA04).
 
 **Constat clé** : `buffered`/`bufferPersisted`, **tenant partitioning policy** et **topic routing**
@@ -37,10 +44,10 @@ Légende statut : ✅ porté · ⚠️ partiel · ❌ absent · ➕ nouveau en A
 ils sont déjà à parité (déclarés, inertes). Les implémenter serait de **nouvelles features** à
 concevoir, pas de la migration.
 
-**Reliquat réel** (le seul vrai écart restant) :
-- ❌ Lock de synchronisation : `IDistributedLock` n'a qu'un hook engine ; il manque un **SPI
-  lock-provider + une implémentation** (façon connecteurs). Infra à part entière, à concevoir —
-  pas un simple portage.
+**Reliquat réel** : aucun. Tout le comportement du legacy est porté. Pour activer un lock *distribué*
+(Redis / DB / Zookeeper), il suffit désormais de fournir une implémentation `IMutex` + `@MutexFactory`
+côté garganttua-core et de référencer son type dans le `lock` qualifié de la route — aucune
+modification d'events requise.
 
 ---
 
@@ -100,7 +107,7 @@ concevoir, pas de la migration.
 | Auto `filter_in` / `filter_out` | auto-ajoutés | `@Expression` présents, non auto-injectés | ❌ |
 | `protocol_in` / `protocol_out` | toujours (encapsulation interne) | conditionnels au flag | ⚠️ |
 | Exceptions | chaîne de processeurs d'exception | dead-letter niveau engine | ✅ (simplifié) |
-| Synchronisation / lock | `GGLockObject` actif | `LockDef` + `IDistributedLock` + hook engine, **aucun provider/impl** | ⚠️ hook seul |
+| Synchronisation / lock | `GGLockObject` actif | **mutex garganttua-core** (`IMutexManager`/`IMutex`) ; `IDistributedLock` interne supprimé | ✅ via core mutex |
 | Tenant partitioning policy | `GGContextTenantPartitioningPolicy` | absent | ❌ |
 | Topic routing | `GGContextTopicRouting` | absent | ❌ |
 | Consumer config | processMode/origin/dest/HA | + `concurrency` | ✅ étendu |
@@ -149,15 +156,17 @@ Fichiers du chantier 5 (à committer après résolution de la collision) :
 
 ---
 
-## 6. Gaps restants (chantiers d'infra à part entière)
+## 6. Gaps restants
 
-- **Auto-injection `filter_in`/`filter_out`** : porter le montage legacy (in-filter depuis la
-  consumer config, out-filter depuis la producer config) dans `Events.addStages`.
-- **SPI lock-provider** : `IDistributedLock` n'a aucune implémentation ni résolution
-  (`ClusterRuntime.getLocks()` jamais peuplé). Le hook engine existe ; il faut un provider (façon connecteurs).
-- **Tenant partitioning policy** + **topic routing** : absents d'ALPHA04.
-- **Parallel-keyed** (concurrence + ordre) : impossible tant que le SPI consumer `byte[]` n'expose
-  pas de clé de partition.
+- ✅ **Auto-injection `filter_in`/`filter_out`** — porté (`RouteWorkflowCompiler.addStages` pour
+  `filter_in` ; `publishToTarget` par cible pour `filter_out`).
+- ✅ **Lock de synchronisation** — branché sur le **mutex de garganttua-core** (`IMutexManager`/`IMutex`) ;
+  l'ancien `IDistributedLock` interne et `ClusterRuntime.locks` ont été supprimés. Un lock distribué
+  s'ajoute par une `@MutexFactory` côté core (aucune modification d'events).
+- 🟰 **Tenant partitioning policy** + **topic routing** — enums **dormants dès le legacy** (jamais
+  agis) : déjà à parité, rien à porter ; les activer serait une nouvelle feature.
+- 🟰 **Parallel-keyed** (concurrence + ordre) : impossible tant que le SPI consumer `byte[]` n'expose
+  pas de clé de partition (limite de contrat, pas un écart de migration).
 
 ---
 

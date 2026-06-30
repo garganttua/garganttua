@@ -30,6 +30,9 @@ import com.garganttua.core.dsl.IObservableBuilder;
 import com.garganttua.core.injection.BeanReference;
 import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
+import com.garganttua.core.mutex.IMutexManager;
+import com.garganttua.core.mutex.MutexManager;
+import com.garganttua.core.mutex.dsl.MutexManagerBuilder;
 import com.garganttua.core.observability.IObserver;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.observability.ObservableEvent;
@@ -58,8 +61,10 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	// observers attached via addObserver receive correlated Start/End/Error events.
 	private final ObservableRegistry observableRegistry = new ObservableRegistry();
 	private final RouteObserver routeObserver = new RouteObserver(observableRegistry);
-	private final RouteMessageProcessor messageProcessor =
-			new RouteMessageProcessor(routeObserver, routeDispatchers);
+	// Built in doInit() once the core mutex manager is resolved (route synchronization needs it).
+	private RouteMessageProcessor messageProcessor;
+	private final IObservableBuilder<?, ?> injectionContextBuilder;
+	private IMutexManager mutexManager;
 	private ExecutorService executorService;
 	private IInjectionContext injectionContext;
 
@@ -72,6 +77,7 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		// configuration; callers must not be able to mutate engine internals afterwards.
 		this.contexts = new ArrayList<>(contexts);
 		this.connectorRegistry = new HashMap<>(connectorRegistry);
+		this.injectionContextBuilder = injectionContextBuilder;
 		// The scripts builder carries the full Workflows → Scripts → {Expression, Runtimes}
 		// execution chain, so route-stage scripts actually run (a bare expression builder does not);
 		// it and the injection-context builder are handed to the route compiler, the sole user.
@@ -156,9 +162,32 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		return EventsSummary.items(assetId, contexts);
 	}
 
+	/**
+	 * Builds the core mutex manager used for route synchronization. Prefers the auto-detecting
+	 * {@link MutexManagerBuilder} so any {@code @MutexFactory} on the classpath — including a
+	 * distributed lock provider — is registered through the core mutex SPI; falls back to a plain
+	 * {@link MutexManager} (local {@link com.garganttua.core.mutex.InterruptibleLeaseMutex}) when the
+	 * builder cannot be wired, so the engine always starts with working in-JVM synchronization.
+	 */
+	private IMutexManager buildMutexManager() {
+		try {
+			return MutexManagerBuilder.builder()
+					.withPackage("com.garganttua")
+					.autoDetect(true)
+					.provide(injectionContextBuilder)
+					.build();
+		} catch (RuntimeException e) {
+			log.warn("Could not build the auto-detecting mutex manager ({}); using the local default",
+					e.getMessage());
+			return new MutexManager();
+		}
+	}
+
 	@Override
 	protected ILifecycle doInit() throws LifecycleException {
 		log.info("==== Starting Garganttua Events — ASSET [{}] ====", assetId);
+		this.mutexManager = buildMutexManager();
+		this.messageProcessor = new RouteMessageProcessor(routeObserver, routeDispatchers, mutexManager);
 		this.executorService = Executors.newCachedThreadPool();
 		this.scheduledExecutor = Executors.newScheduledThreadPool(1, runnable -> {
 			Thread thread = new Thread(runnable, "events-publication-scheduler");

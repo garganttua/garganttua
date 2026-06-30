@@ -40,6 +40,10 @@
 		</dependency>
 		<dependency>
 			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-mutex</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
 			<artifactId>garganttua-lifecycle</artifactId>
 		</dependency>
 		<dependency>
