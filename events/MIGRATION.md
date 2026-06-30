@@ -144,15 +144,14 @@ modification d'events requise.
 | 2 | Concurrence par subscription (`garanteeOrder` porteur) | `14631df` | ✅ poussé |
 | 3 | Dead-letter d'erreur + hook de synchro | `bc7e087` | ✅ poussé |
 | 4 | `source()` external loading + doc | `927a916` | ✅ poussé |
-| 5 | TIME_INTERVAL + buffered/bufferPersisted + DSL `processor()` | — | 🟠 implémenté, **non commité** (collision) |
+| 5 | TIME_INTERVAL + buffered/bufferPersisted + DSL `processor()` | (mergé avec le refactor multi-cibles `to`) | ✅ poussé |
 
-Fichiers du chantier 5 (à committer après résolution de la collision) :
-- `api/.../context/SubscriptionDef.java` (+ `buffered`/`bufferPersisted`, ctor compat 8-args)
-- `api/.../dsl/IRouteStageBuilder.java` + `core/.../dsl/RouteStageBuilder.java` (`expression()` → `processor()`)
-- `core/.../TimeIntervalProducer.java` (neuf)
-- `core/.../Events.java` (scheduled executor, `wrapForPublicationMode`, lifecycle) ← **en conflit**
-- `core/.../context/JsonContextReader.java` (parse `timeInterval`/`buffered`/`bufferPersisted`)
-- `core/.../test/EventsRouteE2ETest.java` (tests TIME_INTERVAL last-wins / batch — verts en isolation)
+Le chantier 5 est mergé sur `main` (la collision avec le refactor multi-cibles `to` a été
+réconciliée — `Events.bindOutbound` fusionne `OutboundTarget` × `TimeIntervalProducer`). Tous ses
+fichiers sont en place : `SubscriptionDef` (+ `buffered`/`bufferPersisted`, ctor compat 8-args),
+`IRouteStageBuilder.processor()` + `RouteStageBuilder`, `TimeIntervalProducer` (neuf), `Events`
+(scheduled executor, `wrapForPublicationMode`, lifecycle), `JsonContextReader` (parse
+`timeInterval`/`buffered`/`bufferPersisted`), `EventsRouteE2ETest` (TIME_INTERVAL last-wins / batch).
 
 ---
 
@@ -170,13 +169,10 @@ Fichiers du chantier 5 (à committer après résolution de la collision) :
 
 ---
 
-## 7. Coordination (⚠️ collision en cours)
+## 7. Coordination (✅ collision résolue)
 
-Au moment du chantier 5, **un autre agent refactore en parallèle** les mêmes fichiers
-(`Events.java`, `SubscriptionDef`, `RouteDef`, DSL de route) pour le support **multi-cibles `to`**
-(`OutboundTarget`, `StringOrListDeserializer`). L'arbre de travail est un mélange instable des deux
-séries de modifs et **ne compile pas** transitoirement (`OutboundTarget` ↔ `wrapForPublicationMode`
-dans `Events.bindOutbound`).
-
-**Procédure** : l'autre agent termine et commit son refactor multi-cibles → je rebase le chantier 5
-dessus → fusion manuelle de `Events.bindOutbound` (son `OutboundTarget` × mon `TimeIntervalProducer`).
+Le chantier 5 et le refactor **multi-cibles `to`** (`OutboundTarget`, `StringOrListDeserializer`)
+touchaient les mêmes fichiers (`Events.java`, `SubscriptionDef`, `RouteDef`, DSL de route). La
+réconciliation est faite et poussée sur `main` : `Events.bindOutbound` fusionne `OutboundTarget`
+(une cible par `to`) avec `wrapForPublicationMode`/`TimeIntervalProducer` (mode de publication par
+subscription). Plus de collision en cours.

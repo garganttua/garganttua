@@ -1,0 +1,51 @@
+# Advisory quality gate — Checkstyle + SpotBugs + PMD via the `-Pquality` profile.
+# By platform policy the gate is WARNING-ONLY and NEVER fails the build (every tool is
+# failOnViolation=false); this job surfaces the worklist as a downloadable artifact at review
+# time. Scoped to PRs into main + manual dispatch so it does not double the cost of every push.
+
+name: Quality (advisory)
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v4
+      with:
+        java-version: '25'
+        distribution: 'temurin'
+
+    # SpotBugs and PMD analyse compiled classes, so the reactor must compile first. The AOT
+    # processor is in-reactor, so the build is the usual two-pass (bootstrap proc=none, then full).
+    - name: Bootstrap local repo (no annotation processing)
+      run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
+    - name: Compile (annotation processing on)
+      run: mvn -B -ntp -o install -DskipTests --file pom.xml
+
+    # failOnViolation=false everywhere — this step is advisory and always succeeds. continue-on-error
+    # is belt-and-braces in case a tool itself errors; it must never block a PR.
+    - name: Run quality gate (advisory)
+      continue-on-error: true
+      run: mvn -B -ntp -o -Pquality verify -DskipTests --file pom.xml
+
+    - name: Upload quality reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: quality-reports
+        path: |
+          **/target/checkstyle-result.xml
+          **/target/spotbugsXml.xml
+          **/target/pmd.xml
+        if-no-files-found: warn
