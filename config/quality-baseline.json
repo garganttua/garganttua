@@ -1,0 +1,14 @@
+{
+  "checkstyle": {
+    "reports": 53,
+    "violations": 27
+  },
+  "pmd": {
+    "reports": 58,
+    "violations": 2
+  },
+  "spotbugs": {
+    "reports": 52,
+    "violations": 6
+  }
+}

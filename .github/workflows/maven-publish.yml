@@ -66,8 +66,59 @@ jobs:
           git push
         fi
 
+  # Blocking quality ratchet — runs ONLY on tags (the release/deploy path). The -Pquality profile
+  # is advisory (failOnViolation=false) for day-to-day builds; here it is turned into a hard gate:
+  # scripts/quality-gate.py fails the job if Checkstyle/SpotBugs/PMD counts regress above the
+  # committed baseline (config/quality-baseline.json). deploy `needs` this job, so an insufficient-
+  # quality tag is NOT published.
+  quality-gate:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v4
+      with:
+        java-version: '25'
+        distribution: 'temurin'
+
+    # Two-pass compile WITHOUT -Pquality (so no jacoco:check / verify-phase plugins run); this only
+    # needs compiled classes in target/ for SpotBugs/PMD to analyse.
+    - name: Bootstrap local repo (no annotation processing)
+      run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
+    - name: Compile (annotation processing on)
+      run: mvn -B -ntp install -DskipTests --file pom.xml
+
+    # Pure report goals (no verify-phase side effects). fail-at-end so every module is analysed. The
+    # goals are failOnViolation=false, BUT the `spotbugs:` prefix is unresolvable on the aggregator
+    # poms (spotbugs-maven-plugin lives under com.github.spotbugs, not the default plugin groups), so
+    # Maven exits non-zero on that noise even though it produces every code module's report. `|| true`
+    # tolerates it; the gate step below is the real arbiter and independently verifies reports exist.
+    - name: Generate quality reports
+      run: mvn -B -ntp -Pquality checkstyle:checkstyle spotbugs:spotbugs pmd:pmd -fae --file pom.xml || true
+
+    # THE BLOCKING STEP: non-zero exit here fails the job → deploy is skipped. Fails on a violation
+    # regression above the committed baseline OR on missing reports (analysis silently didn't run).
+    - name: Enforce quality ratchet
+      run: python3 scripts/quality-gate.py
+
+    - name: Upload quality reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-quality-reports
+        path: |
+          **/target/checkstyle-result.xml
+          **/target/spotbugsXml.xml
+          **/target/pmd.xml
+        if-no-files-found: warn
+
   deploy:
-    needs: build
+    needs: [build, quality-gate]
     runs-on: ubuntu-latest
     if: |
       startsWith(github.ref, 'refs/tags/')

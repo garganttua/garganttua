@@ -18,6 +18,15 @@ lives behind the opt-in `quality` Maven profile.
 > **Judgment, not a number chase.** The thresholds below feed human review. Do **not**
 > over-fragment subtle logic, nor inflate a value object count, just to turn a warning green.
 
+**One documented exception — the release (tag) build blocks.** On a `v*` tag only, the
+`quality-gate` job in `.github/workflows/maven-publish.yml` turns the same three tools into a hard
+gate that `deploy` depends on, so an insufficient-quality tag is not published. It is **not** a
+"0 violations" gate (that would fail on the documented-accepted debt below); it is a **ratchet**:
+`scripts/quality-gate.py` fails the build only when a tool's violation count **regresses above the
+committed baseline** in `config/quality-baseline.json`, or when reports are missing (analysis did not
+run). Day-to-day and PR builds stay advisory. To accept new debt intentionally, regenerate the
+baseline (`python3 scripts/quality-gate.py --update-baseline`) and commit it for review.
+
 ## The `quality` profile
 
 ```bash
