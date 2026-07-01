@@ -187,7 +187,8 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	protected ILifecycle doInit() throws LifecycleException {
 		log.info("==== Starting Garganttua Events — ASSET [{}] ====", assetId);
 		this.mutexManager = buildMutexManager();
-		this.messageProcessor = new RouteMessageProcessor(routeObserver, routeDispatchers, mutexManager);
+		this.messageProcessor = new RouteMessageProcessor(routeObserver, routeDispatchers, mutexManager,
+				injectionContext);
 		this.executorService = Executors.newCachedThreadPool();
 		this.scheduledExecutor = Executors.newScheduledThreadPool(1, runnable -> {
 			Thread thread = new Thread(runnable, "events-publication-scheduler");

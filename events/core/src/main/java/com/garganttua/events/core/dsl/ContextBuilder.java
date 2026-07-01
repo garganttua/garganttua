@@ -91,6 +91,16 @@ public class ContextBuilder implements IContextBuilder {
 		routes.add(def);
 	}
 
+	/**
+	 * The parent {@link EventsBuilder}, or {@code null} when this context builder was created outside
+	 * the events DSL chain. Used by {@link RouteBuilder} to register route-supplied mutex beans.
+	 *
+	 * @return the parent events builder, or {@code null}
+	 */
+	EventsBuilder eventsBuilder() {
+		return parent instanceof EventsBuilder eb ? eb : null;
+	}
+
 	@Override
 	public IEventsBuilder up() {
 		if (parent instanceof EventsBuilder eb) {

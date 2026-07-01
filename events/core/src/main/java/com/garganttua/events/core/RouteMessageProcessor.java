@@ -3,7 +3,11 @@ package com.garganttua.events.core;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
+import com.garganttua.core.injection.BeanReference;
+import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.mutex.IMutexManager;
 import com.garganttua.core.mutex.InterruptibleLeaseMutex;
@@ -51,12 +55,14 @@ final class RouteMessageProcessor {
 	private final RouteObserver routeObserver;
 	private final List<RouteDispatcher> routeDispatchers;
 	private final IMutexManager mutexManager;
+	private final IInjectionContext injectionContext;
 
 	RouteMessageProcessor(RouteObserver routeObserver, List<RouteDispatcher> routeDispatchers,
-			IMutexManager mutexManager) {
+			IMutexManager mutexManager, IInjectionContext injectionContext) {
 		this.routeObserver = routeObserver;
 		this.routeDispatchers = routeDispatchers;
 		this.mutexManager = mutexManager;
+		this.injectionContext = injectionContext;
 	}
 
 	/**
@@ -153,13 +159,24 @@ final class RouteMessageProcessor {
 	}
 
 	/**
-	 * Resolves the route's synchronization mutex from the core mutex manager, or {@code null} when the
-	 * route declares no synchronization. A malformed or unresolvable lock is logged and the route runs
+	 * Resolves the route's synchronization mutex, or {@code null} when the route declares no
+	 * synchronization. A {@code lockBean} reference resolves an {@link IMutex} bean from the injection
+	 * context (the DSL {@code synchronization(IMutex)} / {@code synchronization(ISupplierBuilder)} /
+	 * {@code synchronizationBean(String)} forms); otherwise a {@code lock} name resolves through the
+	 * core {@link IMutexManager}. A malformed or unresolvable lock is logged and the route runs
 	 * unsynchronized rather than failing to start.
+	 *
+	 * <p>Package-private for unit testing the resolution branches directly.</p>
 	 */
-	private IMutex resolveMutex(RouteDef routeDef) {
+	IMutex resolveMutex(RouteDef routeDef) {
 		RouteSyncDef sync = routeDef.synchronization();
-		if (sync == null || sync.lock() == null || sync.lock().isBlank() || mutexManager == null) {
+		if (sync == null) {
+			return null;
+		}
+		if (sync.lockBean() != null && !sync.lockBean().isBlank()) {
+			return resolveMutexBean(routeDef.uuid(), sync.lockBean());
+		}
+		if (sync.lock() == null || sync.lock().isBlank() || mutexManager == null) {
 			return null;
 		}
 		try {
@@ -167,6 +184,35 @@ final class RouteMessageProcessor {
 		} catch (RuntimeException e) {
 			log.warn("Route {}: cannot resolve synchronization mutex '{}': {}; running without "
 					+ "synchronization", routeDef.uuid(), sync.lock(), e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Resolves an {@link IMutex} bean from the injection context by the given reference. The reference's
+	 * {@code #name} segment (or the whole token when it names no {@code #name}) is used as the bean
+	 * name. A missing context, absent bean, or resolution error degrades gracefully to {@code null}
+	 * (route runs unsynchronized), matching the name-based path.
+	 */
+	private IMutex resolveMutexBean(String routeUuid, String beanReference) {
+		if (injectionContext == null) {
+			log.warn("Route {}: no injection context to resolve synchronization mutex bean '{}'; "
+					+ "running without synchronization", routeUuid, beanReference);
+			return null;
+		}
+		try {
+			String name = BeanReference.extractName(beanReference).orElse(beanReference);
+			BeanReference<IMutex> query = new BeanReference<>(
+					IClass.getClass(IMutex.class), Optional.empty(), Optional.of(name), Set.of());
+			IMutex mutex = injectionContext.queryBean(query).orElse(null);
+			if (mutex == null) {
+				log.warn("Route {}: synchronization mutex bean '{}' not found; running without "
+						+ "synchronization", routeUuid, beanReference);
+			}
+			return mutex;
+		} catch (Exception e) {
+			log.warn("Route {}: cannot resolve synchronization mutex bean '{}': {}; running without "
+					+ "synchronization", routeUuid, beanReference, e.getMessage());
 			return null;
 		}
 	}

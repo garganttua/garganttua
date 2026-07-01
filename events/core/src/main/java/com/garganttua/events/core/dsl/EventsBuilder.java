@@ -7,9 +7,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.dsl.IObservableBuilder;
+import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.dsl.annotations.ConfigurableBuilder;
 import com.garganttua.core.dsl.dependency.AbstractAutomaticDependentBuilder;
 import com.garganttua.core.dsl.dependency.DependencySpec;
@@ -92,6 +94,15 @@ public class EventsBuilder
 			Optional<BeanStrategy> strategy, Optional<String> name) {
 	}
 
+	/** A route-supplied mutex instance pending registration as a bean under {@code beanName}. */
+	private record MutexInstanceRegistration(String beanName, IMutex mutex) {
+	}
+
+	/** A route-supplied mutex supplier builder pending build + registration as a bean under {@code beanName}. */
+	private record MutexSupplierRegistration(String beanName,
+			ISupplierBuilder<IMutex, ISupplier<IMutex>> supplier) {
+	}
+
 	// package-private so the @ConfigurableBuilder population test can assert it; written via asset(...).
 	String assetId;
 	private final List<String> packages = new ArrayList<>();
@@ -104,6 +115,11 @@ public class EventsBuilder
 	private final List<ISupplierBuilder<IConnector, ISupplier<IConnector>>> connectorSuppliers = new ArrayList<>();
 	private final List<IConnector> connectorInstances = new ArrayList<>();
 	private final List<ConnectorReference> connectorReferences = new ArrayList<>();
+	// Route-supplied mutexes (synchronization(IMutex) / synchronization(ISupplierBuilder)): held here
+	// keyed by a generated bean name and registered as IMutex beans post-build, mirroring connectors.
+	private final AtomicInteger mutexBeanCounter = new AtomicInteger();
+	private final List<MutexInstanceRegistration> mutexInstances = new ArrayList<>();
+	private final List<MutexSupplierRegistration> mutexSuppliers = new ArrayList<>();
 	private IObservableBuilder<?, ?> injectionContextBuilder;
 	private IObservableBuilder<?, ?> scriptsBuilder;
 	// The shared expression context builder, captured in provide() and configured for api parity so
@@ -243,6 +259,43 @@ public class EventsBuilder
 		this.connectorRegistry.put(type + ":" + version, connectorClass);
 	}
 
+	/**
+	 * Registers a route-supplied mutex instance for post-build bean registration and returns the
+	 * generated bean name the route stores as its {@code lockBean}. Called by {@link RouteBuilder} for
+	 * {@code synchronization(IMutex)}.
+	 *
+	 * @param routeUuid the owning route's uuid (for a readable, unique bean name)
+	 * @param mutex     the mutex instance
+	 * @return the generated bean name
+	 */
+	String registerRouteMutex(String routeUuid, IMutex mutex) {
+		String beanName = mutexBeanName(routeUuid);
+		this.mutexInstances.add(new MutexInstanceRegistration(beanName, mutex));
+		log.debug("Route mutex registered by instance: {} ({})", beanName, mutex.getClass().getName());
+		return beanName;
+	}
+
+	/**
+	 * Registers a route-supplied mutex supplier builder for post-build build + bean registration and
+	 * returns the generated bean name the route stores as its {@code lockBean}. Called by
+	 * {@link RouteBuilder} for {@code synchronization(ISupplierBuilder)}.
+	 *
+	 * @param routeUuid    the owning route's uuid (for a readable, unique bean name)
+	 * @param mutexBuilder the supplier builder producing the mutex
+	 * @return the generated bean name
+	 */
+	String registerRouteMutex(String routeUuid, ISupplierBuilder<IMutex, ISupplier<IMutex>> mutexBuilder) {
+		String beanName = mutexBeanName(routeUuid);
+		this.mutexSuppliers.add(new MutexSupplierRegistration(beanName, mutexBuilder));
+		log.debug("Route mutex registered by supplier builder: {}", beanName);
+		return beanName;
+	}
+
+	/** Builds a unique, readable bean name for a route-supplied mutex. */
+	private String mutexBeanName(String routeUuid) {
+		return "mutex:route:" + routeUuid + ":" + mutexBeanCounter.incrementAndGet();
+	}
+
 	/** Package-private accessor for tests asserting auto/manual registration. */
 	Map<String, IClass<? extends IConnector>> registeredConnectors() {
 		return this.connectorRegistry;
@@ -261,6 +314,16 @@ public class EventsBuilder
 	/** Package-private accessor for tests asserting the supplier overload population. */
 	int connectorSupplierCount() {
 		return this.connectorSuppliers.size();
+	}
+
+	/** Package-private accessor for tests asserting {@code synchronization(IMutex)} registration. */
+	int mutexInstanceCount() {
+		return this.mutexInstances.size();
+	}
+
+	/** Package-private accessor for tests asserting {@code synchronization(ISupplierBuilder)} registration. */
+	int mutexSupplierCount() {
+		return this.mutexSuppliers.size();
 	}
 
 	/** Package-private accessor for tests asserting {@link #context(String, String)} population. */
@@ -323,6 +386,7 @@ public class EventsBuilder
 		if (dependency instanceof IInjectionContext context && this.built != null) {
 			registerEventsBean(context, this.built);
 			registerConnectorBeans(context);
+			registerMutexBeans(context);
 			if (this.built instanceof Events events) {
 				events.setInjectionContext(context);
 			}
@@ -410,6 +474,41 @@ public class EventsBuilder
 	/** Builds the {@code connector:type:version} bean name shared by registration and resolution. */
 	private static String connectorBeanName(String type, String version) {
 		return "connector:" + type + ":" + version;
+	}
+
+	/**
+	 * Registers every route-supplied mutex into the injection context as a singleton {@link IMutex}
+	 * bean under its generated name: direct instances as-is, supplier-built mutexes after building the
+	 * supplier once. The route stored the same name as its {@code lockBean}, so {@code RouteMessageProcessor}
+	 * resolves the very instance the DSL supplied.
+	 *
+	 * @param context the built injection context
+	 */
+	private void registerMutexBeans(IInjectionContext context) {
+		mutexInstances.forEach(registration ->
+				registerSingletonMutex(context, registration.beanName(), registration.mutex()));
+		mutexSuppliers.forEach(registration -> registerSuppliedMutex(context, registration));
+	}
+
+	private void registerSingletonMutex(IInjectionContext context, String beanName, IMutex mutex) {
+		BeanReference<IMutex> reference = new BeanReference<>(
+				IClass.getClass(IMutex.class),
+				Optional.of(BeanStrategy.singleton), Optional.of(beanName), Set.of());
+		context.addBean(CONNECTOR_PROVIDER, reference, mutex);
+		log.debug("Route mutex bean '{}' registered (singleton instance, class {})",
+				beanName, mutex.getClass().getName());
+	}
+
+	private void registerSuppliedMutex(IInjectionContext context, MutexSupplierRegistration registration) {
+		try {
+			IMutex mutex = registration.supplier().build().supply()
+					.orElseThrow(() -> new DslException("Mutex supplier produced no instance"));
+			registerSingletonMutex(context, registration.beanName(), mutex);
+		} catch (DslException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new DslException("Failed to build mutex from supplier: " + e.getMessage(), e);
+		}
 	}
 
 	@Override
