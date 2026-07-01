@@ -4,7 +4,7 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.garganttua</groupId>
-	<version>3.0.0-ALPHA04</version>
+	<version>3.0.0-ALPHA05</version>
 
 	<artifactId>garganttua-events</artifactId>
 	<packaging>pom</packaging>
@@ -61,7 +61,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<maven.compiler.source>25</maven.compiler.source>
 		<maven.compiler.target>25</maven.compiler.target>
-		<garganttua.core.version>3.0.0-ALPHA04</garganttua.core.version>
+		<garganttua.core.version>3.0.0-ALPHA05</garganttua.core.version>
 		<!-- Per-module LINE coverage floor enforced by jacoco:check under -Pquality.
 		     Wired but 0 for now (events ships ~no tests yet); ratchet up later. -->
 		<jacoco.line.min>0.0</jacoco.line.min>

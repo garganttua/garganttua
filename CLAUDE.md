@@ -6,7 +6,7 @@ doubt, **garganttua-core's conventions govern the whole platform** — it is the
 and the reference for every cross-cutting decision.
 
 > **Status:** monorepo. `core` + `api` + `events` build together as one reactor (unified version
-> `3.0.0-ALPHA04`, **Java 25**). `events` was migrated off the legacy `garganttua-tooling`
+> `3.0.0-ALPHA05`, **Java 25**). `events` was migrated off the legacy `garganttua-tooling`
 > architecture onto core (de-Lombok'd, observable `Logger`, `IReflectionUser`/`IClass` contracts).
 
 ## What this is

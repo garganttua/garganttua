@@ -6,7 +6,7 @@
   <groupId>com.garganttua</groupId>
   <artifactId>garganttua-core</artifactId>
   <packaging>pom</packaging>
-  <version>3.0.0-ALPHA04</version>
+  <version>3.0.0-ALPHA05</version>
   <description>Garganttua Core - Foundational Java framework for dependency injection, workflow orchestration, reflection utilities, and more.</description>
   <licenses>
     <license>

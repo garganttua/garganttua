@@ -6,7 +6,7 @@
 	<artifactId>garganttua-api</artifactId>
 	<packaging>pom</packaging>
 	<description>Declarative, annotation-driven REST API framework — multi-tenancy, pluggable security, AOT/native-ready — built on garganttua-core.</description>
-	<version>3.0.0-ALPHA04</version>
+	<version>3.0.0-ALPHA05</version>
 
 	<licenses>
 		<license>
@@ -49,7 +49,7 @@
 		<java.version>25</java.version>
 
 		<!-- Garganttua Core -->
-		<garganttua.core.version>3.0.0-ALPHA04</garganttua.core.version>
+		<garganttua.core.version>3.0.0-ALPHA05</garganttua.core.version>
 
 		<!-- Binding library versions — each binding sub-module wraps
 		     ONE external library, and these properties pin its version

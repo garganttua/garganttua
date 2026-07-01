@@ -1,9 +1,9 @@
 # Garganttua
 
 <!-- AUTO-GENERATED-COVERAGE-START -->
-![coverage](https://img.shields.io/badge/coverage-70.7%25%20instructions-green)
+![coverage](https://img.shields.io/badge/coverage-66.4%25%20instructions-yellowgreen)
 
-Coverage: **70.7%** instructions · **60.2%** branches · **69.8%** lines across 38 modules (JaCoCo; full per-module report in CI artifacts).
+Coverage: **66.4%** instructions · **55.4%** branches · **65.4%** lines across 38 modules (JaCoCo; full per-module report in CI artifacts).
 <!-- AUTO-GENERATED-COVERAGE-STOP -->
 
 Unified reactor aggregating the three Garganttua framework libraries that form a tight,
@@ -149,12 +149,12 @@ graph TD
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua</artifactId>
-    <version>3.0.0-ALPHA04</version>
+    <version>3.0.0-ALPHA05</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA04
+3.0.0-ALPHA05
 
 ### Dependencies
 

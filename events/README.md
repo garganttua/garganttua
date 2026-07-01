@@ -3,7 +3,7 @@
 ## Description
 
 garganttua-events est un framework de traitement d'événements **multi-tenant, multi-cluster,
-multi-connecteur** (`3.0.0-ALPHA04`, Java 25, package racine `com.garganttua.events`) bâti sur
+multi-connecteur** (`3.0.0-ALPHA05`, Java 25, package racine `com.garganttua.events`) bâti sur
 **garganttua-core**. Un message brut (`byte[]`) entre par un connecteur, traverse une **route**
 configurable composée de **stages** d'expressions, et ressort vers un ou plusieurs connecteurs de
 sortie.
@@ -148,6 +148,22 @@ Graphe de dépendances : `api ← {expressions, core, connector-*}`.
 > build à `generate-resources`). Ne pas éditer à la main entre les marqueurs `AUTO-GENERATED`.
 
 <!-- AUTO-GENERATED-START -->
+### Installation with Maven
+```xml
+<dependency>
+    <groupId>com.garganttua</groupId>
+    <artifactId>garganttua-events</artifactId>
+    <version>3.0.0-ALPHA05</version>
+</dependency>
+```
+
+### Actual version
+3.0.0-ALPHA05
+
+### Dependencies
+ - `com.garganttua.core:garganttua-aot-reflection`
+ - `com.garganttua.core:garganttua-aot-commons`
+
 <!-- AUTO-GENERATED-END -->
 
 En pratique on ne dépend pas du parent agrégateur : on choisit un **starter** « batteries-included »

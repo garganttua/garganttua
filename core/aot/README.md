@@ -20,12 +20,12 @@ Parent module for Garganttua AOT (Ahead-of-Time) compilation support. This POM a
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-aot</artifactId>
-    <version>3.0.0-ALPHA04</version>
+    <version>3.0.0-ALPHA05</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA04
+3.0.0-ALPHA05
 
 ### Dependencies
 
