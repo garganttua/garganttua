@@ -4,6 +4,7 @@ import com.garganttua.api.core.SuppressFBWarnings;
 import com.garganttua.api.core.domain.DomainBuilder;
 import com.garganttua.api.core.security.AuthoritiesEndpointBuilder;
 import com.garganttua.api.core.security.SecurityBuilder;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -11,6 +12,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.garganttua.api.core.api.ApiStartupBinderBuilder;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.BuildingStage;
@@ -37,6 +39,7 @@ import com.garganttua.core.dsl.dependency.DependencySpec;
 import com.garganttua.core.expression.dsl.IExpressionContextBuilder;
 import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
+import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.annotations.Reflected;
 import com.garganttua.core.reflection.dsl.IReflectionBuilder;
@@ -97,6 +100,12 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 	final List<ISupplierBuilder<?, ? extends ISupplier<?>>> protocolBuilders = new CopyOnWriteArrayList<>();
 	final List<IAuthorizationProtocol> authorizationProtocols = new CopyOnWriteArrayList<>();
 	final List<ISupplierBuilder<?, ? extends ISupplier<?>>> authorizationProtocolBuilders = new CopyOnWriteArrayList<>();
+	// Domain-supplied synchronization mutexes (synchronization(IMutex) / synchronization(ISupplierBuilder)):
+	// held here keyed by a generated bean name and registered as IMutex beans at build, so a domain's
+	// DomainSyncDef.lockBean resolves them at runtime. Mirrors the events EventsBuilder mutex registries.
+	private final AtomicInteger mutexBeanCounter = new AtomicInteger();
+	final List<MutexInstanceRegistration> mutexInstances = new CopyOnWriteArrayList<>();
+	final List<MutexSupplierRegistration> mutexSuppliers = new CopyOnWriteArrayList<>();
 	volatile IInjectionContextBuilder injectionContextBuilder;
 	volatile IExpressionContextBuilder expressionContextBuilder;
 	volatile com.garganttua.core.observability.dsl.IObservabilityBuilder observabilityBuilder;
@@ -106,6 +115,54 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 	volatile AuthoritiesEndpointBuilder authoritiesEndpointBuilder;
 	volatile com.garganttua.core.workflow.WorkflowTimingConfig workflowTimingConfig =
 			com.garganttua.core.workflow.WorkflowTimingConfig.disabled();
+
+	/** A domain-supplied mutex instance pending registration as a bean under {@code beanName}. */
+	record MutexInstanceRegistration(String beanName, IMutex mutex) {
+	}
+
+	/** A domain-supplied mutex supplier builder pending build + registration as a bean under {@code beanName}. */
+	record MutexSupplierRegistration(String beanName,
+			ISupplierBuilder<IMutex, ISupplier<IMutex>> supplier) {
+	}
+
+	/**
+	 * Registers a domain-supplied mutex instance for build-time bean registration and returns the
+	 * generated bean name to store in the domain's {@code DomainSyncDef.lockBean}. Called by
+	 * {@code DomainBuilder.synchronization(IMutex)}.
+	 *
+	 * @param domainName the declaring domain's name (for a readable bean name)
+	 * @param mutex      the mutex instance
+	 * @return the generated bean name under which the mutex is registered
+	 */
+	public String registerDomainMutex(String domainName, IMutex mutex) {
+		String beanName = mutexBeanName(domainName);
+		this.mutexInstances.add(new MutexInstanceRegistration(beanName, mutex));
+		log.debug("Domain mutex registered by instance: {} ({})", beanName, mutex.getClass().getName());
+		return beanName;
+	}
+
+	/**
+	 * Registers a domain-supplied mutex supplier builder for build-time build + bean registration and
+	 * returns the generated bean name to store in the domain's {@code DomainSyncDef.lockBean}. Called by
+	 * {@code DomainBuilder.synchronization(ISupplierBuilder)}.
+	 *
+	 * @param domainName   the declaring domain's name (for a readable bean name)
+	 * @param mutexBuilder the supplier builder producing the mutex
+	 * @return the generated bean name under which the mutex is registered
+	 */
+	public String registerDomainMutex(String domainName,
+			ISupplierBuilder<IMutex, ISupplier<IMutex>> mutexBuilder) {
+		String beanName = mutexBeanName(domainName);
+		this.mutexSuppliers.add(new MutexSupplierRegistration(beanName, mutexBuilder));
+		log.debug("Domain mutex registered by supplier builder: {}", beanName);
+		return beanName;
+	}
+
+	/** Builds a unique, readable bean name for a domain-supplied mutex. */
+	private String mutexBeanName(String domainName) {
+		return "mutex:domain:" + domainName + ":" + mutexBeanCounter.incrementAndGet();
+	}
+
 	/**
 	 * Default entry point — returns a fresh {@code ApiBuilder}. The caller wires the reflection /
 	 * injection / expression stack and orchestrates the build (typically through a Bootstrap driven

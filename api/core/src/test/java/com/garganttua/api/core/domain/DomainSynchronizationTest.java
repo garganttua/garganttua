@@ -25,6 +25,7 @@ import com.garganttua.api.commons.operation.BusinessOperation;
 import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.core.service.OperationResponse;
+import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.mutex.IMutexManager;
 import com.garganttua.core.mutex.InterruptibleLeaseMutex;
@@ -33,8 +34,9 @@ import com.garganttua.core.mutex.MutexName;
 
 /**
  * Unit tests for {@link DomainSynchronization}: write-operation detection, mutex resolution from the
- * core manager, {@code Type::name} / {@code lockObject} name mapping, and the acquire-wrap behaviour
- * (writes run inside the mutex, reads and unsynchronized domains run the pipeline directly).
+ * core manager (name locks) and from the injection context ({@code lockBean} beans), {@code Type::name}
+ * / {@code lockObject} name mapping, and the acquire-wrap behaviour (writes run inside the mutex, reads
+ * and unsynchronized domains run the pipeline directly).
  */
 class DomainSynchronizationTest {
 
@@ -97,7 +99,7 @@ class DomainSynchronizationTest {
     }
 
     @Nested
-    @DisplayName("resolveWriteMutex")
+    @DisplayName("resolveWriteMutex (name lock)")
     class ResolveWriteMutex {
 
         @Test
@@ -106,12 +108,12 @@ class DomainSynchronizationTest {
             IMutexManager manager = mock(IMutexManager.class);
             IOperationRequest write = requestWith(BusinessOperation.create);
 
-            assertNull(DomainSynchronization.resolveWriteMutex(manager, null, write, "d"));
-            assertNull(DomainSynchronization.resolveWriteMutex(manager,
+            assertNull(DomainSynchronization.resolveWriteMutex(manager, null, null, write, "d"));
+            assertNull(DomainSynchronization.resolveWriteMutex(manager, null,
                     new DomainSyncDef("  ", null), write, "d"));
-            assertNull(DomainSynchronization.resolveWriteMutex(null,
+            assertNull(DomainSynchronization.resolveWriteMutex(null, null,
                     new DomainSyncDef("lock", null), write, "d"));
-            assertNull(DomainSynchronization.resolveWriteMutex(manager,
+            assertNull(DomainSynchronization.resolveWriteMutex(manager, null,
                     new DomainSyncDef("lock", null), requestWith(BusinessOperation.readOne), "d"));
 
             verify(manager, never()).mutex(any());
@@ -124,7 +126,7 @@ class DomainSynchronizationTest {
             IMutex mutex = mock(IMutex.class);
             when(manager.mutex(any())).thenReturn(mutex);
 
-            IMutex resolved = DomainSynchronization.resolveWriteMutex(manager,
+            IMutex resolved = DomainSynchronization.resolveWriteMutex(manager, null,
                     new DomainSyncDef("orders", "t1"), requestWith(BusinessOperation.update), "d");
 
             assertSame(mutex, resolved);
@@ -138,8 +140,52 @@ class DomainSynchronizationTest {
             IMutexManager manager = mock(IMutexManager.class);
             when(manager.mutex(any())).thenThrow(new MutexException("boom"));
 
-            assertNull(DomainSynchronization.resolveWriteMutex(manager,
+            assertNull(DomainSynchronization.resolveWriteMutex(manager, null,
                     new DomainSyncDef("orders", null), requestWith(BusinessOperation.create), "d"));
+        }
+    }
+
+    @Nested
+    @DisplayName("resolveWriteMutex (lockBean)")
+    class ResolveWriteMutexBean {
+
+        private static DomainSyncDef bean(String ref) {
+            return new DomainSyncDef(null, null, ref);
+        }
+
+        @Test
+        @DisplayName("a lockBean resolves the IMutex bean from the injection context (not the manager)")
+        void resolvesBeanFromContext() throws MutexException {
+            IMutexManager manager = mock(IMutexManager.class);
+            IInjectionContext context = mock(IInjectionContext.class);
+            IMutex mutex = mock(IMutex.class);
+            when(context.queryBean(any())).thenReturn(Optional.of(mutex));
+
+            IMutex resolved = DomainSynchronization.resolveWriteMutex(manager, context,
+                    bean("mutex:domain:orders:1"), requestWith(BusinessOperation.create), "d");
+
+            assertSame(mutex, resolved);
+            verify(manager, never()).mutex(any());
+        }
+
+        @Test
+        @DisplayName("a read operation never resolves the bean")
+        void readSkipsBean() {
+            IInjectionContext context = mock(IInjectionContext.class);
+            assertNull(DomainSynchronization.resolveWriteMutex(null, context,
+                    bean("m"), requestWith(BusinessOperation.readAll), "d"));
+        }
+
+        @Test
+        @DisplayName("no context or an absent bean degrades to null (runs unsynchronized)")
+        void degradesGracefully() {
+            IInjectionContext context = mock(IInjectionContext.class);
+            when(context.queryBean(any())).thenReturn(Optional.empty());
+
+            assertNull(DomainSynchronization.resolveWriteMutex(null, null,
+                    bean("m"), requestWith(BusinessOperation.create), "d"));
+            assertNull(DomainSynchronization.resolveWriteMutex(null, context,
+                    bean("absent"), requestWith(BusinessOperation.create), "d"));
         }
     }
 
@@ -154,7 +200,7 @@ class DomainSynchronizationTest {
             AtomicInteger runs = new AtomicInteger();
             OperationResponse expected = OperationResponse.ok("read");
 
-            OperationResponse actual = DomainSynchronization.execute(manager,
+            OperationResponse actual = DomainSynchronization.execute(manager, null,
                     new DomainSyncDef("orders", null), requestWith(BusinessOperation.readOne), "d",
                     () -> { runs.incrementAndGet(); return expected; });
 
@@ -175,12 +221,30 @@ class DomainSynchronizationTest {
             AtomicInteger runs = new AtomicInteger();
             OperationResponse expected = OperationResponse.created("saved");
 
-            OperationResponse actual = DomainSynchronization.execute(manager,
+            OperationResponse actual = DomainSynchronization.execute(manager, null,
                     new DomainSyncDef("orders", null), requestWith(BusinessOperation.create), "d",
                     () -> { runs.incrementAndGet(); return expected; });
 
             assertSame(expected, actual);
             assertEquals(1, runs.get());
+            verify(mutex).acquire(any());
+        }
+
+        @Test
+        @DisplayName("a bean-based write runs inside the bean mutex resolved from the context")
+        void writeRunsInsideBeanMutex() throws Exception {
+            IInjectionContext context = mock(IInjectionContext.class);
+            IMutex mutex = mock(IMutex.class);
+            when(context.queryBean(any())).thenReturn(Optional.of(mutex));
+            when(mutex.acquire(any())).thenAnswer(inv ->
+                    ((IMutex.ThrowingFunction<?>) inv.getArgument(0)).execute());
+            OperationResponse expected = OperationResponse.created("saved");
+
+            OperationResponse actual = DomainSynchronization.execute(null, context,
+                    new DomainSyncDef(null, null, "mutex:domain:orders:1"),
+                    requestWith(BusinessOperation.update), "d", () -> expected);
+
+            assertSame(expected, actual);
             verify(mutex).acquire(any());
         }
 
@@ -195,7 +259,7 @@ class DomainSynchronizationTest {
             ApiException boom = new ApiException("db down");
 
             MutexException thrown = assertThrows(MutexException.class, () ->
-                    DomainSynchronization.execute(manager, new DomainSyncDef("orders", null),
+                    DomainSynchronization.execute(manager, null, new DomainSyncDef("orders", null),
                             requestWith(BusinessOperation.deleteOne), "d",
                             () -> { throw boom; }));
 

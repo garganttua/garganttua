@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.IAuthoritiesEndpoint;
@@ -13,12 +15,19 @@ import com.garganttua.api.commons.security.authorization.IAuthorizationProtocol;
 import com.garganttua.api.commons.serialization.ISerializer;
 import com.garganttua.api.core.domain.Domain;
 import com.garganttua.api.core.domain.DomainBuilder;
+import com.garganttua.core.dsl.DslException;
+import com.garganttua.core.injection.BeanReference;
+import com.garganttua.core.injection.BeanStrategy;
+import com.garganttua.core.injection.IInjectionContext;
+import com.garganttua.core.injection.Predefined;
+import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.mutex.IMutexManager;
 import com.garganttua.core.mutex.MutexManager;
 import com.garganttua.core.mutex.dsl.MutexManagerBuilder;
 import com.garganttua.core.observability.IObservable;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.observability.ObservabilityBinding;
+import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.binders.IMethodBinder;
 import com.garganttua.core.supply.ISupplier;
 import com.garganttua.core.supply.dsl.ISupplierBuilder;
@@ -181,6 +190,7 @@ final class ApiBuilderBuild {
      * locks, local fallback).
      */
     static void wireSynchronization(ApiBuilder b, Map<String, IDomain<?>> domainContexts) {
+        registerDomainMutexBeans(b);
         IMutexManager manager = null;
         int wired = 0;
         for (IDomain<?> domain : domainContexts.values()) {
@@ -189,11 +199,51 @@ final class ApiBuilderBuild {
                     manager = buildMutexManager(b);
                 }
                 d.setMutexManager(manager);
+                // The injection context lets a bean-based lock (synchronization(IMutex) / (ISupplierBuilder)
+                // / synchronizationBean) resolve its IMutex bean at runtime; harmless for name locks.
+                d.setInjectionContext(b.injectionContext);
                 wired++;
             }
         }
         if (wired > 0) {
             log.debug("Wired the synchronization mutex manager onto {} domain(s)", wired);
+        }
+    }
+
+    /**
+     * Registers every domain-supplied mutex (from {@code synchronization(IMutex)} /
+     * {@code synchronization(ISupplierBuilder)}) into the injection context as a singleton
+     * {@link IMutex} bean under its generated name, so the domain's {@code DomainSyncDef.lockBean}
+     * resolves it at runtime. Mirrors {@code EventsBuilder.registerMutexBeans}. No-op when none declared.
+     */
+    private static void registerDomainMutexBeans(ApiBuilder b) {
+        for (ApiBuilder.MutexInstanceRegistration reg : b.mutexInstances) {
+            registerSingletonMutex(b.injectionContext, reg.beanName(), reg.mutex());
+        }
+        for (ApiBuilder.MutexSupplierRegistration reg : b.mutexSuppliers) {
+            registerSuppliedMutex(b.injectionContext, reg);
+        }
+    }
+
+    private static void registerSingletonMutex(IInjectionContext context, String beanName, IMutex mutex) {
+        BeanReference<IMutex> reference = new BeanReference<>(
+                IClass.getClass(IMutex.class),
+                Optional.of(BeanStrategy.singleton), Optional.of(beanName), Set.of());
+        context.addBean(Predefined.BeanProviders.garganttua.toString(), reference, mutex);
+        log.debug("Domain mutex bean '{}' registered (singleton instance, class {})",
+                beanName, mutex.getClass().getName());
+    }
+
+    private static void registerSuppliedMutex(IInjectionContext context,
+            ApiBuilder.MutexSupplierRegistration registration) {
+        try {
+            IMutex mutex = registration.supplier().build().supply()
+                    .orElseThrow(() -> new DslException("Mutex supplier produced no instance"));
+            registerSingletonMutex(context, registration.beanName(), mutex);
+        } catch (DslException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new DslException("Failed to build mutex from supplier: " + e.getMessage(), e);
         }
     }
 

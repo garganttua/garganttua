@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -21,6 +22,7 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.context.dsl.IApiBuilder;
+import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.dao.IDao;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.filter.IFilter;
@@ -29,6 +31,9 @@ import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.api.core.domain.Domain;
 import com.garganttua.api.core.integ.crud.AbstractCrudIntegrationTest;
 import com.garganttua.api.core.service.RequestBuilder;
+import com.garganttua.core.mutex.IMutex;
+import com.garganttua.core.mutex.MutexException;
+import com.garganttua.core.mutex.MutexStrategy;
 import com.garganttua.core.reflection.IClass;
 
 /**
@@ -82,9 +87,37 @@ class DomainSyncIntegrationTest extends AbstractCrudIntegrationTest {
         }
     }
 
-    private IApi buildProducts(IDao dao, boolean synchronize) throws ApiException {
-        IApiBuilder builder = newBaseBuilder().multiTenant(false);
-        var domain = builder.domain(IClass.getClass(Product.class))
+    /**
+     * A self-contained {@link IMutex} (own {@link ReentrantLock}) that counts acquisitions, so a test
+     * can assert the exact provided instance is the one the domain acquires at runtime.
+     */
+    static final class CountingMutex implements IMutex {
+        private final ReentrantLock lock = new ReentrantLock();
+        private final AtomicInteger acquires = new AtomicInteger();
+
+        int acquireCount() {
+            return this.acquires.get();
+        }
+
+        @Override
+        public <R> R acquire(ThrowingFunction<R> function) throws MutexException {
+            this.acquires.incrementAndGet();
+            this.lock.lock();
+            try {
+                return function.execute();
+            } finally {
+                this.lock.unlock();
+            }
+        }
+
+        @Override
+        public <R> R acquire(ThrowingFunction<R> function, MutexStrategy strategy) throws MutexException {
+            return acquire(function);
+        }
+    }
+
+    private IDomainBuilder<?> baseProductsDomain(IApiBuilder builder, IDao dao) throws ApiException {
+        return builder.domain(IClass.getClass(Product.class))
                 .entity().id("id").uuid("uuid").up()
                 .dto(IClass.getClass(ProductDto.class))
                     .id("id").uuid("uuid")
@@ -92,14 +125,30 @@ class DomainSyncIntegrationTest extends AbstractCrudIntegrationTest {
                 .up()
                 .security().disable(true).up()
                 .creation(true).readAll(true).readOne(true);
-        if (synchronize) {
-            domain.synchronization("products-lock", null);
-        }
-        domain.up();
+    }
+
+    private IApi finish(IApiBuilder builder) throws ApiException {
         IApi api = builder.build();
         api.onInit();
         api.onStart();
         return api;
+    }
+
+    private IApi buildProducts(IDao dao, boolean synchronize) throws ApiException {
+        IApiBuilder builder = newBaseBuilder().multiTenant(false);
+        IDomainBuilder<?> domain = baseProductsDomain(builder, dao);
+        if (synchronize) {
+            domain.synchronization("products-lock", null);
+        }
+        domain.up();
+        return finish(builder);
+    }
+
+    /** Builds the products domain synchronized by a directly-provided {@link IMutex} instance. */
+    private IApi buildProductsWithMutex(IDao dao, IMutex mutex) throws ApiException {
+        IApiBuilder builder = newBaseBuilder().multiTenant(false);
+        baseProductsDomain(builder, dao).synchronization(mutex, null).up();
+        return finish(builder);
     }
 
     private static Product product(String label) {
@@ -123,6 +172,15 @@ class DomainSyncIntegrationTest extends AbstractCrudIntegrationTest {
                     "a domain declaring .synchronization(...) must be marked synchronized");
             assertFalse(((Domain<?>) plain).hasSynchronization(),
                     "a domain without .synchronization(...) must not be synchronized");
+        }
+
+        @Test
+        @DisplayName(".synchronization(IMutex, ...) marks the built domain as synchronized")
+        void instanceMutexMarksSynchronized() throws ApiException {
+            IDomain<?> synced = buildProductsWithMutex(new ProbeDao(), new CountingMutex())
+                    .getDomain("products").orElseThrow();
+            assertTrue(((Domain<?>) synced).hasSynchronization(),
+                    "a domain declaring .synchronization(IMutex) must be marked synchronized");
         }
     }
 
@@ -166,6 +224,47 @@ class DomainSyncIntegrationTest extends AbstractCrudIntegrationTest {
 
             assertEquals(1, dao.peakInFlight(),
                     "the domain mutex must serialize writes: never more than one save in flight at once");
+        }
+
+        @Test
+        @DisplayName("a domain synchronized by a provided IMutex serializes writes through THAT instance")
+        void instanceMutexSerializesWrites() throws Exception {
+            ProbeDao dao = new ProbeDao();
+            CountingMutex mutex = new CountingMutex();
+            IApi api = buildProductsWithMutex(dao, mutex);
+            IDomain<?> domain = api.getDomain("products").orElseThrow();
+
+            int threads = 8;
+            ExecutorService pool = Executors.newFixedThreadPool(threads);
+            CountDownLatch ready = new CountDownLatch(threads);
+            CountDownLatch go = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(threads);
+            try {
+                for (int i = 0; i < threads; i++) {
+                    final int n = i;
+                    pool.submit(() -> {
+                        ready.countDown();
+                        try {
+                            go.await();
+                            RequestBuilder.builder(domain).createOne(product("p" + n)).build().execute();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        } finally {
+                            done.countDown();
+                        }
+                    });
+                }
+                assertTrue(ready.await(5, TimeUnit.SECONDS), "workers did not start in time");
+                go.countDown();
+                assertTrue(done.await(30, TimeUnit.SECONDS), "concurrent creates did not finish in time");
+            } finally {
+                pool.shutdownNow();
+            }
+
+            assertEquals(1, dao.peakInFlight(),
+                    "the provided mutex must serialize writes: never more than one save in flight");
+            assertEquals(threads, mutex.acquireCount(),
+                    "each write must acquire the exact provided mutex instance");
         }
     }
 }

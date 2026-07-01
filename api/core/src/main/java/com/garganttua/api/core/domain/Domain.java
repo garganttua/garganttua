@@ -26,6 +26,7 @@ import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.api.commons.repository.IRepository;
 import com.garganttua.api.commons.service.IOperationResponse;
 import com.garganttua.core.injection.BeanDefinition;
+import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.api.commons.security.IDomainSecurityContext;
 import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.commons.service.IRequestBuilder;
@@ -123,10 +124,13 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         this.workflow = Objects.requireNonNull(workflow, "Workflow cannot be null");
     }
 
-    // Write-synchronization: config declared via the DSL and the core mutex manager wired by
-    // ApiBuilderBuild. Both stay null when the domain declares no .synchronization(...).
+    // Write-synchronization: config declared via the DSL, plus the core mutex manager and the injection
+    // context wired by ApiBuilderBuild. All stay null when the domain declares no .synchronization(...).
+    // The injection context resolves a bean-based lock (synchronization(IMutex)/(ISupplierBuilder)/
+    // synchronizationBean); the mutex manager resolves a name-based lock.
     private DomainSyncDef synchronization;
     private IMutexManager mutexManager;
+    private IInjectionContext injectionContext;
 
     public void setSynchronization(DomainSyncDef synchronization) {
         this.synchronization = synchronization;
@@ -136,11 +140,21 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         this.mutexManager = mutexManager;
     }
 
-    /** True when this domain declares a non-blank synchronization lock (write ops serialize on it). */
+    public void setInjectionContext(IInjectionContext injectionContext) {
+        this.injectionContext = injectionContext;
+    }
+
+    /**
+     * True when this domain declares synchronization (a non-blank name {@code lock} or a bean
+     * {@code lockBean}); write ops then serialize on the resolved mutex.
+     */
     public boolean hasSynchronization() {
-        return this.synchronization != null
-                && this.synchronization.lock() != null
-                && !this.synchronization.lock().isBlank();
+        if (this.synchronization == null) {
+            return false;
+        }
+        boolean hasLock = this.synchronization.lock() != null && !this.synchronization.lock().isBlank();
+        boolean hasBean = this.synchronization.lockBean() != null && !this.synchronization.lockBean().isBlank();
+        return hasLock || hasBean;
     }
 
     public Domain(DomainDefinition<E> domainDefinition, IEntityContext<E> entityContext,
@@ -340,8 +354,8 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
 
             // Write ops (create/update/delete) on a domain declaring .synchronization(...) run inside
             // the core mutex; reads and unsynchronized domains run the pipeline directly.
-            return DomainSynchronization.execute(this.mutexManager, this.synchronization, request,
-                    this.domainDefinition.domainName(), () -> {
+            return DomainSynchronization.execute(this.mutexManager, this.injectionContext,
+                    this.synchronization, request, this.domainDefinition.domainName(), () -> {
                         WorkflowResult result = this.workflow.execute(
                                 WorkflowInput.of(request, buildWorkflowParams()),
                                 effectiveOptions(request, options));

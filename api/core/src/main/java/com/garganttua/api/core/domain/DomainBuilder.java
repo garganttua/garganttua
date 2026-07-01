@@ -42,6 +42,7 @@ import com.garganttua.core.injection.BeanDefinition;
 import com.garganttua.core.injection.IInjectableElementResolver;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
 import com.garganttua.core.mapper.IMapper;
+import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflectionProvider;
 import com.garganttua.core.reflection.binders.IMethodBinder;
@@ -178,6 +179,44 @@ public class DomainBuilder<E> extends AbstractDomainCharacteristicsBuilder<E> {
     public IDomainBuilder<E> synchronization(String lock, String lockObject) {
         this.synchronization = new com.garganttua.api.commons.context.DomainSyncDef(lock, lockObject);
         return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> synchronization(IMutex mutex, String lockObject) {
+        Objects.requireNonNull(mutex, "Mutex cannot be null");
+        String beanName = requireApiBuilder("synchronization(IMutex)")
+                .registerDomainMutex(this.domainName, mutex);
+        this.synchronization = new com.garganttua.api.commons.context.DomainSyncDef(null, lockObject, beanName);
+        return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> synchronization(ISupplierBuilder<IMutex, ISupplier<IMutex>> mutexBuilder,
+            String lockObject) {
+        Objects.requireNonNull(mutexBuilder, "Mutex supplier builder cannot be null");
+        String beanName = requireApiBuilder("synchronization(ISupplierBuilder)")
+                .registerDomainMutex(this.domainName, mutexBuilder);
+        this.synchronization = new com.garganttua.api.commons.context.DomainSyncDef(null, lockObject, beanName);
+        return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> synchronizationBean(String beanReference, String lockObject) {
+        this.synchronization = new com.garganttua.api.commons.context.DomainSyncDef(null, lockObject, beanReference);
+        return this;
+    }
+
+    /**
+     * The enclosing {@link ApiBuilder}, reached through the domain builder's parent, needed to register
+     * a domain-supplied mutex as a bean. Fails when the domain was not built through the api DSL chain
+     * (where such registration has no home).
+     */
+    private ApiBuilder requireApiBuilder(String form) {
+        if (this.up() instanceof ApiBuilder apiBuilder) {
+            return apiBuilder;
+        }
+        throw new IllegalStateException("domain " + this.domainName + ": " + form + " requires the domain "
+                + "to be built through ApiBuilder.domain(...) so the mutex can be registered as a bean");
     }
 
     public IEntityBuilder<E> entity(IClass<?> entityClass) throws ApiException {

@@ -9,6 +9,7 @@ import com.garganttua.api.commons.event.IEventPublisher;
 import com.garganttua.api.commons.endpoint.IInterface;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.dsl.IAutomaticLinkedBuilder;
+import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.supply.ISupplier;
@@ -122,5 +123,44 @@ public interface IDomainBuilder<E> extends IAutomaticLinkedBuilder<IDomainBuilde
      * @return this builder, for chaining
      */
     IDomainBuilder<E> synchronization(String lock, String lockObject);
+
+    /**
+     * Serializes this domain's write operations through the given {@link IMutex} instance (registered
+     * as a bean and resolved at runtime). Mirrors the events {@code route(...).synchronization(IMutex)}
+     * form.
+     *
+     * @param mutex      the mutex instance write operations acquire; must not be {@code null}
+     * @param lockObject accepted for symmetry with the name form but has no runtime effect here (a
+     *                   concrete mutex is a single instance and cannot be sub-keyed); may be {@code null}
+     * @return this builder, for chaining
+     */
+    IDomainBuilder<E> synchronization(IMutex mutex, String lockObject);
+
+    /**
+     * Serializes this domain's write operations through the {@link IMutex} produced by the given
+     * supplier builder (built once at post-build and registered as a bean). Mirrors the events
+     * {@code route(...).synchronization(ISupplierBuilder)} form.
+     *
+     * @param mutexBuilder the supplier builder producing the mutex; must not be {@code null}
+     * @param lockObject   accepted for symmetry but has no runtime effect here (single instance); may
+     *                     be {@code null}
+     * @return this builder, for chaining
+     */
+    IDomainBuilder<E> synchronization(ISupplierBuilder<IMutex, ISupplier<IMutex>> mutexBuilder,
+            String lockObject);
+
+    /**
+     * Serializes this domain's write operations through the {@link IMutex} bean resolved from the
+     * injection context by the given bean reference (format
+     * {@code [provider::][class][!strategy][#name][@qualifier]}). Mirrors the events
+     * {@code route(...).synchronizationBean(String)} form.
+     *
+     * @param beanReference the {@code IMutex} bean reference/name; a {@code null}/blank value leaves
+     *                      the domain unsynchronized
+     * @param lockObject    accepted for symmetry but has no runtime effect here (single instance); may
+     *                      be {@code null}
+     * @return this builder, for chaining
+     */
+    IDomainBuilder<E> synchronizationBean(String beanReference, String lockObject);
 
 }
