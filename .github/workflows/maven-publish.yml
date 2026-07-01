@@ -142,12 +142,12 @@ jobs:
         <settings>
           <servers>
             <server>
-              <id>garganttua_core_github_repository</id>
+              <id>garganttua_github_repository</id>
               <username>${env.GITHUB_ACTOR}</username>
               <password>${env.GITHUB_TOKEN}</password>
             </server>
             <server>
-              <id>garganttua_core_github_snapshot_repository</id>
+              <id>garganttua_github_snapshot_repository</id>
               <username>${env.GITHUB_ACTOR}</username>
               <password>${env.GITHUB_TOKEN}</password>
             </server>

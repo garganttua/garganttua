@@ -25,14 +25,14 @@
 
 	<distributionManagement>
 		<snapshotRepository>
-			<id>github garganttua events</id>
-			<name>github garganttua events</name>
-			<url>https://maven.pkg.github.com/garganttua/garganttua-events</url>
+			<id>garganttua_github_snapshot_repository</id>
+			<name>Garganttua Github Repository</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua</url>
 		</snapshotRepository>
 		<repository>
-			<id>github garganttua events</id>
-			<name>github garganttua events</name>
-			<url>https://maven.pkg.github.com/garganttua/garganttua-events</url>
+			<id>garganttua_github_repository</id>
+			<name>Garganttua Github Repository</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua</url>
 		</repository>
 	</distributionManagement>
 

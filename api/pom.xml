@@ -24,22 +24,22 @@
 
 	<repositories>
 		<repository>
-			<id>github garganttua core</id>
-			<name>github garganttua core</name>
-			<url>https://maven.pkg.github.com/garganttua/garganttua-core</url>
+			<id>garganttua_github_repository</id>
+			<name>Garganttua Github Repository</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua</url>
 		</repository>
 	</repositories>
 
 	<distributionManagement>
 		<snapshotRepository>
-			<id>github garganttua api</id>
-			<name>github garganttua api</name>
-			<url>https://maven.pkg.github.com/garganttua/garganttua-api</url>
+			<id>garganttua_github_snapshot_repository</id>
+			<name>Garganttua Github Repository</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua</url>
 		</snapshotRepository>
 		<repository>
-			<id>github garganttua api</id>
-			<name>github garganttua api</name>
-			<url>https://maven.pkg.github.com/garganttua/garganttua-api</url>
+			<id>garganttua_github_repository</id>
+			<name>Garganttua Github Repository</name>
+			<url>https://maven.pkg.github.com/garganttua/garganttua</url>
 		</repository>
 	</distributionManagement>
 
