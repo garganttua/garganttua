@@ -21,14 +21,14 @@
   </developers>
   <distributionManagement>
     <snapshotRepository>
-      <id>garganttua_core_github_snapshot_repository</id>
-      <name>Garganttua Core Github Repository</name>
-      <url>https://maven.pkg.github.com/garganttua/garganttua-core</url>
+      <id>garganttua_github_snapshot_repository</id>
+      <name>Garganttua Github Repository</name>
+      <url>https://maven.pkg.github.com/garganttua/garganttua</url>
     </snapshotRepository>
     <repository>
-      <id>garganttua_core_github_repository</id>
-      <name>Garganttua Core Github Repository</name>
-      <url>https://maven.pkg.github.com/garganttua/garganttua-core</url>
+      <id>garganttua_github_repository</id>
+      <name>Garganttua Github Repository</name>
+      <url>https://maven.pkg.github.com/garganttua/garganttua</url>
     </repository>
   </distributionManagement>
   <properties>
