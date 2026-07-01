@@ -19,6 +19,19 @@
     <module>events</module>
   </modules>
 
+  <distributionManagement>
+    <snapshotRepository>
+      <id>garganttua_github_snapshot_repository</id>
+      <name>Garganttua Github Repository</name>
+      <url>https://maven.pkg.github.com/garganttua/garganttua</url>
+    </snapshotRepository>
+    <repository>
+      <id>garganttua_github_repository</id>
+      <name>Garganttua Github Repository</name>
+      <url>https://maven.pkg.github.com/garganttua/garganttua</url>
+    </repository>
+  </distributionManagement>
+
   <build>
     <plugins>
       <!-- Regenerate the README auto-blocks (architecture, dependency graph,
