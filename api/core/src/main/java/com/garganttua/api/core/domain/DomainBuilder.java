@@ -72,6 +72,7 @@ public class DomainBuilder<E> extends AbstractDomainCharacteristicsBuilder<E> {
     volatile boolean publik = false;
     volatile boolean tenant = false;
     volatile boolean doInjection = false;
+    volatile com.garganttua.api.commons.context.DomainSyncDef synchronization;
     private volatile IEntityBuilder<E> entityBuilder;
     final List<Object> createEntities = new CopyOnWriteArrayList<>();
     final List<Object> upsertEntities = new CopyOnWriteArrayList<>();
@@ -170,6 +171,12 @@ public class DomainBuilder<E> extends AbstractDomainCharacteristicsBuilder<E> {
     @Override
     public IDomainBuilder<E> doInjection(boolean enabled) {
         this.doInjection = enabled;
+        return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> synchronization(String lock, String lockObject) {
+        this.synchronization = new com.garganttua.api.commons.context.DomainSyncDef(lock, lockObject);
         return this;
     }
 

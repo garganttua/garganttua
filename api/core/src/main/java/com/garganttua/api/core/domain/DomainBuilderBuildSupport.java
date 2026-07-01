@@ -100,6 +100,7 @@ final class DomainBuilderBuildSupport {
         domainContext.setWorkflow(builtWorkflow);
         domainContext.setEntityBeanDefinition(entityBeanDefinition);
         domainContext.setDoInjection(builder.doInjection);
+        domainContext.setSynchronization(builder.synchronization);
         return domainContext;
     }
 

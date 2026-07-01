@@ -11,7 +11,11 @@ import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.protocol.IProtocol;
 import com.garganttua.api.commons.security.authorization.IAuthorizationProtocol;
 import com.garganttua.api.commons.serialization.ISerializer;
+import com.garganttua.api.core.domain.Domain;
 import com.garganttua.api.core.domain.DomainBuilder;
+import com.garganttua.core.mutex.IMutexManager;
+import com.garganttua.core.mutex.MutexManager;
+import com.garganttua.core.mutex.dsl.MutexManagerBuilder;
 import com.garganttua.core.observability.IObservable;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.observability.ObservabilityBinding;
@@ -47,6 +51,7 @@ final class ApiBuilderBuild {
 
             Map<String, IDomain<?>> domainContexts = buildDomainContexts(b);
             requireTenantDomainWhenMultiTenant(b, domainContexts);
+            wireSynchronization(b, domainContexts);
 
             // Validate that every domain whose linked authorization is signable also has a key
             // configured. Surfaces misconfiguration at build time rather than at the first sign call.
@@ -167,6 +172,51 @@ final class ApiBuilderBuild {
             log.debug("Built domain context: {}", domainContext.getDomain());
         }
         return domainContexts;
+    }
+
+    /**
+     * Wires the core mutex manager onto every domain that declared {@code .synchronization(...)}, so
+     * its write operations serialize through the mutex. Lazy: builds nothing when no domain opts in.
+     * Mirrors {@code Events.buildMutexManager()} (auto-detecting {@code @MutexFactory} for distributed
+     * locks, local fallback).
+     */
+    static void wireSynchronization(ApiBuilder b, Map<String, IDomain<?>> domainContexts) {
+        IMutexManager manager = null;
+        int wired = 0;
+        for (IDomain<?> domain : domainContexts.values()) {
+            if (domain instanceof Domain<?> d && d.hasSynchronization()) {
+                if (manager == null) {
+                    manager = buildMutexManager(b);
+                }
+                d.setMutexManager(manager);
+                wired++;
+            }
+        }
+        if (wired > 0) {
+            log.debug("Wired the synchronization mutex manager onto {} domain(s)", wired);
+        }
+    }
+
+    /**
+     * Builds the auto-detecting core mutex manager (so any {@code @MutexFactory} on the classpath —
+     * including a distributed lock provider — is registered via the core mutex SPI); falls back to a
+     * plain local {@link MutexManager} when no injection-context builder is available or the build fails.
+     */
+    private static IMutexManager buildMutexManager(ApiBuilder b) {
+        if (b.injectionContextBuilder == null) {
+            return new MutexManager();
+        }
+        try {
+            return MutexManagerBuilder.builder()
+                    .withPackage("com.garganttua")
+                    .autoDetect(true)
+                    .provide(b.injectionContextBuilder)
+                    .build();
+        } catch (RuntimeException e) {
+            log.warn("Could not build the auto-detecting mutex manager ({}); using the local default",
+                    e.getMessage());
+            return new MutexManager();
+        }
     }
 
     /** Builds the API-level startup method binders. */

@@ -162,6 +162,11 @@
 			</dependency>
 			<dependency>
 				<groupId>com.garganttua.core</groupId>
+				<artifactId>garganttua-mutex</artifactId>
+				<version>${garganttua.core.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua.core</groupId>
 				<artifactId>garganttua-mapper</artifactId>
 				<version>${garganttua.core.version}</version>
 			</dependency>

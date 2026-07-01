@@ -109,4 +109,18 @@ public interface IDomainBuilder<E> extends IAutomaticLinkedBuilder<IDomainBuilde
 
     IDomainBuilder<E> deleteAll(boolean enabled);
 
+    /**
+     * Serializes this domain's write operations (create / update / delete) through a garganttua-core
+     * mutex; read operations stay unsynchronized. Mirrors the events
+     * {@code route(...).synchronization(lock, lockObject)} model — see
+     * {@link com.garganttua.api.commons.context.DomainSyncDef}.
+     *
+     * @param lock       the mutex name; a plain name uses the default in-JVM mutex, a qualified
+     *                   {@code Type::name} selects a registered {@code @MutexFactory} (e.g. a
+     *                   distributed lock). A {@code null}/blank lock leaves the domain unsynchronized.
+     * @param lockObject an optional static suffix narrowing the lock name, or {@code null}
+     * @return this builder, for chaining
+     */
+    IDomainBuilder<E> synchronization(String lock, String lockObject);
+
 }

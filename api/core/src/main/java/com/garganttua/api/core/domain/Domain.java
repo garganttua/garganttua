@@ -14,6 +14,7 @@ import com.garganttua.api.core.domain.DomainDefinition;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.core.caller.Caller;
+import com.garganttua.api.commons.context.DomainSyncDef;
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.context.IDtoContext;
@@ -31,6 +32,8 @@ import com.garganttua.api.commons.service.IRequestBuilder;
 import com.garganttua.api.core.mapper.DefaultMapper;
 import com.garganttua.core.lifecycle.AbstractLifecycle;
 import com.garganttua.core.lifecycle.ILifecycle;
+import com.garganttua.core.mutex.IMutexManager;
+import com.garganttua.core.mutex.MutexException;
 import com.garganttua.core.observability.GlobalObservers;
 import com.garganttua.core.observability.IObserver;
 import com.garganttua.core.observability.ObservabilityEmitter;
@@ -118,6 +121,26 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
 
     public void setWorkflow(IWorkflow workflow) {
         this.workflow = Objects.requireNonNull(workflow, "Workflow cannot be null");
+    }
+
+    // Write-synchronization: config declared via the DSL and the core mutex manager wired by
+    // ApiBuilderBuild. Both stay null when the domain declares no .synchronization(...).
+    private DomainSyncDef synchronization;
+    private IMutexManager mutexManager;
+
+    public void setSynchronization(DomainSyncDef synchronization) {
+        this.synchronization = synchronization;
+    }
+
+    public void setMutexManager(IMutexManager mutexManager) {
+        this.mutexManager = mutexManager;
+    }
+
+    /** True when this domain declares a non-blank synchronization lock (write ops serialize on it). */
+    public boolean hasSynchronization() {
+        return this.synchronization != null
+                && this.synchronization.lock() != null
+                && !this.synchronization.lock().isBlank();
     }
 
     public Domain(DomainDefinition<E> domainDefinition, IEntityContext<E> entityContext,
@@ -315,15 +338,23 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
             }
             bindScriptArgs(request);
 
-            WorkflowResult result = this.workflow.execute(
-                    WorkflowInput.of(request, buildWorkflowParams()), effectiveOptions(request, options));
-            return mapWorkflowResult(result, request);
+            // Write ops (create/update/delete) on a domain declaring .synchronization(...) run inside
+            // the core mutex; reads and unsynchronized domains run the pipeline directly.
+            return DomainSynchronization.execute(this.mutexManager, this.synchronization, request,
+                    this.domainDefinition.domainName(), () -> {
+                        WorkflowResult result = this.workflow.execute(
+                                WorkflowInput.of(request, buildWorkflowParams()),
+                                effectiveOptions(request, options));
+                        return mapWorkflowResult(result, request);
+                    });
         } catch (Exception e) {
-            log.error("Error executing workflow for domain {}: {}",
-                    this.domainDefinition.domainName(), e.getMessage(), e);
+            String domainName = this.domainDefinition.domainName();
+            // A failure raised inside the synchronization mutex is wrapped as MutexException; unwrap it
+            // so the response carries the original cause, identical to the unsynchronized path.
+            Throwable cause = (e instanceof MutexException && e.getCause() != null) ? e.getCause() : e;
+            log.error("Error executing workflow for domain {}: {}", domainName, cause.getMessage(), cause);
             return OperationResponse.error(new ApiException(
-                    "Workflow execution error on domain '"
-                            + this.domainDefinition.domainName() + "': " + e.getMessage(), e));
+                    "Workflow execution error on domain '" + domainName + "': " + cause.getMessage(), cause));
         }
     }
 

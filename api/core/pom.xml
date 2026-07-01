@@ -44,6 +44,10 @@
 		</dependency>
 		<dependency>
 			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-mutex</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
 			<artifactId>garganttua-workflow</artifactId>
 		</dependency>
 		<dependency>
