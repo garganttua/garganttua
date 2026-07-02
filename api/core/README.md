@@ -49,6 +49,7 @@ The module ships `ApiCoreInfrastructureSeed`, an `IAOTInfrastructureSeed` implem
  - `com.garganttua.core:garganttua-bootstrap`
  - `com.garganttua.core:garganttua-execution`
  - `com.garganttua.core:garganttua-injection`
+ - `com.garganttua.core:garganttua-mutex`
  - `com.garganttua.core:garganttua-workflow`
  - `com.garganttua.core:garganttua-commons`
  - `com.garganttua.core:garganttua-crypto`
