@@ -99,8 +99,9 @@ are added, treat the achieved figure as a **floor — do not regress it**.
 
 ## Logging
 
-garganttua-events uses **Lombok `@Slf4j` over SLF4J** (`org.slf4j`). (Note: this differs from
-garganttua-core, which is de-Lomboked and uses its own observable `Logger`.)
+**No Lombok, no SLF4J.** garganttua-events is de-Lomboked like the rest of the reactor: log via the
+observable `Logger` (`com.garganttua.core.observability.Logger`) — `Logger.getLogger(SomeClass.class)`
+(name-only, safe for `static` fields); level via the `garganttua.log.level` system property.
 
 Log hygiene:
 - **Parameterize with `{}`** — never string-concatenate log arguments (`log.debug("x={}", x)`).

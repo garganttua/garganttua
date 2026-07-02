@@ -260,6 +260,13 @@ Inactive (commented out, Lombok may linger pending migration): `garganttua-api-s
 - **Suppliers** — every supplier needs a param `@annotation` + an `@Resolver IElementResolver`
   returning its `SupplierBuilder`; carry inter-stage data via workflow-scoped variables / numbered
   argument injection, never ThreadLocal.
+- **Synchronization** — `domain(...).synchronization(...)` serialises CRUD **writes**
+  (create/update/deleteOne/deleteAll) through a garganttua-core mutex; reads never lock. Same input
+  forms as events routes: a lock **name** (in-JVM `InterruptibleLeaseMutex`), `Type::name` (a
+  registered `@MutexFactory`, e.g. `RedisMutex::x` for distributed), a fixed `IMutex`, an
+  `ISupplierBuilder<IMutex>`, or `synchronizationBean(ref)`. `ApiBuilderBuild` builds one auto-detecting
+  `IMutexManager` lazily (only when a domain opts in) and registers instance/supplier mutexes as beans.
+  Coarse per-domain locking (static `lock`+`lockObject`) — per-entity dynamic keying is a future step.
 
 ### Multi-tenancy roles & characteristics
 
@@ -334,7 +341,13 @@ Dependency graph: `api` ← `expressions`, `core`, `connector-*`.
 > writes only business logic. Per-subscription `concurrency` runs messages on a worker pool unless
 > the dataflow `garanteeOrder`s (then sequential — there is no parallel-keyed mode, as the byte[]
 > consumer SPI exposes no partition key). `RouteDef.exceptions` dead-letters a failed exchange to an
-> error subscription; `RouteDef.synchronization` locks per message **once a lock provider exists**
-> (the `IDistributedLock` SPI + implementations are not built yet).
+> error subscription; `RouteDef.synchronization` serialises per-message processing through a
+> **garganttua-core mutex** (`IMutexManager`/`IMutex`): `route(...).synchronization(...)` accepts a
+> lock **name** (in-JVM `InterruptibleLeaseMutex`), a qualified `Type::name` (a registered
+> `@MutexFactory`, e.g. `RedisMutex::x` for a distributed lock), a fixed `IMutex`, an
+> `ISupplierBuilder<IMutex>`, or `synchronizationBean(ref)` — the object/supplier/bean forms register
+> the mutex as a bean (like the `connector(...)` overloads). The old internal `IDistributedLock` SPI
+> was removed. garganttua-api domains have the symmetric `domain(...).synchronization(...)` wrapping
+> CRUD writes (see the api section).
 > events now follows the platform conventions (de-Lombok'd, observable `Logger`, Java 25) — any
 > remaining Java-21/Lombok/SLF4J note in old docs is stale; the root rules win.
