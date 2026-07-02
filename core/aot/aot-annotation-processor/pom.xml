@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.garganttua.core</groupId>
         <artifactId>garganttua-aot</artifactId>
-        <version>3.0.0-ALPHA05</version>
+        <version>3.0.0-ALPHA06</version>
     </parent>
     <artifactId>garganttua-aot-annotation-processor</artifactId>
     <packaging>jar</packaging>

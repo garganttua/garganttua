@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.garganttua</groupId>
   <artifactId>garganttua</artifactId>
-  <version>3.0.0-ALPHA05</version>
+  <version>3.0.0-ALPHA06</version>
   <packaging>pom</packaging>
   <name>garganttua</name>
 

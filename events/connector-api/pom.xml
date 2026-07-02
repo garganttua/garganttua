@@ -7,7 +7,7 @@
 	<parent>
 		<groupId>com.garganttua</groupId>
 		<artifactId>garganttua-events</artifactId>
-		<version>3.0.0-ALPHA05</version>
+		<version>3.0.0-ALPHA06</version>
 	</parent>
 
 	<artifactId>garganttua-events-connector-api</artifactId>
@@ -21,14 +21,14 @@
 		<dependency>
 			<groupId>com.garganttua</groupId>
 			<artifactId>garganttua-api-commons</artifactId>
-			<version>3.0.0-ALPHA05</version>
+			<version>3.0.0-ALPHA06</version>
 		</dependency>
 		<!-- TEST-ONLY: the api-core Filter factories build the IFilter trees the tests assert against.
 		     Main scope must stay free of api-core — the evaluator works against the IFilter interface. -->
 		<dependency>
 			<groupId>com.garganttua</groupId>
 			<artifactId>garganttua-api-core</artifactId>
-			<version>3.0.0-ALPHA05</version>
+			<version>3.0.0-ALPHA06</version>
 			<scope>test</scope>
 		</dependency>
 		<!-- TEST-ONLY: a JVM reflection provider so IClass.getClass(...) can build the

@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.garganttua</groupId>
 		<artifactId>garganttua-api-starters</artifactId>
-		<version>3.0.0-ALPHA05</version>
+		<version>3.0.0-ALPHA06</version>
 	</parent>
 	<artifactId>garganttua-api-starter-jvm-mongo-javalin</artifactId>
 	<packaging>jar</packaging>

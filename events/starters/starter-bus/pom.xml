@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.garganttua</groupId>
         <artifactId>garganttua-events-starters</artifactId>
-        <version>3.0.0-ALPHA05</version>
+        <version>3.0.0-ALPHA06</version>
     </parent>
 
     <artifactId>garganttua-events-starter-bus</artifactId>
