@@ -1,5 +1,7 @@
 package com.garganttua.core.injection;
 
+import com.garganttua.core.reflection.IClass;
+
 /**
  * Factory interface for creating child dependency injection contexts.
  *
@@ -62,4 +64,25 @@ public interface IInjectionChildContextFactory<ChildContext extends IInjectionCo
      * @throws DiException if child context creation fails
      */
     ChildContext createChildContext(IInjectionContext clonedParent, Object ...args) throws DiException;
+
+    /**
+     * The concrete child-context type this factory produces.
+     *
+     * <p>
+     * Used by {@link IInjectionContext#newChildContext(IClass, Object...)} to match a factory to a
+     * requested context class <b>without</b> reflecting on the factory's generic type parameter.
+     * Deriving the type from {@link Class#getGenericInterfaces()} is unreliable under GraalVM
+     * native-image (closed-world): the parameterized-type metadata is erased, so the match silently
+     * fails with {@code "No child context factory registered for context class ..."} even though the
+     * factory is present. Implementations that must survive native images <b>should</b> override
+     * this to return their context type explicitly.
+     * </p>
+     *
+     * @return the child-context type this factory creates, or {@code null} to fall back to
+     *         (JVM-only) generic-signature reflection
+     * @since 3.0.0-ALPHA07
+     */
+    default IClass<? extends IInjectionContext> contextType() {
+        return null;
+    }
 }

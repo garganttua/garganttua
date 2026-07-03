@@ -255,10 +255,7 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
         wrapLifecycle(this::ensureInitializedAndStarted, IClass.getClass(DiException.class));
         synchronized (this.mutex) {
             ChildContext ctx = childContextFactories.stream()
-                    .filter(factory -> {
-                        Class<? extends IInjectionContext> childType = getChildContextType(factory);
-                        return childType != null && contextClass.isAssignableFrom(childType);
-                    })
+                    .filter(factory -> matchesRequestedContext(factory, contextClass))
                     .findFirst()
                     .map(factory -> contextClass.cast(factory.createChildContext(this.copy(), args)))
                     .orElseThrow(() -> {
@@ -269,6 +266,23 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
             log.debug("Child context created: {}", ctx);
             return ctx;
         }
+    }
+
+    /**
+     * Matches a child-context factory against a requested context class. Prefers the factory's
+     * explicitly declared {@link IInjectionChildContextFactory#contextType()} (native-image safe);
+     * falls back to generic-signature reflection only when the factory does not declare one (legacy
+     * lambda factories). The reflection fallback is unreliable under GraalVM closed-world — see
+     * {@link IInjectionChildContextFactory#contextType()}.
+     */
+    private static boolean matchesRequestedContext(
+            IInjectionChildContextFactory<? extends IInjectionContext> factory, IClass<?> contextClass) {
+        IClass<? extends IInjectionContext> declared = factory.contextType();
+        if (declared != null) {
+            return contextClass.isAssignableFrom(declared);
+        }
+        Class<? extends IInjectionContext> childType = getChildContextType(factory);
+        return childType != null && contextClass.isAssignableFrom(childType);
     }
 
     @SuppressWarnings("unchecked")

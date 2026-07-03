@@ -10,6 +10,7 @@ import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.injection.annotations.ChildContext;
 import com.garganttua.core.supply.ISupplier;
 
+import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.annotations.Reflected;
 /**
  * Factory for creating runtime child contexts.
@@ -50,6 +51,17 @@ public class RuntimeContextFactory implements IInjectionChildContextFactory<IRun
         log.debug("[RuntimeContextFactory.createChildContext] RuntimeContext created with uuid={}", context.uuid());
 
         return context;
+    }
+
+    /**
+     * Declares {@link IRuntimeContext} as the produced context type so
+     * {@link com.garganttua.core.injection.context.InjectionContext#newChildContext} can match this
+     * factory without generic-signature reflection — which is erased under native-image and made
+     * runtime child contexts fail to open in closed-world builds.
+     */
+    @Override
+    public IClass<? extends IInjectionContext> contextType() {
+        return IClass.getClass(IRuntimeContext.class);
     }
 
 }
