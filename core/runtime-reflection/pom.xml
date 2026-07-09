@@ -13,6 +13,13 @@
     <packaging>jar</packaging>
     <description>Runtime reflection utilities for Garganttua Core.</description>
 
+    <!-- NOTE: garganttua.direct.binders deliberately NOT enabled here. This is the JVM-only
+         reflection provider; it is not used in native/pure-AOT mode (garganttua-aot-reflection
+         replaces it), so it needs no compile-time AOTClass_* descriptors. It also CANNOT enable
+         them: garganttua-dsl has a test dependency on this module, and aot-reflection depends on
+         dsl, so runtime-reflection -> aot-reflection would close a reactor cycle
+         (runtime-reflection -> aot-reflection -> dsl -> runtime-reflection). -->
+
     <dependencies>
         <dependency>
             <groupId>com.garganttua.core</groupId>

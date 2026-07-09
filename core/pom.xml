@@ -83,13 +83,20 @@
          default and the rule is a no-op for them. -->
     <enforce.jar.size.skip>true</enforce.jar.size.skip>
 
-    <!-- Direct Binder Generation: AOT descriptors are produced consumer-side
-         (the framework can't generate descriptors for its own infrastructure
-         types because the resulting AOTClass_* sources depend on
-         garganttua-aot-commons which itself depends on garganttua-commons —
-         circular). Leave false in the framework build; downstream apps that
-         want AOT mode flip this in their own build alongside the
-         garganttua-aot-maven-plugin. -->
+    <!-- Direct Binder Generation (AOT descriptors). Default OFF here; each functional core
+         module OVERRIDES this to true in its own <properties> (+ declares garganttua-aot-commons
+         and garganttua-aot-reflection), so the framework's own @Reflected classes — crucially the
+         built-in @Expression *Functions classes — ship compile-time AOTClass_* descriptors. Without
+         them a downstream native build has NO reflection metadata for the built-ins (the client's
+         annotation processor only sees its own compilation unit, never core's dependency-JAR classes),
+         so getDeclaredMethods()/@Expression fall back to live reflection, which the closed world
+         forbids → FrameworkBuiltinRegistrar silently skips every built-in.
+
+         The generated AOTClass_* sources reference garganttua-aot-commons (→ garganttua-commons) and
+         garganttua-aot-reflection (→ garganttua-dsl), so the ONLY core modules that cannot enable
+         this are the ones inside that cycle: garganttua-commons, garganttua-dsl, and
+         garganttua-runtime-reflection (dsl has a test-dep on it, closing the cycle). The default
+         stays false so those modules and the aot/build-tool modules inherit a safe OFF. -->
     <garganttua.direct.binders>false</garganttua.direct.binders>
   </properties>
   <dependencyManagement>

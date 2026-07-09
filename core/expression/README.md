@@ -28,15 +28,17 @@ The `garganttua-expression` module provides a powerful, extensible expression la
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-expression</artifactId>
-    <version>3.0.0-ALPHA05</version>
+    <version>3.0.0-ALPHA07</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA05
+3.0.0-ALPHA07
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
+ - `com.garganttua.core:garganttua-aot-reflection`
+ - `com.garganttua.core:garganttua-aot-commons`
  - `com.garganttua.core:garganttua-injection`
  - `com.garganttua.core:garganttua-runtime-reflection:test`
  - `com.garganttua.core:garganttua-reflections:test`

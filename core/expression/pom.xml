@@ -14,10 +14,31 @@
 
     <description>Advanced expression language for object supplying.</description>
 
+    <properties>
+        <!-- AOT descriptors ON for this module: it hosts framework built-in @Expression
+             function classes (Expressions, …) whose reflective discovery in native mode
+             (FrameworkBuiltinRegistrar) needs a compile-time AOTClass_* descriptor. Without
+             it, native falls back to live reflection and the built-ins are silently skipped.
+             This module is above the aot-commons/aot-reflection layer, so no dependency cycle
+             (only garganttua-commons and garganttua-dsl cannot enable this). -->
+        <garganttua.direct.binders>true</garganttua.direct.binders>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.garganttua.core</groupId>
             <artifactId>garganttua-commons</artifactId>
+        </dependency>
+        <!-- AOT — the generated AOTClass_* sources reference types from
+             com.garganttua.core.aot.commons / com.garganttua.core.aot.reflection,
+             so both are needed on the compile + runtime classpath. -->
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-aot-reflection</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-aot-commons</artifactId>
         </dependency>
         <dependency>
             <groupId>com.garganttua.core</groupId>

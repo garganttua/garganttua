@@ -11,8 +11,26 @@
     <artifactId>garganttua-mapper</artifactId>
     <description>Declarative object-to-object mapping engine.</description>
 
+    <properties>
+        <!-- AOT descriptors ON: this module's @Reflected classes ship compile-time AOTClass_*
+             descriptors so native reflection works without live-reflection fallback
+             (see core/pom.xml garganttua.direct.binders note). Above the aot-commons/aot-reflection
+             layer, so no dependency cycle (only garganttua-commons/garganttua-dsl cannot enable this). -->
+        <garganttua.direct.binders>true</garganttua.direct.binders>
+    </properties>
+
     <dependencies>
+
+        <!-- AOT — generated AOTClass_* sources reference com.garganttua.core.aot.commons /
+             com.garganttua.core.aot.reflection, needed on the compile + runtime classpath. -->
         <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-aot-reflection</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-aot-commons</artifactId>
+        </dependency>        <dependency>
             <groupId>com.garganttua.core</groupId>
             <artifactId>garganttua-reflection</artifactId>
         </dependency>

@@ -44,13 +44,25 @@ The two-pass build (the AOT annotation processor is otherwise a clean-repo circu
 
 ```bash
 # 1. seed the local repo (proc=none) so the annotation processor + all artifacts exist
-mvn -Pbootstrap-no-apt -o install -DskipTests
-# 2. normal build (annotation processing on)
-mvn -o install
+mvn -Pbootstrap-no-apt -o clean install -DskipTests
+# 2. normal build (annotation processing on) — MUST `clean` (see note below)
+mvn -o clean install
 ```
 
 Requires **JDK 25** (`java -version` → 25.x). A clean one-pass build fails because every module
 declares the in-reactor AOT annotation processor on its `annotationProcessorPath`.
+
+> **Pass 2 MUST `clean`.** Pass 1 (`-Pbootstrap-no-apt`, `proc:none`) leaves fresh `.class` files;
+> the compiler's per-file staleness check would then skip recompilation in pass 2, so the AOT
+> processor never runs and **no `AOTClass_*` descriptors get generated**. Most core function modules
+> now build with `garganttua.direct.binders=true` (they override the `false` default in `core/pom.xml`
+> and add `garganttua-aot-commons` + `garganttua-aot-reflection`) so the framework's own `@Reflected`
+> classes — crucially the built-in `@Expression` `*Functions` classes — ship compile-time descriptors.
+> Without them a downstream **native** build has no reflection metadata for the built-ins and
+> `FrameworkBuiltinRegistrar` silently skips every built-in `@Expression` function. Only
+> `garganttua-commons`, `garganttua-dsl` and `garganttua-runtime-reflection` stay `false` (they sit
+> inside the `aot-commons`/`aot-reflection` dependency cycle). CI (`maven-publish.yml`) does the same
+> `clean` in its second pass / deploy.
 
 Common per-module commands:
 

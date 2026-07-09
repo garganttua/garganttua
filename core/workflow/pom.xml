@@ -20,6 +20,11 @@
 		     of the proper ~60 KB one. The verify-phase rule fails the build
 		     before install can replace a good jar with an empty one. -->
 		<enforce.jar.size.skip>false</enforce.jar.size.skip>
+		<!-- AOT descriptors ON: this module's @Reflected classes ship compile-time AOTClass_*
+		     descriptors so native reflection works without live-reflection fallback
+		     (see core/pom.xml garganttua.direct.binders note). Above the aot-commons/aot-reflection
+		     layer, so no dependency cycle (only garganttua-commons/garganttua-dsl cannot enable this). -->
+		<garganttua.direct.binders>true</garganttua.direct.binders>
 	</properties>
 
 	<dependencies>
@@ -61,12 +66,17 @@
 			<artifactId>garganttua-reflections</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!-- Pure-AOT integration test deps. -->
+		<!-- AOT — generated AOTClass_* sources reference aot-commons / aot-reflection
+		     (compile + runtime). aot-annotation-scanner below stays test-only (PureAotIntegrationTest). -->
 		<dependency>
 			<groupId>com.garganttua.core</groupId>
 			<artifactId>garganttua-aot-reflection</artifactId>
 			<version>${project.version}</version>
-			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-commons</artifactId>
+			<version>${project.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.garganttua.core</groupId>

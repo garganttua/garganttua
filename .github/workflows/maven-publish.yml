@@ -32,10 +32,14 @@ jobs:
     # declares it on its annotationProcessorPath, so a clean one-pass build is
     # circular. First pass installs all artifacts (incl. the processor) with
     # annotation processing disabled; the second pass runs processing normally.
+    # The second pass MUST `clean` first: pass 1 leaves fresh .class files, and
+    # the compiler's per-file staleness check would otherwise skip recompilation
+    # in pass 2 — so the AOT processor never runs and NO AOTClass_* descriptors
+    # get generated (built-in @Expression functions then break in native).
     - name: Bootstrap local repo (no annotation processing)
       run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
     - name: Build with Maven
-      run: mvn -B -ntp package --file pom.xml
+      run: mvn -B -ntp clean package --file pom.xml
 
     # Aggregate JaCoCo coverage across every module: writes the run summary,
     # refreshes the README badge, and emits target/coverage/coverage-summary.md.
@@ -91,7 +95,9 @@ jobs:
     - name: Bootstrap local repo (no annotation processing)
       run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
     - name: Compile (annotation processing on)
-      run: mvn -B -ntp install -DskipTests --file pom.xml
+      # `clean` is required so the AOT processor actually re-runs — see the
+      # note in the build job. Without it no AOTClass_* descriptors are emitted.
+      run: mvn -B -ntp clean install -DskipTests --file pom.xml
 
     # Pure report goals (no verify-phase side effects). fail-at-end so every module is analysed. The
     # goals are failOnViolation=false, BUT the `spotbugs:` prefix is unresolvable on the aggregator
@@ -161,6 +167,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Deploy to GitHub Packages Apache Maven
-      run: mvn -B -ntp deploy
+      # `clean` is required so the AOT annotation processor re-runs and the published
+      # artifacts carry their AOTClass_* descriptors (built-in @Expression functions
+      # need them to resolve in downstream native builds). See the build job note.
+      run: mvn -B -ntp clean deploy
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -12,14 +12,16 @@ The Garganttua Execution module provides a flexible and robust chain-of-responsi
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-execution</artifactId>
-    <version>3.0.0-ALPHA05</version>
+    <version>3.0.0-ALPHA07</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA05
+3.0.0-ALPHA07
 
 ### Dependencies
+ - `com.garganttua.core:garganttua-aot-reflection`
+ - `com.garganttua.core:garganttua-aot-commons`
  - `com.garganttua.core:garganttua-commons`
 
 <!-- AUTO-GENERATED-END -->
