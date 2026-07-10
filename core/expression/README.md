@@ -28,12 +28,12 @@ The `garganttua-expression` module provides a powerful, extensible expression la
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-expression</artifactId>
-    <version>3.0.0-ALPHA07</version>
+    <version>3.0.0-ALPHA08</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA07
+3.0.0-ALPHA08
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
