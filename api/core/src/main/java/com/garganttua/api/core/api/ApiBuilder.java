@@ -137,11 +137,11 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 
 	@Override
 	public IApiBuilder superTenantId(String superTenantId) {
-		if (!this.multiTenant) {
-			throw new ApiException("Cannot set superTenantId — multi-tenancy is disabled (.multiTenant(false) was called or set as default). "
-					+ "Either keep multi-tenancy enabled (do not call .multiTenant(false)) if you need a super-tenant, "
-					+ "or drop the .superTenantId(...) call for a single-tenant app.");
-		}
+		// Deliberately NOT coupled to multiTenant: setting a super-tenant while multi-tenancy is
+		// disabled must not block startup. The value stays inert in single-tenant mode (Api gates all
+		// super-tenant behaviour on multiTenant); the build emits a warning so the operator knows it is
+		// ignored. Only the reverse is fatal — multiTenant(true) with no tenant domain (see
+		// ApiBuilderBuild.requireTenantDomainWhenMultiTenant).
 		this.superTenantId = Objects.requireNonNull(superTenantId, "Super tenant ID cannot be null");
 		return this;
 	}
@@ -171,10 +171,7 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 
 	@Override
 	public IApiBuilder superTenantAutoCreate(boolean b) throws ApiException {
-		if (!this.multiTenant) {
-			throw new ApiException("Cannot set superTenantAutoCreate — multi-tenancy is disabled. "
-					+ "Drop the .superTenantAutoCreate(...) call for single-tenant apps, or keep .multiTenant(true).");
-		}
+		// See superTenantId(): not coupled to multiTenant. Inert in single-tenant mode (warned at build).
 		this.superTenantAutoCreate = b;
 		return this;
 	}
@@ -193,15 +190,9 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 
 	@Override
 	public IApiBuilder multiTenant(boolean enabled) throws ApiException {
-		if (!enabled && this.superTenantId != null) {
-			throw new ApiException("Cannot call .multiTenant(false) after .superTenantId(...) has been set. "
-					+ "A super-tenant only makes sense in multi-tenant mode — either remove the .superTenantId(...) call "
-					+ "or keep multi-tenancy enabled. (DSL is order-sensitive: set .multiTenant(false) first if that is what you want.)");
-		}
-		if (!enabled && this.superTenantAutoCreate) {
-			throw new ApiException("Cannot call .multiTenant(false) after .superTenantAutoCreate(true) has been set. "
-					+ "Same reason as .superTenantId — remove the .superTenantAutoCreate(...) call or keep multi-tenancy enabled.");
-		}
+		// Order-insensitive and never fatal: disabling multi-tenancy after super-tenant info was set
+		// must not block startup. The super-tenant config simply becomes inert (Api gates all
+		// super-tenant behaviour on multiTenant), and ApiBuilderBuild warns about it at build time.
 		this.multiTenant = enabled;
 		return this;
 	}

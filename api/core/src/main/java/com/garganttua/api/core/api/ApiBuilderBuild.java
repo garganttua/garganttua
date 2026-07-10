@@ -47,6 +47,7 @@ final class ApiBuilderBuild {
 
             Map<String, IDomain<?>> domainContexts = buildDomainContexts(b);
             requireTenantDomainWhenMultiTenant(b, domainContexts);
+            warnSuperTenantConfigIgnoredWhenSingleTenant(b);
 
             // Validate that every domain whose linked authorization is signable also has a key
             // configured. Surfaces misconfiguration at build time rather than at the first sign call.
@@ -100,6 +101,22 @@ final class ApiBuilderBuild {
             throw new ApiException(
                     "Multi-tenancy is enabled but no domain is marked as tenant. "
                     + "Use .tenant(true) on a domain or disable multi-tenancy with .multiTenant(false)");
+        }
+    }
+
+    /**
+     * Multi-tenancy OFF must never block startup — even when super-tenant info was configured. The
+     * config is simply inert in single-tenant mode ({@link Api} gates every super-tenant behaviour on
+     * {@code multiTenant}); we only warn so the operator knows their {@code .superTenantId(...)} /
+     * {@code .superTenantAutoCreate(...)} is ignored. This is the deliberate asymmetry with
+     * {@link #requireTenantDomainWhenMultiTenant}: {@code multiTenant=false && info set} → start (warn),
+     * whereas {@code multiTenant=true && no tenant domain} → fail.
+     */
+    private static void warnSuperTenantConfigIgnoredWhenSingleTenant(ApiBuilder b) {
+        if (!b.multiTenant && (b.superTenantId != null || b.superTenantAutoCreate)) {
+            log.warn("Multi-tenancy is disabled (.multiTenant(false)) but super-tenant config is set "
+                    + "(superTenantId={}, superTenantAutoCreate={}) — ignored in single-tenant mode.",
+                    b.superTenantId, b.superTenantAutoCreate);
         }
     }
 

@@ -407,6 +407,46 @@ class ApiBuilderTest {
             IApi context = builder.build();
             assertNotNull(context);
         }
+
+        @Test
+        @DisplayName("build() succeeds when multi-tenancy disabled even with super-tenant info set")
+        void buildSucceedsWhenMultiTenantDisabledWithSuperTenantInfoSet() throws ApiException {
+            // Rule: multiTenant=false must NOT block startup even when super-tenant info is set.
+            // This combination used to throw in the DSL; it now starts (single-tenant, info inert).
+            builder.multiTenant(false)
+                   .superTenantId("SUPER")
+                   .superTenantAutoCreate(true)
+                   .domain(IClass.getClass(TestEntity.class))
+                       .entity()
+                           .id("id")
+                           .uuid("uuid")
+                           .tenantId("tenantId")
+                       .up()
+                       .dto(IClass.getClass(TestDto.class))
+                           .id("id")
+                           .uuid("uuid")
+                           .tenantId("tenantId")
+                           .db(new TestDao())
+                       .up()
+                   .up();
+
+            IApi context = builder.build();
+            assertNotNull(context);
+            assertFalse(((Api) context).isMultiTenant());
+        }
+
+        @Test
+        @DisplayName("DSL is order-insensitive: superTenantId then multiTenant(false) does not throw")
+        void superTenantThenMultiTenantFalseDoesNotThrow() {
+            assertDoesNotThrow(() -> builder.superTenantId("SUPER").multiTenant(false));
+        }
+
+        @Test
+        @DisplayName("DSL is order-insensitive: multiTenant(false) then superTenantId does not throw")
+        void multiTenantFalseThenSuperTenantDoesNotThrow() {
+            assertDoesNotThrow(() -> builder.multiTenant(false)
+                    .superTenantId("SUPER").superTenantAutoCreate(true));
+        }
     }
 
     @Nested
