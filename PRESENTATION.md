@@ -12,14 +12,14 @@ Garganttua regroupe trois bibliothèques Java open-source formant une chaîne de
 
 ## Garganttua Core
 
-**Garganttua Core · 3.0.0-ALPHA07 · MIT**
+**Garganttua Core · 3.0.0-ALPHA08 · MIT**
 
 ### Le framework Java modulaire pour les apps qui ne peuvent pas se permettre d'être lourdes.
 
 34 modules indépendants. Zéro dépendance circulaire. Java 25. GraalVM native-ready.
 
 - **Mots-clés :** Modulaire · Léger · Native-ready
-- **Badges :** 3.0.0-ALPHA07 · MIT · 842 fichiers · 285 suites de tests
+- **Badges :** 3.0.0-ALPHA08 · MIT · 842 fichiers · 285 suites de tests
 - [Voir sur GitHub](https://github.com/garganttua/garganttua)
 - [Découvrir les modules](/open-source/core#modules)
 
@@ -334,7 +334,7 @@ charge le binder
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-injection</artifactId>
-    <version>3.0.0-ALPHA07</version>
+    <version>3.0.0-ALPHA08</version>
 </dependency>
 ```
 
@@ -408,7 +408,7 @@ log(concatenate("Received: ", @data))
 **Console REPL**
 
 ```shell
-$ java -jar garganttua-console-3.0.0-ALPHA07-executable.jar
+$ java -jar garganttua-console-3.0.0-ALPHA08-executable.jar
 
 garganttua> help()
 Available functions: help(), vars(), clear(), load(), man(), syntax(), exit()
@@ -472,14 +472,14 @@ Garganttua Core est entièrement open-source. Le code, la documentation, et les 
 
 ## Garganttua API
 
-**Garganttua API · 3.0.0-ALPHA07 · MIT**
+**Garganttua API · 3.0.0-ALPHA08 · MIT**
 
 ### Construire des APIs multi-tenant et sécurisées sans compromis.
 
 Pipeline scriptable. Sécurité pluggable. Multi-tenancy native. API fluide. Framework-agnostic.
 
 - **Mots-clés :** Multi-tenant · Sécurisé · Scriptable
-- **Badges :** 3.0.0-ALPHA07 · MIT · Java 25 · GraalVM-ready
+- **Badges :** 3.0.0-ALPHA08 · MIT · Java 25 · GraalVM-ready
 - [Voir sur GitHub](https://github.com/garganttua/garganttua)
 - [Découvrir le framework](/open-source/api#piliers)
 
@@ -801,7 +801,7 @@ Chaque requête traverse le pipeline en 8 étapes. Filtrage tenant automatique. 
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-core</artifactId>
-    <version>3.0.0-ALPHA07</version>
+    <version>3.0.0-ALPHA08</version>
 </dependency>
 ```
 
@@ -933,7 +933,7 @@ Idéal pour : apps mobiles, SPAs, applications React/Next.js
 | Maven | 3.8+ |
 | Jackson | 2.17 |
 | JUnit | 5 |
-| Garganttua Core | 3.0.0-ALPHA07 (injection, reflection, script, workflow) |
+| Garganttua Core | 3.0.0-ALPHA08 (injection, reflection, script, workflow) |
 
 **Compatible**
 
@@ -970,14 +970,14 @@ Pipeline scriptable, sécurité pluggable, multi-tenancy native. Tout est sur Gi
 
 ## Garganttua Events
 
-**Garganttua Events · 3.0.0-ALPHA07 · MIT**
+**Garganttua Events · 3.0.0-ALPHA08 · MIT**
 
 ### Le routage d'événements qui compile en workflows, pas en boîte noire.
 
 Framework d'event-processing pluggable, multi-tenant et multi-cluster, construit sur Garganttua Core. Les messages traversent des pipelines configurables, définis par expressions — et chaque route compile en un véritable Workflow Garganttua Core.
 
 - **Mots-clés :** Pluggable · Multi-tenant · Expression-based
-- **Badges :** 3.0.0-ALPHA07 · MIT · Java 25 · Kafka-ready
+- **Badges :** 3.0.0-ALPHA08 · MIT · Java 25 · Kafka-ready
 - [Voir sur GitHub](https://github.com/garganttua/garganttua)
 - [Découvrir les connecteurs](/open-source/events#modules)
 

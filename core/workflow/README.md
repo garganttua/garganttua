@@ -32,12 +32,12 @@ A **workflow** is a pipeline composed of **stages** executed sequentially. Each 
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-workflow</artifactId>
-    <version>3.0.0-ALPHA07</version>
+    <version>3.0.0-ALPHA08</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA07
+3.0.0-ALPHA08
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
