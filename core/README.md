@@ -44,12 +44,12 @@ Garganttua Core is built on three core principles:
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-core</artifactId>
-    <version>3.0.0-ALPHA08</version>
+    <version>3.0.0-ALPHA09</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA08
+3.0.0-ALPHA09
 
 ### Dependencies
  - `org.junit.jupiter:junit-jupiter-engine:test`

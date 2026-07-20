@@ -32,12 +32,12 @@ The lifecycle state machine follows this flow:
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-lifecycle</artifactId>
-    <version>3.0.0-ALPHA08</version>
+    <version>3.0.0-ALPHA09</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA08
+3.0.0-ALPHA09
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

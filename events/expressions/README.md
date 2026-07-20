@@ -16,12 +16,12 @@ instead of Java processor classes.
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-expressions</artifactId>
-    <version>3.0.0-ALPHA08</version>
+    <version>3.0.0-ALPHA09</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA08
+3.0.0-ALPHA09
 
 ### Dependencies
  - `com.garganttua:garganttua-events-api`

@@ -34,12 +34,12 @@ The module ships `ApiCoreInfrastructureSeed`, an `IAOTInfrastructureSeed` implem
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-core</artifactId>
-    <version>3.0.0-ALPHA08</version>
+    <version>3.0.0-ALPHA09</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA08
+3.0.0-ALPHA09
 
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`
