@@ -185,6 +185,13 @@ public class KeySupplier implements IContextualSupplier<Object, IRuntimeContext>
 
 		enforceKeyPolicyGates(keyDomain, keyConfig, realmName, hadExistingButUnusable);
 
+		if (hadExistingButUnusable) {
+			// autoRotate is on (the gate above would have thrown otherwise): retire the keys we
+			// are superseding explicitly, so no expired/revoked key can ever be re-selected by
+			// pickUsable should its expiration later be changed or mis-evaluated.
+			revokeSupersededKeys(keyDomain, keyEntDef, existing, reflection);
+		}
+
 		Object newEntity = generateStampAndPersistKey(keyDomain, keyEntDef, keyConfig, realmName, caller, reflection);
 		return new Persisted(newEntity, keyDomain, keyEntDef);
 	}
@@ -202,6 +209,50 @@ public class KeySupplier implements IContextualSupplier<Object, IRuntimeContext>
 					+ "' for realmName '" + realmName + "', and .autoGenerate(false) was configured. Seed the key "
 					+ "out of band, or enable .autoGenerate(true).");
 		}
+	}
+
+	/**
+	 * Revokes every key being superseded by a rotation, through the normal CRUD
+	 * pipeline. Runs BEFORE the replacement is persisted, so a failure here leaves
+	 * the realm in its pre-rotation state (safe and retryable) rather than in a
+	 * half-rotated one where a new key coexists with a still-selectable old one.
+	 *
+	 * <p>No-op when the key domain declares no {@code revoked} field.
+	 */
+	private void revokeSupersededKeys(IDomain<?> keyDomain, IDomainKeyDefinition keyEntDef,
+			List<Object> superseded, IReflection reflection) {
+		if (keyEntDef.revoked() == null || superseded == null) {
+			return;
+		}
+		String revokedAddr = keyEntDef.revoked().toString();
+		for (Object entity : superseded) {
+			if (Boolean.TRUE.equals(reflection.getFieldValue(entity, revokedAddr))) {
+				continue; // already revoked — nothing to write
+			}
+			String uuid = readUuid(keyDomain, entity, reflection);
+			if (uuid == null) {
+				throw new ApiException("KeySupplier: cannot revoke a superseded key on domain '"
+						+ keyDomain.getDomainName() + "' — the entity carries no uuid");
+			}
+			reflection.setFieldValue(entity, revokedAddr, Boolean.TRUE);
+			try {
+				SecurityExpressions.invokeUpdate(keyDomain, uuid, entity);
+			} catch (RuntimeException e) {
+				throw new ApiException("KeySupplier: failed to revoke superseded key '" + uuid
+						+ "' on domain '" + keyDomain.getDomainName() + "' during rotation: " + e.getMessage(), e);
+			}
+			log.debug("Revoked superseded key {} on domain {} during rotation", uuid, keyDomain.getDomainName());
+		}
+	}
+
+	/** Reads an entity's uuid via the domain's configured uuid field, or null when unavailable. */
+	private String readUuid(IDomain<?> keyDomain, Object entity, IReflection reflection) {
+		var uuidAddr = keyDomain.getUuidFieldAddress();
+		if (uuidAddr == null) {
+			return null;
+		}
+		Object uuid = reflection.getFieldValue(entity, uuidAddr.toString());
+		return uuid == null ? null : uuid.toString();
 	}
 
 	/** Generates a fresh key entity, stamps identity/tenancy on it and persists it; returns the new entity. */

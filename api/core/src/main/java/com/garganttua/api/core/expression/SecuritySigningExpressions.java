@@ -227,9 +227,11 @@ public class SecuritySigningExpressions {
 		// not the anonymous login request — so oneForEach mints one key per principal.
 		ICaller principalCaller = signingPrincipalCaller(authzEntity, toDomain(domainContext));
 		ResolvedKeyRealm resolved = resolveKeyRealmAndSigner(domainContext, operationRequest, principalCaller);
-		boolean signed = signAuthorization(authzEntity, domainContext, resolved.realm());
+		// Stamp signedBy BEFORE signing: the signer id travels on the wire (verifyTokenSignature
+		// needs it to resolve the exact key), so it must sit inside the signed surface. Stamping
+		// after signing would make it structurally impossible for getDataToSign() to cover it.
 		stampSignedBy(authzEntity, domainContext, resolved.signerId());
-		return signed;
+		return signAuthorization(authzEntity, domainContext, resolved.realm());
 	}
 
 	/**
@@ -260,7 +262,7 @@ public class SecuritySigningExpressions {
 		return verifyAuthorizationSignature(authzEntity, domainContext, realm);
 	}
 
-	@Expression(name = "verifyTokenSignature", description = "Framework-owned signature verification for a SELF-VERIFYING signable authorization (a token whose own domain is an authenticator). Resolves the EXACT key the token was signed with — by its qualified signedBy, via DomainKeySupplier (rotation-robust; refuses a revoked/expired signing key) — and verifies the entity's signature. Unlike verifyIfSignable (which reads the key config on the given domain), this works on the TOKEN domain where no key config is declared. Returns true when not signable; false on signature mismatch; throws (→ 401) when the token cannot be verified (no qualified signedBy, missing/revoked/expired key).")
+	@Expression(name = "verifyTokenSignature", description = "Framework-owned signature verification for a SELF-VERIFYING signable authorization (a token whose own domain is an authenticator). Resolves the EXACT key the token was signed with — by its qualified signedBy, via DomainKeySupplier (resolves the exact key among several coexisting ones; refuses a revoked/expired signing key, so a token outlives neither a rotation nor an expiry) — and verifies the entity's signature. Unlike verifyIfSignable (which reads the key config on the given domain), this works on the TOKEN domain where no key config is declared. Returns true when not signable; false on signature mismatch; throws (→ 401) when the token cannot be verified (no qualified signedBy, missing/revoked/expired key).")
 	public static boolean verifyTokenSignature(@Nullable Object authzEntity, @Nullable Object domainContext, @Nullable Object operationRequest) {
 		if (authzEntity == null || domainContext == null) {
 			throw new ApiException("verifyTokenSignature: entity and domainContext are required");

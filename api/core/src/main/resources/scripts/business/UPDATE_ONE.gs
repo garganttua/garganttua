@@ -40,7 +40,7 @@ signedPayloadBefore <- authorizationSignedPayload(@storedEntity, @2)
 ! => recordCaughtException(@0, @exception) -> 500
 
 // Apply authorized field updates
-storedEntity <- updateEntity(@caller, @storedEntity, @entity, @2)
+storedEntity <- updateEntity(@caller, @storedEntity, @entity, @2, @0)
 ! => recordCaughtException(@0, @exception) -> 500
 
 // A signed authorization is immutable: reject an update that changes a field

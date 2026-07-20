@@ -376,9 +376,23 @@ public abstract class AbstractCrudIntegrationTest {
             return ((Comparable) actual).compareTo(threshold);
         }
 
+        /**
+         * Upserts by uuid, like a real DAO: a save carrying a uuid already in
+         * storage REPLACES that row rather than appending a duplicate. Rows with
+         * no uuid (or a null one) are appended, preserving the previous behaviour.
+         */
         @Override
         public Object save(Object object) throws ApiException {
             this.lastSaved = object;
+            String uuid = extractUuid(object);
+            if (uuid != null) {
+                for (int i = 0; i < storage.size(); i++) {
+                    if (uuid.equals(extractUuid(storage.get(i)))) {
+                        storage.set(i, object);
+                        return object;
+                    }
+                }
+            }
             storage.add(object);
             return object;
         }

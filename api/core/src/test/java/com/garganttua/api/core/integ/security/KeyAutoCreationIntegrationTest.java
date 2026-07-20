@@ -961,6 +961,17 @@ class KeyAutoCreationIntegrationTest extends AbstractCrudScriptTest {
         }
     }
 
+    /** Re-reads a key row from storage by uuid — a rotation REPLACES the row, so held references go stale. */
+    private static CryptoKeyDto findKeyByUuid(Wired w, String uuid) {
+        for (Object o : w.keyDao.getStorage()) {
+            CryptoKeyDto k = (CryptoKeyDto) o;
+            if (uuid.equals(k.getUuid())) {
+                return k;
+            }
+        }
+        throw new AssertionError("no key with uuid " + uuid + " in storage");
+    }
+
     @Nested
     @DisplayName("Expiration — autoRotate=true rotates expired/revoked keys silently")
     class Expiration {
@@ -984,8 +995,7 @@ class KeyAutoCreationIntegrationTest extends AbstractCrudScriptTest {
 
             // Second call: with autoRotate=true the resolver skips the expired
             // entry and generates a fresh one. The old entity stays in storage
-            // (its public material remains useful for verifying tokens signed
-            // before rotation).
+            // but is explicitly revoked by the rotation (see supersededKeysRevoked).
             com.garganttua.core.crypto.IKeyRealm refreshed =
                     com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
                             w.userCtx, callerRequest("TENANT_A", null));
@@ -1019,6 +1029,71 @@ class KeyAutoCreationIntegrationTest extends AbstractCrudScriptTest {
             CryptoKeyDto fresh = (CryptoKeyDto) w.keyDao.getStorage().get(1);
             assertFalse(fresh.isRevoked(),
                     "the freshly generated key must not carry the revoked flag");
+        }
+
+        @Test
+        @DisplayName("autoRotate=true: rotating an EXPIRED key revokes it — every superseded key ends up revoked")
+        void supersededKeysRevoked() throws Exception {
+            Wired w = buildApi(AuthenticatorKeyUsage.oneForAll, true, true);
+
+            com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                    w.userCtx, callerRequest("TENANT_A", null));
+            assertEquals(1, w.keyDao.getStorage().size());
+            CryptoKeyDto superseded = (CryptoKeyDto) w.keyDao.getStorage().get(0);
+            String supersededUuid = superseded.getUuid();
+
+            // Expire it — it is unusable, but NOT revoked. Rotation must retire it explicitly.
+            superseded.setExpiration(Instant.now().minusSeconds(60));
+            assertFalse(superseded.isRevoked(), "precondition: the key is expired but not yet revoked");
+
+            com.garganttua.core.crypto.IKeyRealm refreshed =
+                    com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                            w.userCtx, callerRequest("TENANT_A", null));
+            assertNotNull(refreshed);
+            assertEquals(2, w.keyDao.getStorage().size(), "rotation must have produced exactly one new key");
+
+            CryptoKeyDto fresh = null;
+            for (Object o : w.keyDao.getStorage()) {
+                CryptoKeyDto k = (CryptoKeyDto) o;
+                if (supersededUuid.equals(k.getUuid())) {
+                    assertTrue(k.isRevoked(),
+                            "the superseded key must be explicitly revoked, not merely left expired");
+                } else {
+                    fresh = k;
+                }
+            }
+
+            assertNotNull(fresh, "a fresh key must exist alongside the revoked one");
+            assertFalse(fresh.isRevoked(), "the replacement key must stay usable");
+        }
+
+        @Test
+        @DisplayName("autoRotate=true: no revoked key can be re-selected — a subsequent resolve reuses the fresh key")
+        void revokedKeysAreNotReselected() throws Exception {
+            Wired w = buildApi(AuthenticatorKeyUsage.oneForAll, true, true);
+
+            com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                    w.userCtx, callerRequest("TENANT_A", null));
+            CryptoKeyDto first = (CryptoKeyDto) w.keyDao.getStorage().get(0);
+            first.setExpiration(Instant.now().minusSeconds(60));
+            String firstUuid = first.getUuid();
+
+            // Rotate: first is revoked, a second key is minted.
+            com.garganttua.core.crypto.IKeyRealm afterRotation =
+                    com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                            w.userCtx, callerRequest("TENANT_A", null));
+            assertEquals(2, w.keyDao.getStorage().size());
+
+            // A third resolve must simply reuse the fresh key — no new key, and the
+            // revoked one must stay revoked even though its expiration is untouched.
+            com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                    w.userCtx, callerRequest("TENANT_A", null));
+
+            assertEquals(2, w.keyDao.getStorage().size(),
+                    "the usable fresh key must be reused — no further rotation");
+            assertTrue(findKeyByUuid(w, firstUuid).isRevoked(),
+                    "the superseded key must remain revoked");
+            assertNotNull(afterRotation);
         }
     }
 

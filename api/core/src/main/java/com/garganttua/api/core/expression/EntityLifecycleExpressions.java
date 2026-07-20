@@ -14,6 +14,7 @@ import com.garganttua.api.core.entity.EntityCreator;
 import com.garganttua.api.core.entity.EntityUpdater;
 import com.garganttua.api.core.entity.EntityDefinition;
 import com.garganttua.api.core.filter.Filter;
+import com.garganttua.api.core.mapper.DefaultMapper;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.context.IApi;
@@ -30,6 +31,8 @@ import com.garganttua.core.expression.annotations.Expression;
 import com.garganttua.core.injection.BeanDefinition;
 import com.garganttua.core.injection.context.beans.BeanFactory;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IField;
+import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.binders.IMethodBinder;
 import com.github.f4b6a3.uuid.UuidCreator;
@@ -284,12 +287,57 @@ public class EntityLifecycleExpressions {
 		return new EntityCreator().create(c, e, entityDef.creates());
 	}
 
-	@Expression(name = "updateEntity", description = "Applies authorized field updates from updatedEntity onto storedEntity")
-	public static Object updateEntity(Object caller, Object storedEntity, Object updatedEntity, Object context) {
+	@Expression(name = "updateEntity", description = "Applies authorized field updates from updatedEntity onto storedEntity. A FRAMEWORK-INTERNAL write (flagged server-side by invokeInternal, never settable by a client) carries a complete entity and supersedes the stored one wholesale — mirroring the create path — because the authorized-update whitelist describes what CLIENTS may change, not what the framework itself writes.")
+	public static Object updateEntity(Object caller, Object storedEntity, Object updatedEntity, Object context,
+			Object request) {
+		if (isFrameworkInternalWrite(request)) {
+			return mergeAllNonNullFields(unwrapOptional(storedEntity), unwrapOptional(updatedEntity));
+		}
 		ICaller c = (ICaller) unwrapOptional(caller);
 		IDomain<?> dc = toDomain(context);
 		EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
 		return new EntityUpdater().update(c, storedEntity, updatedEntity, entityDef.updates());
+	}
+
+	/**
+	 * Merges every non-null field of {@code updatedEntity} onto {@code storedEntity},
+	 * with no authority gate. Null fields are SKIPPED — the same null-means-untouched
+	 * rule the authorized-update path applies — so a framework write that only carries
+	 * part of the entity (e.g. a startup upsert declaring name but not email) never
+	 * wipes data it did not mean to touch.
+	 */
+	private static Object mergeAllNonNullFields(Object storedEntity, Object updatedEntity) {
+		if (storedEntity == null || updatedEntity == null) {
+			return storedEntity == null ? updatedEntity : storedEntity;
+		}
+		if (!storedEntity.getClass().equals(updatedEntity.getClass())) {
+			throw new ApiException("updateEntity: stored entity type [" + storedEntity.getClass().getSimpleName()
+					+ "] and updated entity type [" + updatedEntity.getClass().getSimpleName() + "] mismatch");
+		}
+		IReflection reflection = DefaultMapper.reflection();
+		for (IField field : IClass.getClass(storedEntity.getClass()).getDeclaredFields()) {
+			String fieldName = field.getName();
+			Object updatedValue = reflection.getFieldValue(updatedEntity, fieldName);
+			if (updatedValue != null) {
+				reflection.setFieldValue(storedEntity, fieldName, updatedValue);
+			}
+		}
+		return storedEntity;
+	}
+
+	/**
+	 * True when this request was issued by {@code SecurityExpressions.invokeInternal}
+	 * — the framework writing on its own behalf (token persist, key auto-create,
+	 * key rotation). The flag is set server-side only; a client-issued request can
+	 * never carry it.
+	 */
+	private static boolean isFrameworkInternalWrite(Object request) {
+		Object req = unwrapOptional(request);
+		if (!(req instanceof IOperationRequest opRequest)) {
+			return false;
+		}
+		return Boolean.TRUE.equals(
+				opRequest.arg(SecurityExpressions.FRAMEWORK_INTERNAL_WRITE_ARG).orElse(null));
 	}
 
 	@Expression(name = "runBeforeUpdate", description = "Executes @EntityBeforeUpdate lifecycle hooks on entity")

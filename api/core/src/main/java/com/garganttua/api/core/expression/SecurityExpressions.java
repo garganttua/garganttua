@@ -133,6 +133,21 @@ public class SecurityExpressions {
 		return invokeInternal(target, op, callerFromEntity(target, entity), req -> req.arg("entity", entity));
 	}
 
+	/**
+	 * Framework-internal UPDATE of an existing entity, addressed by its uuid.
+	 * Mirrors {@link #invokeCreate} — same internal-write flagging and pipeline
+	 * path, so the write still runs the domain's validation / lifecycle hooks.
+	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public static Object invokeUpdate(IDomain<?> target, String uuid, Object entity) {
+		OperationDefinition op = OperationDefinition.updateOne(target.getDomainName(),
+				((IDomain) target).getEntityClass(), false, null, Access.anonymous);
+		return invokeInternal(target, op, callerFromEntity(target, entity), req -> {
+			req.arg(IOperationRequest.ENTITY_UUID, uuid);
+			req.arg(IOperationRequest.BODY, entity);
+		});
+	}
+
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public static List<Object> invokeReadAll(IDomain<?> target, @Nullable IFilter filter) {
 		OperationDefinition op = OperationDefinition.readAll(target.getDomainName(),
