@@ -32,9 +32,12 @@ class ScriptVariableResolverBehaviourTest {
     private static IReflectionBuilder reflectionBuilder;
     private final ScriptVariableResolver resolver = new ScriptVariableResolver();
 
-    private static final IClass<Object> OBJECT = IClass.getClass(Object.class);
-    private static final IClass<String> STRING = IClass.getClass(String.class);
-    private static final IClass<Integer> INTEGER = IClass.getClass(Integer.class);
+    // Resolved in @BeforeAll (after the reflection is installed), NOT in field initializers:
+    // a static-field IClass.getClass runs at class load, before setup(), so the test only
+    // passed when an earlier test in the same fork had set the global IReflection first.
+    private static IClass<Object> OBJECT;
+    private static IClass<String> STRING;
+    private static IClass<Integer> INTEGER;
 
     @BeforeAll
     @SuppressWarnings("unchecked")
@@ -46,6 +49,9 @@ class ScriptVariableResolverBehaviourTest {
                 .withProvider(providerClass.getDeclaredConstructor().newInstance())
                 .withScanner(new ReflectionsAnnotationScanner());
         reflectionBuilder.build();
+        OBJECT = IClass.getClass(Object.class);
+        STRING = IClass.getClass(String.class);
+        INTEGER = IClass.getClass(Integer.class);
     }
 
     private IInjectionContext injectionContext() {

@@ -37,16 +37,20 @@ import jakarta.annotation.Nullable;
  */
 public class BeanElementResolverBehaviourTest {
 
-    @SuppressWarnings("unchecked")
-    private final IClass<? extends Annotation> dummyQualifierClass =
-            (IClass<? extends Annotation>) IClass.getClass(QualifierA.class);
+    private IClass<? extends Annotation> dummyQualifierClass;
 
     private SingletonElementResolver singletonWithQualifier;
     private PrototypeElementResolver prototypeNoQualifier;
 
+    @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
+        // Install the reflection BEFORE resolving any IClass. Resolving the qualifier in a
+        // field initializer ran it at construction time — before this @BeforeEach — so the
+        // test only passed when an earlier test in the same fork had already set the global
+        // IReflection (an order-dependent green). Resolve it here instead.
         ReflectionBuilder.builder().withProvider(new RuntimeReflectionProvider()).build();
+        dummyQualifierClass = (IClass<? extends Annotation>) IClass.getClass(QualifierA.class);
         Set<IClass<? extends Annotation>> qualifiers = new HashSet<>();
         qualifiers.add(dummyQualifierClass);
         singletonWithQualifier = new SingletonElementResolver(qualifiers);
