@@ -28,12 +28,12 @@ The Runtime framework enables you to define **execution pipelines** where steps 
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-runtime</artifactId>
-    <version>3.0.0-ALPHA09</version>
+    <version>3.0.0-ALPHA10</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA09
+3.0.0-ALPHA10
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

@@ -27,12 +27,12 @@ The module deliberately offers **only the primitives** — aggregators, metrics 
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-observability</artifactId>
-    <version>3.0.0-ALPHA09</version>
+    <version>3.0.0-ALPHA10</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA09
+3.0.0-ALPHA10
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
