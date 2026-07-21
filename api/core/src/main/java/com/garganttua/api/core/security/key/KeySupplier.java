@@ -184,13 +184,7 @@ public class KeySupplier implements IContextualSupplier<Object, IRuntimeContext>
 		}
 
 		enforceKeyPolicyGates(keyDomain, keyConfig, realmName, hadExistingButUnusable);
-
-		if (hadExistingButUnusable) {
-			// autoRotate is on (the gate above would have thrown otherwise): retire the keys we
-			// are superseding explicitly, so no expired/revoked key can ever be re-selected by
-			// pickUsable should its expiration later be changed or mis-evaluated.
-			revokeSupersededKeys(keyDomain, keyEntDef, existing, reflection);
-		}
+		revokeSupersededKeys(keyDomain, keyEntDef, hadExistingButUnusable ? existing : null, reflection);
 
 		Object newEntity = generateStampAndPersistKey(keyDomain, keyEntDef, keyConfig, realmName, caller, reflection);
 		return new Persisted(newEntity, keyDomain, keyEntDef);
@@ -217,7 +211,9 @@ public class KeySupplier implements IContextualSupplier<Object, IRuntimeContext>
 	 * the realm in its pre-rotation state (safe and retryable) rather than in a
 	 * half-rotated one where a new key coexists with a still-selectable old one.
 	 *
-	 * <p>No-op when the key domain declares no {@code revoked} field.
+	 * <p>No-op when {@code superseded} is null (not a rotation — nothing to retire;
+	 * autoRotate being on is the caller's precondition) or the key domain declares
+	 * no {@code revoked} field.
 	 */
 	private void revokeSupersededKeys(IDomain<?> keyDomain, IDomainKeyDefinition keyEntDef,
 			List<Object> superseded, IReflection reflection) {
