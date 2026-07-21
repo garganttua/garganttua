@@ -29,10 +29,18 @@ import com.garganttua.api.commons.security.authenticator.AuthenticatorScope;
 import com.garganttua.api.core.integ.crud.AbstractCrudScriptTest;
 import com.garganttua.api.core.security.authentication.AuthenticationRequest;
 import com.garganttua.api.core.service.OperationRequest;
+import com.garganttua.core.crypto.CryptoException;
+import com.garganttua.core.crypto.EncryptionMode;
+import com.garganttua.core.crypto.EncryptionPaddingMode;
+import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.crypto.KeyAlgorithm;
+import com.garganttua.core.crypto.KeyRealmBuilder;
+import com.garganttua.core.crypto.SealedKey;
 import com.garganttua.core.crypto.SignatureAlgorithm;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.supply.ISupplier;
 import com.garganttua.core.supply.dsl.FixedSupplierBuilder;
+import com.garganttua.core.supply.dsl.ISupplierBuilder;
 import com.garganttua.core.workflow.WorkflowResult;
 
 /**
@@ -289,8 +297,14 @@ class KeyAutoCreationIntegrationTest extends AbstractCrudScriptTest {
         return buildApi(usage, autoGenerate, autoRotate, new RealTokenVerifier());
     }
 
+    private Wired buildApi(AuthenticatorKeyUsage usage, boolean autoGenerate, boolean autoRotate,
+            Object tokenVerifier) throws ApiException {
+        return buildApi(usage, autoGenerate, autoRotate, tokenVerifier, null);
+    }
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    private Wired buildApi(AuthenticatorKeyUsage usage, boolean autoGenerate, boolean autoRotate, Object tokenVerifier) throws ApiException {
+    private Wired buildApi(AuthenticatorKeyUsage usage, boolean autoGenerate, boolean autoRotate, Object tokenVerifier,
+            ISupplierBuilder<IKeyRealm, ? extends ISupplier<IKeyRealm>> kekSupplier) throws ApiException {
         Wired w = new Wired();
         w.userDao = new CapturingDao();
         w.tokenDao = new CapturingDao();
@@ -368,15 +382,18 @@ class KeyAutoCreationIntegrationTest extends AbstractCrudScriptTest {
                     .id("id").uuid("uuid").tenantId("tenantId")
                     .db(w.keyDao)
                 .up();
-        keyBuilder.security().key()
+        var keyDsl = keyBuilder.security().key()
                 .name("realmName")
                 .keyAlgorithm("algorithm")
                 .signatureAlgorithm("signatureAlgorithm")
                 .keyForSignatureVerification("publicMaterial")
                 .keyForSigning("privateMaterial")
                 .expiration("expiration")
-                .revoked("revoked")
-                .up();
+                .revoked("revoked");
+        if (kekSupplier != null) {
+            keyDsl.secretMaterialEncryption(kekSupplier);
+        }
+        keyDsl.up();
         keyBuilder.up();
 
         // ─── Authenticator (User) wires authorization → token + key → CryptoKey ───
@@ -1255,6 +1272,79 @@ class KeyAutoCreationIntegrationTest extends AbstractCrudScriptTest {
             assertEquals(0, result.code(),
                     () -> "the super caller returned by the custom reconcile must be used — readAll succeeds; vars="
                             + result.variables());
+        }
+    }
+
+    /** A fixed AES-256/GCM key-encrypting key (KEK), supplied out of the DB as an app would. */
+    private static ISupplierBuilder<IKeyRealm, ? extends ISupplier<IKeyRealm>> kekSupplier() {
+        IKeyRealm kek = KeyRealmBuilder.builder()
+                .name("test-kek")
+                .algorithm(KeyAlgorithm.AES_256)
+                .encryptionMode(EncryptionMode.GCM)
+                .paddingMode(EncryptionPaddingMode.NO_PADDING)
+                .initializationVectorSize(12)
+                .build();
+        return new FixedSupplierBuilder<>(kek, IClass.getClass(IKeyRealm.class));
+    }
+
+    @Nested
+    @DisplayName("Encryption at rest — .secretMaterialEncryption(KEK)")
+    class EncryptionAtRest {
+
+        @Test
+        @DisplayName("private material is sealed at rest, yet the realm still materializes and signs")
+        void sealedAtRestButUsable() throws Exception {
+            Wired w = buildApi(AuthenticatorKeyUsage.oneForAll, true, false, new RealTokenVerifier(), kekSupplier());
+
+            IKeyRealm realm = com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                    w.userCtx, callerRequest("TENANT_A", null));
+            assertNotNull(realm);
+            assertEquals(1, w.keyDao.getStorage().size());
+
+            // Stored private signing material must be a SealedKey (ciphertext), never usable as-is.
+            CryptoKeyDto stored = (CryptoKeyDto) w.keyDao.getStorage().get(0);
+            assertInstanceOf(SealedKey.class, stored.getPrivateMaterial(),
+                    "private signing material must be sealed at rest");
+            assertThrows(CryptoException.class, () -> stored.getPrivateMaterial().getKey(),
+                    "a sealed key must refuse to expose usable material");
+
+            // Public verification material stays in clear — the verify path needs it without the KEK.
+            assertFalse(stored.getPublicMaterial() instanceof SealedKey,
+                    "public verification material must stay in clear");
+
+            // The materialized realm round-trips: sign then verify (proves seal → store → open works).
+            byte[] data = "payload".getBytes(StandardCharsets.UTF_8);
+            byte[] sig = realm.getKeyForSigning().sign(data);
+            assertTrue(realm.getKeyForSignatureVerification().verifySignature(sig, data),
+                    "the opened key must produce a signature that verifies");
+        }
+
+        @Test
+        @DisplayName("without .secretMaterialEncryption the material stays in clear (opt-in, backward compatible)")
+        void withoutKekClear() throws Exception {
+            Wired w = buildApi(AuthenticatorKeyUsage.oneForAll, true, false, new RealTokenVerifier(), null);
+            com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                    w.userCtx, callerRequest("TENANT_A", null));
+            CryptoKeyDto stored = (CryptoKeyDto) w.keyDao.getStorage().get(0);
+            assertFalse(stored.getPrivateMaterial() instanceof SealedKey,
+                    "no KEK configured → material must be stored in clear (unchanged behaviour)");
+        }
+
+        @Test
+        @DisplayName("a subsequent resolve reuses the sealed key and still verifies (open on every read)")
+        void sealedKeyReusable() throws Exception {
+            Wired w = buildApi(AuthenticatorKeyUsage.oneForAll, true, false, new RealTokenVerifier(), kekSupplier());
+            com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                    w.userCtx, callerRequest("TENANT_A", null));
+            assertEquals(1, w.keyDao.getStorage().size());
+
+            IKeyRealm reused = com.garganttua.api.core.expression.SecuritySigningExpressions.resolveKeyRealm(
+                    w.userCtx, callerRequest("TENANT_A", null));
+            assertEquals(1, w.keyDao.getStorage().size(), "the sealed key must be reused, not regenerated");
+            byte[] data = "again".getBytes(StandardCharsets.UTF_8);
+            byte[] sig = reused.getKeyForSigning().sign(data);
+            assertTrue(reused.getKeyForSignatureVerification().verifySignature(sig, data),
+                    "a re-opened sealed key must still verify");
         }
     }
 }

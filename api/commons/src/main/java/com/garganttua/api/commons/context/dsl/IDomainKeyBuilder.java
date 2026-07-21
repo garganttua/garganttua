@@ -3,9 +3,12 @@ package com.garganttua.api.commons.context.dsl;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.IDomainKeyContext;
 import com.garganttua.api.commons.context.dsl.security.IDomainSecurityBuilder;
+import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.dsl.IAutomaticLinkedBuilder;
 import com.garganttua.core.reflection.IField;
 import com.garganttua.core.reflection.ObjectAddress;
+import com.garganttua.core.supply.dsl.ISupplierBuilder;
+import com.garganttua.core.supply.ISupplier;
 
 /**
  * Sub-builder declaring a domain as a key domain. The method surface is
@@ -112,4 +115,28 @@ public interface IDomainKeyBuilder<E> extends
     IDomainKeyBuilder<E> rotate(IField field) throws ApiException;
 
     IDomainKeyBuilder<E> rotate(ObjectAddress fieldAddress) throws ApiException;
+
+    // ───── encryption at rest of SECRET material ─────
+
+    /**
+     * Encrypts this key domain's SECRET material ({@code KeyType} PRIVATE / SECRET —
+     * {@code keyForSigning}, and any symmetric {@code keyForEncryption}/{@code keyForDecryption})
+     * at rest, using a key-encrypting key (KEK) the supplier yields. PUBLIC material
+     * ({@code keyForSignatureVerification}) is always stored in clear. The rule is driven by
+     * {@code KeyType}, not by field name, so no secret field can be missed.
+     *
+     * <p>Storage-scoped, not consumer-scoped: it belongs on the {@code @Key} domain because a
+     * single collection must be encrypted consistently for every authenticator that references it.
+     *
+     * <p>The KEK must live OUTSIDE the database (environment / secret manager / key-management
+     * service) — that separation is the whole custody point. Supply an {@code IKeyRealm}
+     * configured for authenticated encryption (AES-256 / GCM recommended). Omitting this call
+     * keeps the current behaviour: material is stored in clear.
+     *
+     * @param kek supplier of the key-encrypting key realm
+     * @return this builder
+     * @throws ApiException if the supplier is null
+     */
+    IDomainKeyBuilder<E> secretMaterialEncryption(ISupplierBuilder<IKeyRealm, ? extends ISupplier<IKeyRealm>> kek)
+            throws ApiException;
 }

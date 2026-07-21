@@ -10,8 +10,12 @@ import com.garganttua.api.commons.context.dsl.IDomainKeyBuilder;
 import com.garganttua.api.commons.context.dsl.security.IDomainSecurityBuilder;
 import com.garganttua.api.core.security.key.DomainKeyContext;
 import com.garganttua.api.core.security.key.DomainKeyDefinition;
+import com.garganttua.core.crypto.IKeyRealm;
+import com.garganttua.core.crypto.KeyMaterialEnvelope;
 import com.garganttua.core.dsl.AbstractAutomaticLinkedBuilder;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.supply.ISupplier;
+import com.garganttua.core.supply.dsl.ISupplierBuilder;
 import com.garganttua.core.reflection.IField;
 import com.garganttua.core.reflection.IReflectionProvider;
 import com.garganttua.core.reflection.ObjectAddress;
@@ -49,6 +53,7 @@ public class DomainKeyBuilder<E>
     private ObjectAddress revoked;
     private ObjectAddress version;
     private ObjectAddress rotate;
+    private ISupplierBuilder<IKeyRealm, ? extends ISupplier<IKeyRealm>> secretMaterialKekSupplier;
 
     public DomainKeyBuilder(IDomainSecurityBuilder<E> securityBuilder, IClass<?> entityClass) {
         super(securityBuilder);
@@ -279,6 +284,15 @@ public class DomainKeyBuilder<E>
         return this;
     }
 
+    // ───── encryption at rest of SECRET material ─────
+
+    @Override
+    public IDomainKeyBuilder<E> secretMaterialEncryption(
+            ISupplierBuilder<IKeyRealm, ? extends ISupplier<IKeyRealm>> kek) throws ApiException {
+        this.secretMaterialKekSupplier = Objects.requireNonNull(kek, "The KEK supplier cannot be null");
+        return this;
+    }
+
     // ───── build / auto-detect ─────
 
     @Override
@@ -294,7 +308,55 @@ public class DomainKeyBuilder<E>
                 this.expiration,
                 this.revoked,
                 this.version,
-                this.rotate));
+                this.rotate,
+                resolveKek()));
+    }
+
+    /**
+     * Resolves the key-encrypting key once at build time, so the two seams
+     * ({@code generateAndStampKeyEntity} / {@code materializeKeyRealm}) read a ready
+     * {@code IKeyRealm} off the definition instead of building a supplier per call.
+     * Returns {@code null} when no {@code .secretMaterialEncryption(...)} was declared.
+     */
+    private IKeyRealm resolveKek() throws ApiException {
+        if (this.secretMaterialKekSupplier == null) {
+            return null;
+        }
+        IKeyRealm kek;
+        try {
+            kek = this.secretMaterialKekSupplier.build().supply().orElseThrow(() -> new ApiException(
+                    "secretMaterialEncryption: the KEK supplier returned empty — a key-encrypting key is required"));
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException("secretMaterialEncryption: failed to resolve the KEK from its supplier: "
+                    + e.getMessage(), e);
+        }
+        verifyKekRoundTrips(kek);
+        return kek;
+    }
+
+    /**
+     * Fails fast at build time if the KEK cannot seal-then-open a probe. Guards the silent-loss
+     * footgun where, e.g., a GCM realm built without an IV size encrypts fine but can never decrypt —
+     * which would otherwise corrupt every persisted private key irrecoverably. A loud startup error
+     * beats an unrecoverable data-at-rest failure discovered later.
+     */
+    private static void verifyKekRoundTrips(IKeyRealm kek) throws ApiException {
+        byte[] probe = "garganttua-kek-selftest".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        try {
+            byte[] opened = KeyMaterialEnvelope.open(kek, KeyMaterialEnvelope.seal(kek, probe));
+            if (!java.util.Arrays.equals(probe, opened)) {
+                throw new ApiException("secretMaterialEncryption: the KEK '" + kek.getName()
+                        + "' did not round-trip a probe — it cannot seal key material");
+            }
+        } catch (ApiException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new ApiException("secretMaterialEncryption: the KEK '" + kek.getName()
+                    + "' cannot seal/open material (for AES-GCM set initializationVectorSize(12) on the realm): "
+                    + e.getMessage(), e);
+        }
     }
 
     @Override

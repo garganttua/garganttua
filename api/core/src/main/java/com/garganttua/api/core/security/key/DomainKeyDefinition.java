@@ -1,6 +1,7 @@
 package com.garganttua.api.core.security.key;
 
 import com.garganttua.api.commons.definition.IDomainKeyDefinition;
+import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.reflection.ObjectAddress;
 
 public record DomainKeyDefinition(
@@ -14,6 +15,7 @@ public record DomainKeyDefinition(
 		ObjectAddress expiration,
 		ObjectAddress revoked,
 		ObjectAddress version,
-		ObjectAddress rotate) implements IDomainKeyDefinition {
+		ObjectAddress rotate,
+		IKeyRealm secretMaterialKek) implements IDomainKeyDefinition {
 
 }

@@ -15,10 +15,18 @@ import org.bson.Document;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Base64;
+
+import com.garganttua.core.crypto.EncryptionMode;
+import com.garganttua.core.crypto.EncryptionPaddingMode;
 import com.garganttua.core.crypto.IKey;
 import com.garganttua.core.crypto.IKeyAlgorithm;
+import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.crypto.KeyAlgorithm;
+import com.garganttua.core.crypto.KeyMaterialEnvelope;
+import com.garganttua.core.crypto.KeyRealmBuilder;
 import com.garganttua.core.crypto.KeyType;
+import com.garganttua.core.crypto.SealedKey;
 import com.garganttua.core.crypto.SignatureAlgorithm;
 
 /**
@@ -78,5 +86,36 @@ class IKeyBsonBridgeTest {
 		assertEquals("EC", restored.getAlgorithm().getName());
 		assertEquals(256, restored.getAlgorithm().getKeySize());
 		assertEquals(SignatureAlgorithm.SHA256, restored.getSignatureAlgorithm());
+	}
+
+	@Test
+	@DisplayName("a SealedKey survives the BSON round-trip: KeyType preserved, envelope intact, opens to clear")
+	void sealedKeySurvivesBsonRoundTrip() throws Exception {
+		// This is the representation trap: getRawKey() is Base64-ASCII, the bridge stores it as a
+		// string and Base64-decodes on read. A sealed private key must round-trip so materialize can
+		// open it — otherwise a healthcare app persists an undecryptable (lost) private key.
+		IKeyRealm kek = KeyRealmBuilder.builder()
+				.name("bson-kek")
+				.algorithm(KeyAlgorithm.AES_256)
+				.encryptionMode(EncryptionMode.GCM)
+				.paddingMode(EncryptionPaddingMode.NO_PADDING)
+				.initializationVectorSize(12)
+				.build();
+
+		IKey original = signingKey(KeyType.PRIVATE);
+		byte[] clear = original.getKey().getEncoded();
+		byte[] envelope = KeyMaterialEnvelope.seal(kek, clear);
+		SealedKey sealed = SealedKey.from(original, envelope);
+
+		Document doc = IKeyBsonBridge.toDocument(sealed);
+		assertEquals(KeyType.PRIVATE.name(), doc.getString("type"), "KeyType must be stored so read knows to open");
+
+		IKey restored = IKeyBsonBridge.fromDocument(doc);
+		assertEquals(KeyType.PRIVATE, restored.getType(), "KeyType must survive the round-trip");
+
+		byte[] envelopeAfter = Base64.getDecoder().decode(restored.getRawKey());
+		assertArrayEquals(envelope, envelopeAfter, "the sealed envelope must survive the Base64/BSON round-trip");
+		assertArrayEquals(clear, KeyMaterialEnvelope.open(kek, envelopeAfter),
+				"the round-tripped envelope must open back to the exact clear material");
 	}
 }

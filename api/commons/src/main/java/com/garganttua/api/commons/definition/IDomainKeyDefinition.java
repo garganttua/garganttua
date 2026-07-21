@@ -1,5 +1,6 @@
 package com.garganttua.api.commons.definition;
 
+import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.reflection.ObjectAddress;
 
 /**
@@ -66,5 +67,21 @@ public interface IDomainKeyDefinition {
 	ObjectAddress version();
 
 	ObjectAddress rotate();
+
+	/**
+	 * The resolved key-encrypting key (KEK) used to seal this key domain's SECRET
+	 * material ({@code KeyType} PRIVATE / SECRET) at rest, or {@code null} when the
+	 * domain declares no {@code .secretMaterialEncryption(...)}. When present, the
+	 * framework seals such material on write and opens it on read; PUBLIC material
+	 * is always stored in clear. See {@code KeyMaterialEnvelope} / {@code SealedKey}.
+	 *
+	 * <p>Default {@code null} keeps every existing implementation and configuration
+	 * behaving exactly as before (no encryption).
+	 *
+	 * @return the KEK realm, or {@code null} when secret material is not encrypted at rest
+	 */
+	default IKeyRealm secretMaterialKek() {
+		return null;
+	}
 
 }

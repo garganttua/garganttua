@@ -2,6 +2,7 @@ package com.garganttua.api.core.expression;
 
 import java.security.KeyPair;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -14,8 +15,10 @@ import com.garganttua.core.crypto.IKeyAlgorithm;
 import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.crypto.Key;
 import com.garganttua.core.crypto.KeyAlgorithm;
+import com.garganttua.core.crypto.KeyMaterialEnvelope;
 import com.garganttua.core.crypto.KeyRealm;
 import com.garganttua.core.crypto.KeyType;
+import com.garganttua.core.crypto.SealedKey;
 import com.garganttua.core.crypto.SignatureAlgorithm;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflection;
@@ -61,12 +64,14 @@ final class SecurityKeyExpressions {
         // Extract JDK-encoded bytes from the IKey objects carried on the entity and rebuild a
         // fully-stitched IKeyRealm via core's factory. We do not pass the IKey instances directly:
         // KeyRealm.fromSignatureMaterial owns the Key construction (caching, type checks, algorithm
-        // wiring), so we feed it the bytes and let it reconstruct.
+        // wiring), so we feed it the bytes and let it reconstruct. When the @Key domain declares a
+        // KEK, SECRET material was sealed at rest and is opened here (PUBLIC material stays clear).
+        IKeyRealm kek = keyDef.secretMaterialKek();
         byte[] privateBytes;
         byte[] publicBytes;
         try {
-            privateBytes = signingKey.getKey().getEncoded();
-            publicBytes = verificationKey.getKey().getEncoded();
+            privateBytes = extractMaterial(signingKey, kek);
+            publicBytes = extractMaterial(verificationKey, kek);
         } catch (CryptoException e) {
             throw new ApiException("materializeKeyRealm: failed to extract JDK-encoded bytes from "
                     + "the entity's IKey fields: " + e.getMessage(), e);
@@ -102,17 +107,7 @@ final class SecurityKeyExpressions {
                 concreteAlgo.getName() + "-" + concreteAlgo.getKeySize(), reflection);
         writeIfMapped(entity, keyDef.signatureAlgorithm(), signatureAlgorithm.name(), reflection);
 
-        // Build IKey objects up front: the entity's key-material fields are typed IKey, not raw
-        // byte[]. Persistence-side translation to byte[] is the DTO mapping's concern. For asymmetric
-        // algorithms encryption reuses the signing key and decryption the verification key.
-        IKey signingKey = Key.fromSigningMaterial(KeyType.PRIVATE, algorithm, signatureAlgorithm,
-                pair.getPrivate().getEncoded());
-        IKey verificationKey = Key.fromSigningMaterial(KeyType.PUBLIC, algorithm, signatureAlgorithm,
-                pair.getPublic().getEncoded());
-        writeIfMapped(entity, keyDef.keyForSigning(), signingKey, reflection);
-        writeIfMapped(entity, keyDef.keyForSignatureVerification(), verificationKey, reflection);
-        writeIfMapped(entity, keyDef.keyForEncryption(), signingKey, reflection);
-        writeIfMapped(entity, keyDef.keyForDecryption(), verificationKey, reflection);
+        stampKeyMaterial(entity, keyDef, algorithm, signatureAlgorithm, pair, reflection);
 
         ObjectAddress expirationAddr = keyDef.expiration();
         if (expirationAddr != null) {
@@ -127,6 +122,25 @@ final class SecurityKeyExpressions {
         writeIfMapped(entity, keyDef.version(), Integer.valueOf(1), reflection);
 
         return entity;
+    }
+
+    /**
+     * Builds the key-material {@link IKey}s from a fresh JDK key pair and stamps them onto the entity,
+     * sealing SECRET material at rest when the {@code @Key} domain declares a KEK (see
+     * {@link #writeMaterial}). For asymmetric algorithms encryption reuses the signing key and
+     * decryption the verification key — the private copy under {@code keyForEncryption} is sealed too.
+     */
+    private static void stampKeyMaterial(Object entity, IDomainKeyDefinition keyDef, IKeyAlgorithm algorithm,
+            SignatureAlgorithm signatureAlgorithm, KeyPair pair, IReflection reflection) {
+        IKeyRealm kek = keyDef.secretMaterialKek();
+        IKey signingKey = Key.fromSigningMaterial(KeyType.PRIVATE, algorithm, signatureAlgorithm,
+                pair.getPrivate().getEncoded());
+        IKey verificationKey = Key.fromSigningMaterial(KeyType.PUBLIC, algorithm, signatureAlgorithm,
+                pair.getPublic().getEncoded());
+        writeMaterial(entity, keyDef.keyForSigning(), signingKey, kek, reflection);
+        writeMaterial(entity, keyDef.keyForSignatureVerification(), verificationKey, kek, reflection);
+        writeMaterial(entity, keyDef.keyForEncryption(), signingKey, kek, reflection);
+        writeMaterial(entity, keyDef.keyForDecryption(), verificationKey, kek, reflection);
     }
 
     private static KeyPair generateKeyPair(KeyAlgorithm concreteAlgo) {
@@ -204,6 +218,44 @@ final class SecurityKeyExpressions {
         if (addr != null) {
             reflection.setFieldValue(entity, addr, value);
         }
+    }
+
+    /**
+     * Writes a key-material {@link IKey} onto the entity, sealing it first when it is SECRET
+     * ({@link KeyType#PRIVATE} / {@link KeyType#SECRET}) and a KEK is configured. PUBLIC material,
+     * and any material when {@code kek} is null, is written unchanged. Driven by {@code KeyType}, so
+     * every secret field — including the private copy under {@code keyForEncryption} — is sealed and
+     * no public field is ever encrypted.
+     */
+    private static void writeMaterial(Object entity, ObjectAddress addr, IKey material,
+            IKeyRealm kek, IReflection reflection) {
+        if (addr == null || material == null) {
+            return;
+        }
+        IKey toStore = material;
+        if (kek != null && isSecret(material.getType())) {
+            byte[] clear = material.getKey().getEncoded();
+            toStore = SealedKey.from(material, KeyMaterialEnvelope.seal(kek, clear));
+        }
+        writeIfMapped(entity, addr, toStore, reflection);
+    }
+
+    /**
+     * Extracts the JDK-encoded (clear) bytes of a key-material {@link IKey}. SECRET material sealed
+     * at rest is opened with the KEK; PUBLIC material — and any material when {@code kek} is null —
+     * is read directly. A sealed {@code getRawKey()} carries the Base64-ASCII envelope (see
+     * {@link SealedKey}), which is decoded back to the raw envelope before opening.
+     */
+    private static byte[] extractMaterial(IKey key, IKeyRealm kek) {
+        if (kek != null && isSecret(key.getType())) {
+            byte[] envelope = Base64.getDecoder().decode(key.getRawKey());
+            return KeyMaterialEnvelope.open(kek, envelope);
+        }
+        return key.getKey().getEncoded();
+    }
+
+    private static boolean isSecret(KeyType type) {
+        return type == KeyType.PRIVATE || type == KeyType.SECRET;
     }
 
     private static Object adaptKeyExpiration(IClass<?> entityClass, ObjectAddress addr, Instant exp,
