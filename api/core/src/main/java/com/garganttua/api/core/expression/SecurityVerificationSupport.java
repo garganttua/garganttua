@@ -58,6 +58,56 @@ final class SecurityVerificationSupport {
 		return authz;
 	}
 
+	/**
+	 * Strict variant of {@link #serverAuthoritativeAuthorization} for the opt-in
+	 * {@code checkStoredOnVerify} path. Instead of failing open, it DISTINGUISHES a genuinely
+	 * absent stored record ({@link Optional#empty()} → the caller fails closed with a 401) from a
+	 * resolvable one ({@code Optional.of(record)}). A missing uuid on the token yields
+	 * {@code empty} (cannot match a stored row → fail closed); a repository error propagates
+	 * (fail closed) rather than falling back to the decoded payload. Assumes the domain is
+	 * {@code storable} — the caller gates on it.
+	 *
+	 * @return the stored record, or empty when no such row exists for the token's uuid
+	 */
+	static Optional<Object> serverAuthoritativeAuthorizationStrict(IDomain<?> authzDomain, Object authz) {
+		ObjectAddress uuidAddr = authzDomain.getEntityDefinition() != null
+				? authzDomain.getEntityDefinition().uuid() : null;
+		if (uuidAddr == null) {
+			throw new ApiException("checkStoredOnVerify: authorization domain '" + authzDomain.getDomainName()
+					+ "' has no uuid field — cannot look up the stored record");
+		}
+		String uuid = SecurityExpressions.readField(authz, uuidAddr);
+		if (uuid == null) {
+			return Optional.empty();
+		}
+		IFilter filter = Filter.eq(uuidAddr.toString(), uuid);
+		List<Object> results = authzDomain.getRepository()
+				.getEntities(Optional.empty(), Optional.of(filter), Optional.empty());
+		if (results != null && !results.isEmpty()) {
+			return Optional.of(results.get(0));
+		}
+		return Optional.empty();
+	}
+
+	/**
+	 * The authorization the verify path should treat as effective. For an opt-in
+	 * {@code checkStoredOnVerify}+{@code storable} domain, fetches the server-authoritative stored
+	 * record (fail closed → 401 {@code "Authorization not found or revoked"} when absent) and re-runs
+	 * the intrinsic {@code revoked}/{@code expiration} checks against its CURRENT state, returning that
+	 * record. Otherwise returns the decoded token unchanged — the SAME instance, so the caller can tell
+	 * the two apart by identity.
+	 */
+	static Object effectiveAuthorizationForVerify(IDomain<?> authzDomain, Object authz) {
+		Object defObj = SecurityExpressions.authorizationDefinition(authzDomain);
+		if (!(defObj instanceof IDomainAuthorizationDefinition d) || !d.checkStoredOnVerify() || !d.storable()) {
+			return authz;
+		}
+		Object stored = serverAuthoritativeAuthorizationStrict(authzDomain, authz)
+				.orElseThrow(() -> new ApiException("Authorization not found or revoked"));
+		validateAuthorizationFromDefinition(stored, authzDomain);
+		return stored;
+	}
+
 	/** Resolves the registered domain whose entity class matches the runtime class of {@code entity}. Null when none. */
 	static IDomain<?> domainOfEntity(IApi api, Object entity) {
 		if (entity == null || !(api instanceof com.garganttua.api.core.api.Api concrete)) {

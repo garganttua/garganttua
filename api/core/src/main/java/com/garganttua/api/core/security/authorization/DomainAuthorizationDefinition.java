@@ -20,6 +20,7 @@ public record DomainAuthorizationDefinition(
 		ObjectAddress encodeMethod,
 		ObjectAddress decodeMethod,
 		ObjectAddress signedBy,
-		IMethodBinder<?> reconcileBinder) implements IDomainAuthorizationDefinition {
+		IMethodBinder<?> reconcileBinder,
+		boolean checkStoredOnVerify) implements IDomainAuthorizationDefinition {
 
 }

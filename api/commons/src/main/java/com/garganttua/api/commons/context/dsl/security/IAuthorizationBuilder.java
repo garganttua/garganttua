@@ -74,6 +74,24 @@ public interface IAuthorizationBuilder<E>
     IAuthorizationBuilder<E> storable(boolean b);
 
     /**
+     * Opt-in stateful revocation. When {@code true} (and the domain is
+     * {@link #storable(boolean) storable}), the verify path fetches the
+     * server-authoritative stored record before the intrinsic checks, fails
+     * closed (→ 401 {@code "Authorization not found or revoked"}) when it is
+     * absent, and re-runs the {@code revoked} / {@code expiration} checks against
+     * that record's CURRENT state. A {@code revoked=true} (or a deleted row) then
+     * rejects an already-issued bearer immediately, instead of waiting for its
+     * expiration.
+     *
+     * <p>Default {@code false}: verification stays stateless — the signed claims
+     * only — so behaviour is strictly unchanged for existing usages.
+     *
+     * @param b whether to re-validate against the stored record on verify
+     * @return this builder
+     */
+    IAuthorizationBuilder<E> checkStoredOnVerify(boolean b);
+
+    /**
      * Declares a custom caller-reconciliation method, overriding the default
      * {@link com.garganttua.api.commons.security.authentication.IAuthentication#reconcile}
      * (R1-R3) on the verify path. The method's contract is forced:
@@ -95,6 +113,8 @@ public interface IAuthorizationBuilder<E>
     ISignableAuthorizationBuilder<E> signable();
 
     Boolean isStorable();
+
+    Boolean isCheckStoredOnVerify();
 
     Boolean isRefreshable();
 

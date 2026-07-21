@@ -32,6 +32,25 @@ public interface IDomainAuthorizationDefinition {
 
 	boolean refreshable();
 
+	/**
+	 * Opt-in stateful revocation: when {@code true} (and the domain is
+	 * {@link #storable()}), the verify path fetches the server-authoritative
+	 * stored record BEFORE the intrinsic checks, fails closed (→ 401) when it is
+	 * absent, and runs the intrinsic {@code revoked} / {@code expiration} checks
+	 * against that stored record's CURRENT state — not only the decoded token's
+	 * frozen claims. This makes a {@code revoked=true} (or a deleted row) reject
+	 * an already-issued bearer immediately, instead of waiting for expiration.
+	 *
+	 * <p>Default {@code false}: verification stays stateless (checks the signed
+	 * claims only), behaviour strictly unchanged. Declared via
+	 * {@code .authorization().checkStoredOnVerify(true)}.
+	 *
+	 * @return whether the verify path re-validates against the stored record
+	 */
+	default boolean checkStoredOnVerify() {
+		return false;
+	}
+
 	ObjectAddress signatureField();
 
 	ObjectAddress getDataToSignMethod();

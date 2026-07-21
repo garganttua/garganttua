@@ -52,6 +52,7 @@ public class AuthorizationBuilder<E>
     private ISignableAuthorizationBuilder<E> signable;
     private IRefreshableAuthorizationBuilder<E> refreshable;
     private boolean storable = false;
+    private boolean checkStoredOnVerify = false;
     private IAuthorizationMethodBinderBuilder<E> reconcile;
 
     public AuthorizationBuilder(IDomainSecurityBuilder<E> domainBuilder, IClass<?> entityClass) {
@@ -294,6 +295,17 @@ public class AuthorizationBuilder<E>
     }
 
     @Override
+    public IAuthorizationBuilder<E> checkStoredOnVerify(boolean b) {
+        this.checkStoredOnVerify = b;
+        return this;
+    }
+
+    @Override
+    public Boolean isCheckStoredOnVerify() {
+        return this.checkStoredOnVerify;
+    }
+
+    @Override
     public Boolean isRefreshable() {
         return this.refreshable != null;
     }
@@ -351,7 +363,8 @@ public class AuthorizationBuilder<E>
                 this.storable, this.signable != null, this.refreshable != null,
                 signatureField, getDataToSignMethod,
                 refreshExpiration, refreshRevoked,
-                encodeMethod, decodeMethod, this.signedBy, reconcileBinder);
+                encodeMethod, decodeMethod, this.signedBy, reconcileBinder,
+                this.checkStoredOnVerify);
     }
 
     @Override

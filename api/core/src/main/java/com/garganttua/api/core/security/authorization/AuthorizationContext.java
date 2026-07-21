@@ -16,13 +16,15 @@ public class AuthorizationContext implements IAuthorizationContext {
             ObjectAddress signatureField, ObjectAddress getDataToSignMethod,
             ObjectAddress refreshExpiration, ObjectAddress refreshRevoked,
             ObjectAddress encodeMethod, ObjectAddress decodeMethod,
-            ObjectAddress signedBy, IMethodBinder<?> reconcileBinder) {
+            ObjectAddress signedBy, IMethodBinder<?> reconcileBinder,
+            boolean checkStoredOnVerify) {
         this.authorizationDefinition = new DomainAuthorizationDefinition(
                 type, authorities, expiration, creation, revoked,
                 storable, signable, refreshable,
                 signatureField, getDataToSignMethod,
                 refreshExpiration, refreshRevoked,
-                encodeMethod, decodeMethod, signedBy, reconcileBinder);
+                encodeMethod, decodeMethod, signedBy, reconcileBinder,
+                checkStoredOnVerify);
     }
 
     @Override

@@ -154,6 +154,23 @@ class AuthorizationBuilderTest {
             IDomainAuthorizationDefinition def = builder.build().getAuthorizationDefinition();
             assertTrue(def.storable());
         }
+
+        @Test
+        @DisplayName("checkStoredOnVerify is false by default")
+        void checkStoredOnVerifyIsFalseByDefault() throws ApiException {
+            IDomainAuthorizationDefinition def = builder.build().getAuthorizationDefinition();
+            assertFalse(def.checkStoredOnVerify());
+            assertFalse(builder.isCheckStoredOnVerify());
+        }
+
+        @Test
+        @DisplayName("checkStoredOnVerify can be set explicitly and reaches the definition")
+        void checkStoredOnVerifyCanBeSet() throws ApiException {
+            builder.checkStoredOnVerify(true);
+            assertTrue(builder.isCheckStoredOnVerify());
+            IDomainAuthorizationDefinition def = builder.build().getAuthorizationDefinition();
+            assertTrue(def.checkStoredOnVerify());
+        }
     }
 
     @Nested

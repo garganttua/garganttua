@@ -377,9 +377,17 @@ public class SecurityAuthenticationExpressions {
 			throw new ApiException("Authorization signature verification failed");
 		}
 
-		// 4. Server resolves the OWNER as the final principal (SERVER-AUTHORITATIVE: a storable
-		//    token's persisted record wins over the decoded payload to prevent privilege escalation).
-		Object owner = SecurityVerificationSupport.resolveOwnerPrincipal(api, authzDomain, authz);
+		// 4. Opt-in stateful revocation (.checkStoredOnVerify(true) on a storable domain): the effective
+		//    authorization becomes the server-authoritative stored record, re-validated against its
+		//    CURRENT revoked/expiration state and fail-closed (→ 401) when absent. Default off →
+		//    effective stays the decoded token, behaviour strictly unchanged.
+		Object effective = SecurityVerificationSupport.effectiveAuthorizationForVerify(authzDomain, authz);
+
+		// 5. Server resolves the OWNER as the final principal (SERVER-AUTHORITATIVE: a storable token's
+		//    persisted record wins over the decoded payload to prevent privilege escalation).
+		//    serverAuthoritativeAuthorization already returns that stored record when present, so it is
+		//    the trusted source for both the checkStored path and the default path.
+		Object owner = SecurityVerificationSupport.resolveOwnerPrincipal(api, authzDomain, effective);
 		Object trusted = SecurityVerificationSupport.serverAuthoritativeAuthorization(authzDomain, authz);
 		return synthAuthFromPrincipal(owner, trusted, authzDomain);
 	}
