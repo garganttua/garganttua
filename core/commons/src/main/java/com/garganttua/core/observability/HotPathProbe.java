@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -36,7 +37,7 @@ public final class HotPathProbe {
 	/** Resolved once at class initialisation so the branch constant-folds when off. */
 	private static final boolean ENABLED = Boolean.getBoolean("garganttua.perf.probe");
 
-	private static final ConcurrentHashMap<String, Counter> COUNTERS = new ConcurrentHashMap<>();
+	private static final ConcurrentMap<String, Counter> COUNTERS = new ConcurrentHashMap<>();
 
 	private HotPathProbe() {
 	}

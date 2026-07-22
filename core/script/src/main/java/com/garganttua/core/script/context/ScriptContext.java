@@ -89,8 +89,7 @@ public class ScriptContext implements IScript, IObservable {
      * @param runtimesBuilderFactory factory creating a fresh IRuntimesBuilder per compilation
      * @param classLoaderManager     manager loading JARs at runtime, or {@code null}
      */
-    @SuppressFBWarnings(value = "EI_EXPOSE_REP2",
-            justification = "Class-loader manager is a shared service held by reference by design, not copied.")
+    // No @SuppressFBWarnings here: this overload only delegates, it stores nothing of its own.
     public ScriptContext(IExpressionContext expressionContext,
                          Supplier<IRuntimesBuilder> runtimesBuilderFactory,
                          IClassLoaderManager classLoaderManager) {

@@ -1,6 +1,7 @@
 package com.garganttua.core.script.context;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
 
 import com.garganttua.core.observability.Logger;
@@ -32,23 +33,23 @@ import com.garganttua.core.runtime.IRuntime;
  * <p>Thread-safe. Bounded in practice by the number of distinct script sources an application
  * includes.
  *
- * @since 3.0.0-ALPHA10
+ * @since 3.0.0-ALPHA11
  */
 public final class ScriptCompilationCache {
 
     private static final Logger log = Logger.getLogger(ScriptCompilationCache.class);
 
-    private final ConcurrentHashMap<String, IRuntime<Object[], Object>> runtimes = new ConcurrentHashMap<>();
-    private final LongAdder hits = new LongAdder();
-    private final LongAdder misses = new LongAdder();
+    private final ConcurrentMap<String, IRuntime<Object[], Object>> runtimes = new ConcurrentHashMap<>();
+    private final LongAdder hitCount = new LongAdder();
+    private final LongAdder missCount = new LongAdder();
 
     /** {@return the runtime already compiled for {@code source}, or {@code null} on a miss} */
     IRuntime<Object[], Object> get(String source) {
         IRuntime<Object[], Object> runtime = this.runtimes.get(source);
         if (runtime == null) {
-            this.misses.increment();
+            this.missCount.increment();
         } else {
-            this.hits.increment();
+            this.hitCount.increment();
         }
         return runtime;
     }
@@ -69,12 +70,12 @@ public final class ScriptCompilationCache {
 
     /** {@return how many compilations were served from the cache} */
     public long hits() {
-        return this.hits.sum();
+        return this.hitCount.sum();
     }
 
     /** {@return how many compilations had to be performed} */
     public long misses() {
-        return this.misses.sum();
+        return this.missCount.sum();
     }
 
     /** Drops every cached compilation — the next {@code include()} recompiles from source. */

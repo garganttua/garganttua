@@ -21,7 +21,7 @@ import com.garganttua.core.script.ScriptException;
  * not exist, so each caller can phrase its own "not found" error (or, for the warm-up, degrade to
  * a warning and let the runtime {@code include()} fail as before).
  *
- * @since 3.0.0-ALPHA10
+ * @since 3.0.0-ALPHA11
  */
 public final class ScriptSourceResolver {
 

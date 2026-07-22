@@ -88,10 +88,7 @@ public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSu
                 log.warn("Cannot warm up script '{}': not found — include() will fail at runtime", path);
                 return false;
             }
-            ScriptContext ctx = new ScriptContext(this.expressionContext, this.runtimesBuilderFactory,
-                    this.classLoaderManager, this.compilationCache);
-            ctx.load(source.get());
-            ctx.compileCached();
+            compileIntoCache(source.get());
             log.debug("Script '{}' compiled ahead of time", path);
             return true;
         } catch (RuntimeException e) { // ScriptException is unchecked
@@ -128,6 +125,17 @@ public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSu
      *          scripts". */
     public int getPrecompiledCount() {
         return this.precompiledCount.get();
+    }
+
+    /**
+     * Compiles {@code source} into this environment's shared compilation cache. The context itself
+     * is a throwaway — only the compiled runtime it publishes to the cache outlives this call.
+     */
+    private void compileIntoCache(String source) {
+        ScriptContext ctx = new ScriptContext(this.expressionContext, this.runtimesBuilderFactory,
+                this.classLoaderManager, this.compilationCache);
+        ctx.load(source);
+        ctx.compileCached();
     }
 
     /** @return the compilation cache shared by every script spawned from this environment. */
