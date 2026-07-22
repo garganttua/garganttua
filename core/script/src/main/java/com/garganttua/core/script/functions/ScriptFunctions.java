@@ -1,7 +1,6 @@
 package com.garganttua.core.script.functions;
 
 import java.io.File;
-import java.io.InputStream;
 
 import com.garganttua.core.classloader.IClassLoaderManager;
 import com.garganttua.core.observability.Logger;
@@ -12,6 +11,7 @@ import com.garganttua.core.script.IScript;
 import com.garganttua.core.script.ScriptException;
 import com.garganttua.core.script.context.ScriptContext;
 import com.garganttua.core.script.context.ScriptExecutionContext;
+import com.garganttua.core.script.context.ScriptSourceResolver;
 
 import jakarta.annotation.Nullable;
 
@@ -183,8 +183,6 @@ public class ScriptFunctions {
 
     // ========== Include/Call Functions ==========
 
-    private static final String CLASSPATH_PREFIX = "classpath:";
-
     /**
      * Includes a {@code .jar} plugin or compiles a {@code .gs} script for later invocation.
      * A {@code classpath:} prefix resolves the path as a classpath resource (scripts only).
@@ -206,8 +204,8 @@ public class ScriptFunctions {
             throw new ExpressionException("include: no script execution context available");
         }
 
-        boolean isClasspath = path.startsWith(CLASSPATH_PREFIX);
-        String resolvedPath = isClasspath ? path.substring(CLASSPATH_PREFIX.length()) : path;
+        boolean isClasspath = ScriptSourceResolver.isClasspath(path);
+        String resolvedPath = ScriptSourceResolver.stripClasspathPrefix(path);
 
         if (resolvedPath.endsWith(".jar")) {
             if (isClasspath) {
@@ -279,19 +277,12 @@ public class ScriptFunctions {
     }
 
     private static String includeScript(ScriptContext ctx, String path) {
+        File scriptFile = new File(path);
+        if (!scriptFile.exists()) {
+            throw new ExpressionException("include: script file not found: " + path);
+        }
         try {
-            File scriptFile = new File(path);
-            if (!scriptFile.exists()) {
-                throw new ExpressionException("include: script file not found: " + path);
-            }
-
-            ScriptContext subScript = ctx.createChildScript();
-            subScript.load(scriptFile);
-            subScript.compile();
-
-            String name = scriptFile.getName().replaceFirst("\\.gs$", "");
-            ctx.registerIncludedScript(name, subScript);
-
+            String name = registerCompiled(ctx, path, ScriptSourceResolver.readFile(scriptFile));
             log.debug("Script included as '{}' from {}", name, path);
             return name;
         } catch (ScriptException e) {
@@ -301,22 +292,12 @@ public class ScriptFunctions {
 
     private static String includeClasspathScript(ScriptContext ctx, String resource) {
         try {
-            InputStream is = resolveClasspathResource(resource);
-
-            try (is) {
-                ScriptContext subScript = ctx.createChildScript();
-                subScript.load(is);
-                subScript.compile();
-
-                String name = resource.contains("/")
-                        ? resource.substring(resource.lastIndexOf('/') + 1)
-                        : resource;
-                name = name.replaceFirst("\\.gs$", "");
-                ctx.registerIncludedScript(name, subScript);
-
-                log.debug("Script included as '{}' from classpath:{}", name, resource);
-                return name;
-            }
+            String source = ScriptSourceResolver.readClasspathResource(resource)
+                    .orElseThrow(() -> new ExpressionException(
+                            "include: classpath resource not found: " + resource));
+            String name = registerCompiled(ctx, resource, source);
+            log.debug("Script included as '{}' from classpath:{}", name, resource);
+            return name;
         } catch (ExpressionException e) {
             throw e;
         } catch (Exception e) {
@@ -324,17 +305,25 @@ public class ScriptFunctions {
         }
     }
 
-    // Deliberate fallback to this class's loader after the context loader misses
-    @SuppressWarnings("PMD.UseProperClassLoader")
-    private static InputStream resolveClasspathResource(String resource) {
-        InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(resource);
-        if (is == null) {
-            is = ScriptFunctions.class.getClassLoader().getResourceAsStream(resource);
-        }
-        if (is == null) {
-            throw new ExpressionException("include: classpath resource not found: " + resource);
-        }
-        return is;
+    /**
+     * Compiles {@code source} into a child script of {@code ctx} and registers it under the name
+     * derived from {@code path}.
+     *
+     * <p>Compilation goes through {@link ScriptContext#compileCached()}: identical sources reuse one
+     * immutable runtime across calls and across per-call frames, which is what keeps an
+     * {@code include()} on a per-request path from re-parsing the same script on every request. The
+     * registered instance is still a fresh per-frame context, so {@code execute_script()} /
+     * {@code script_variable()} read this call's own results.
+     */
+    private static String registerCompiled(ScriptContext ctx, String path, String source)
+            throws ScriptException {
+        ScriptContext subScript = ctx.createChildScript();
+        subScript.load(source);
+        subScript.compileCached();
+
+        String name = ScriptSourceResolver.scriptName(path);
+        ctx.registerIncludedScript(name, subScript);
+        return name;
     }
 
     // ========== Execute Script Functions ==========

@@ -4,14 +4,18 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import com.garganttua.core.bootstrap.banner.IBootstrapSummaryContributor;
 import com.garganttua.core.classloader.IClassLoaderManager;
 import com.garganttua.core.expression.context.IExpressionContext;
+import com.garganttua.core.observability.Logger;
 import com.garganttua.core.runtime.dsl.IRuntimesBuilder;
+import com.garganttua.core.script.context.ScriptCompilationCache;
 import com.garganttua.core.script.context.ScriptContext;
+import com.garganttua.core.script.context.ScriptSourceResolver;
 
 /**
  * Default {@link IScriptingEnvironment} implementation. Holds the references
@@ -31,6 +35,8 @@ import com.garganttua.core.script.context.ScriptContext;
  */
 public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSummaryContributor {
 
+    private static final Logger log = Logger.getLogger(ScriptingEnvironment.class);
+
     /** Max length of the joined script-name summary line before it is truncated with an ellipsis. */
     private static final int SUMMARY_NAMES_MAX = 50;
 
@@ -42,6 +48,8 @@ public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSu
      *  Long-lived runtimes baked at framework build time (auto-detected
      *  scripts + WorkflowBuilder.precompile(true) workflows). */
     private final AtomicInteger precompiledCount = new AtomicInteger();
+    /** Shared by every script this environment spawns, so one source is parsed and built once. */
+    private final ScriptCompilationCache compilationCache = new ScriptCompilationCache();
 
     /**
      * @param expressionContext      expression context captured for every spawned script
@@ -65,7 +73,33 @@ public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSu
 
     @Override
     public IScript newScript() {
-        return new ScriptContext(this.expressionContext, this.runtimesBuilderFactory, this.classLoaderManager);
+        return new ScriptContext(this.expressionContext, this.runtimesBuilderFactory,
+                this.classLoaderManager, this.compilationCache);
+    }
+
+    @Override
+    public boolean warmUpInclude(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        try {
+            Optional<String> source = ScriptSourceResolver.readSource(path);
+            if (source.isEmpty()) {
+                log.warn("Cannot warm up script '{}': not found — include() will fail at runtime", path);
+                return false;
+            }
+            ScriptContext ctx = new ScriptContext(this.expressionContext, this.runtimesBuilderFactory,
+                    this.classLoaderManager, this.compilationCache);
+            ctx.load(source.get());
+            ctx.compileCached();
+            log.debug("Script '{}' compiled ahead of time", path);
+            return true;
+        } catch (RuntimeException e) { // ScriptException is unchecked
+            // Never fail a build over a warm-up: the runtime include() reports the real error.
+            log.warn("Cannot warm up script '{}': {} — include() will compile it on first use",
+                    path, e.getMessage());
+            return false;
+        }
     }
 
     @Override
@@ -75,7 +109,7 @@ public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSu
             throw new ScriptException("Cannot precompile: source is null or blank");
         }
         ScriptContext ctx = new ScriptContext(this.expressionContext,
-                this.runtimesBuilderFactory, this.classLoaderManager);
+                this.runtimesBuilderFactory, this.classLoaderManager, this.compilationCache);
         ctx.load(source);
         if (presetVariables != null) {
             for (Map.Entry<String, Object> e : presetVariables.entrySet()) {
@@ -94,6 +128,13 @@ public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSu
      *          scripts". */
     public int getPrecompiledCount() {
         return this.precompiledCount.get();
+    }
+
+    /** @return the compilation cache shared by every script spawned from this environment. */
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP",
+            justification = "Compilation cache is a shared service exposed by reference by design, not copied.")
+    public ScriptCompilationCache getCompilationCache() {
+        return this.compilationCache;
     }
 
     /** @return immutable view of the auto-detected named script registry. */
@@ -115,6 +156,7 @@ public class ScriptingEnvironment implements IScriptingEnvironment, IBootstrapSu
         Map<String, String> items = new LinkedHashMap<>();
         items.put("Scripts registered", String.valueOf(this.registry.size()));
         items.put("Precompiled scripts", String.valueOf(this.precompiledCount.get()));
+        items.put("Compiled sources cached", String.valueOf(this.compilationCache.size()));
         items.put("JAR hot-loading", this.classLoaderManager != null ? "enabled" : "disabled");
         if (!this.registry.isEmpty()) {
             String names = String.join(", ", this.registry.keySet());

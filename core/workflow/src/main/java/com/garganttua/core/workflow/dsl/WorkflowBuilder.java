@@ -22,6 +22,7 @@ import com.garganttua.core.script.IScriptingEnvironment;
 import com.garganttua.core.workflow.IWorkflow;
 import com.garganttua.core.workflow.Workflow;
 import com.garganttua.core.workflow.WorkflowException;
+import com.garganttua.core.workflow.WorkflowScript;
 import com.garganttua.core.workflow.WorkflowStage;
 import com.garganttua.core.workflow.WorkflowTimingConfig;
 import com.garganttua.core.workflow.generator.ScriptGenerationOptions;
@@ -198,6 +199,7 @@ public class WorkflowBuilder extends AbstractDependentBuilder<IWorkflowBuilder, 
         validateBuildPreconditions();
 
         String generatedScript = generateScript();
+        warmUpIncludedScripts();
         com.garganttua.core.script.ICompiledScript compiled = precompileIfRequested(generatedScript);
 
         Workflow workflow = new Workflow(
@@ -248,6 +250,34 @@ public class WorkflowBuilder extends AbstractDependentBuilder<IWorkflowBuilder, 
             return generatedScript;
         } catch (WorkflowException e) {
             throw new DslException("Failed to generate workflow script", e);
+        }
+    }
+
+    /**
+     * Compiles every file-backed stage script ahead of time, into the scripting environment's shared
+     * compilation cache.
+     *
+     * <p>The generated script reaches those files through {@code include()}, which resolves and
+     * compiles on the calling thread — a request thread, in an api pipeline. The set of scripts is
+     * fully known here, at build time, so there is no reason to make the first request pay for the
+     * parse; under native, where nothing amortises it later, there is every reason not to.
+     *
+     * <p>Inlined scripts are skipped: their content is already part of the generated source.
+     * Warm-up failures are logged, never fatal — {@code include()} reports the real error at the
+     * point it actually matters.
+     */
+    private void warmUpIncludedScripts() {
+        int warmed = 0;
+        for (WorkflowStage stage : this.stages) {
+            for (WorkflowScript script : stage.scripts()) {
+                if (script.isFile() && !(this.inlineAll || script.isInline())
+                        && this.scriptingEnvironment.warmUpInclude(script.getPath())) {
+                    warmed++;
+                }
+            }
+        }
+        if (warmed > 0) {
+            log.debug("Workflow '{}': {} included script(s) compiled ahead of time", name, warmed);
         }
     }
 

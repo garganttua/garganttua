@@ -43,4 +43,24 @@ public interface IScriptingEnvironment {
      */
     ICompiledScript precompile(String source, java.util.Map<String, Object> presetVariables)
             throws ScriptException;
+
+    /**
+     * Resolves and compiles the script at {@code path} ahead of time, so the first
+     * {@code include("<path>")} at runtime is served from the environment's compilation cache
+     * instead of parsing the script on a request thread.
+     *
+     * <p>Callers that know their script set statically — a workflow knows every file-backed script
+     * of its stages at build time — should warm it up rather than let the first request pay for the
+     * parse. This matters most under GraalVM native, where no JIT ever amortises that parse.
+     *
+     * <p>Best-effort by contract: a path that cannot be resolved is <em>not</em> an error here. It
+     * fails at {@code include()} time exactly as it did before, so a warm-up can never turn a
+     * runtime problem into a build failure.
+     *
+     * @param path the {@code include()} path, filesystem or {@code classpath:} prefixed
+     * @return {@code true} when the script was compiled into the cache
+     */
+    default boolean warmUpInclude(String path) {
+        return false;
+    }
 }

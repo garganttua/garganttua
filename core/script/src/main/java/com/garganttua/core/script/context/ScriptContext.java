@@ -66,6 +66,8 @@ public class ScriptContext implements IScript, IObservable {
     private final Map<String, Object> initialVariables = Collections.synchronizedMap(new HashMap<>());
     private final Map<String, IScript> includedScripts = new ConcurrentHashMap<>();
     private final ObservableRegistry observers = new ObservableRegistry();
+    /** Shared with every child frame — see {@link #compileCached()}. */
+    private final ScriptCompilationCache compilationCache;
 
     /**
      * Creates a new ScriptContext with expression context, runtimes builder
@@ -92,9 +94,31 @@ public class ScriptContext implements IScript, IObservable {
     public ScriptContext(IExpressionContext expressionContext,
                          Supplier<IRuntimesBuilder> runtimesBuilderFactory,
                          IClassLoaderManager classLoaderManager) {
+        this(expressionContext, runtimesBuilderFactory, classLoaderManager, new ScriptCompilationCache());
+    }
+
+    /**
+     * Same as {@link #ScriptContext(IExpressionContext, Supplier, IClassLoaderManager)} but joins an
+     * existing {@link ScriptCompilationCache} instead of starting a private one.
+     *
+     * <p>Every context spawned from this one via {@link #createChildScript()} — which is how both
+     * {@code include()} and {@link CompiledScript}'s per-call frames create their contexts — inherits
+     * that cache, so a script source is parsed and built into a runtime once per lineage rather than
+     * once per call. Pass a cache owned by the {@code IScriptingEnvironment} to share compilations
+     * across every script of one application.
+     *
+     * @param compilationCache the cache to join; {@code null} starts a private one
+     */
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2",
+            justification = "Compilation cache is a shared service held by reference by design, not copied.")
+    public ScriptContext(IExpressionContext expressionContext,
+                         Supplier<IRuntimesBuilder> runtimesBuilderFactory,
+                         IClassLoaderManager classLoaderManager,
+                         ScriptCompilationCache compilationCache) {
         this.expressionContext = expressionContext;
         this.runtimesBuilderFactory = runtimesBuilderFactory;
         this.classLoaderManager = classLoaderManager;
+        this.compilationCache = compilationCache != null ? compilationCache : new ScriptCompilationCache();
         this.expressionContext.enableDynamicFunctions();
     }
 
@@ -164,6 +188,36 @@ public class ScriptContext implements IScript, IObservable {
                 throw e;
             }
         }
+    }
+
+    /**
+     * Compiles like {@link #compile()}, but reuses the runtime already built for an identical source
+     * by any context of this lineage — and publishes its own result for the next caller.
+     *
+     * <p>This is what makes {@code include()} affordable on a per-request path: the parse and runtime
+     * construction happen once per distinct script source instead of once per call. The cached
+     * artifact is the immutable {@link IRuntime} only; this context keeps its own per-run state.
+     *
+     * <p>Falls back to a plain {@link #compile()} when initial variables are set, because those are
+     * baked into the runtime at build time and would make the artifact caller-specific.
+     *
+     * @throws ScriptException if no source is loaded, or compilation fails
+     */
+    public void compileCached() throws ScriptException {
+        if (this.scriptSource == null) {
+            throw new ScriptException("No script loaded. Call load() before compileCached()");
+        }
+        if (!this.initialVariables.isEmpty()) {
+            this.compile();
+            return;
+        }
+        IRuntime<Object[], Object> cached = this.compilationCache.get(this.scriptSource);
+        if (cached != null) {
+            this.runtime = cached;
+            return;
+        }
+        this.compile();
+        this.compilationCache.put(this.scriptSource, this.runtime);
     }
 
     private void doCompile() throws ScriptException {
@@ -358,12 +412,27 @@ public class ScriptContext implements IScript, IObservable {
 
     /**
      * Creates an independent child script sharing this context's expression
-     * context, runtimes-builder factory and class-loader manager.
+     * context, runtimes-builder factory, class-loader manager and
+     * {@link ScriptCompilationCache}.
+     *
+     * <p>The child is independent in <em>state</em> (its own variables, included scripts and last-run
+     * results) but shares compiled artefacts, so a per-call frame does not re-parse what an earlier
+     * frame already compiled.
      *
      * @return a fresh {@link ScriptContext}
      */
     public ScriptContext createChildScript() {
-        return new ScriptContext(this.expressionContext, this.runtimesBuilderFactory, this.classLoaderManager);
+        return new ScriptContext(this.expressionContext, this.runtimesBuilderFactory,
+                this.classLoaderManager, this.compilationCache);
+    }
+
+    /**
+     * {@return the compilation cache shared by this context's lineage}
+     */
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP",
+            justification = "Compilation cache is a shared service exposed by reference by design, not copied.")
+    public ScriptCompilationCache getCompilationCache() {
+        return this.compilationCache;
     }
 
     /**

@@ -306,24 +306,35 @@ public class ScriptGenerator {
         String refVarName = "_" + stageName + "_" + scriptName + "_ref";
         String codeVarName = "_" + stageName + "_" + scriptName + "_code";
 
-        // Include: loads, compiles, returns script name (unconditional — lightweight)
-        script.append(refVarName).append(ASSIGN);
-        script.append("include(\"").append(escapeString(ws.getPath())).append(CLOSE_PAREN_NL);
-
         if (isConditional) {
+            // include() sits INSIDE the guard: it resolves and compiles the script, which is only
+            // worth paying for on the branch actually taken. Emitting it unconditionally made every
+            // request pay for every branch of the workflow — on a CRUD domain, a read paid for
+            // create, update and delete too.
             appendConditionalInclude(script, refVarName, codeVarName, condVarName, ws);
         } else {
+            appendInclude(script, refVarName, ws, "");
             appendUnconditionalInclude(script, refVarName, codeVarName, ws);
         }
     }
 
+    /** Emits {@code <ref> <- include("<path>")} at the given indentation. */
+    private void appendInclude(StringBuilder script, String refVarName, WorkflowScript ws, String indent) {
+        script.append(indent).append(refVarName).append(ASSIGN);
+        script.append("include(\"").append(escapeString(ws.getPath())).append(CLOSE_PAREN_NL);
+    }
+
     /**
-     * Conditional execution: group execute_script + output mappings in a single if() lazy
-     * block. When the condition is false nothing inside executes — no side effects on outputs.
+     * Conditional execution: group include + execute_script + output mappings in a single if() lazy
+     * block. When the condition is false nothing inside executes — no side effects on outputs, and
+     * no resolution or compilation of a script this request will not run.
      */
     private void appendConditionalInclude(StringBuilder script, String refVarName, String codeVarName,
             String condVarName, WorkflowScript ws) {
         script.append("if(@").append(condVarName).append(", (\n");
+
+        // Resolve + compile the script, inside the guard
+        appendInclude(script, refVarName, ws, INDENT);
 
         // Execute the script
         script.append(INDENT).append(codeVarName).append(" <- execute_script(@").append(refVarName);

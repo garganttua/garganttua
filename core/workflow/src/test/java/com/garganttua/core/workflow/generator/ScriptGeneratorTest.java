@@ -272,11 +272,15 @@ class ScriptGeneratorTest {
         assertTrue(generated.contains("_run_deploy_cond <- equals(@env, \"prod\")"),
                 "Should emit condition variable: " + generated);
 
-        // Include should be unconditional
-        assertTrue(generated.contains("_run_deploy_ref <- include("),
-                "Include should be unconditional: " + generated);
+        // include() must sit INSIDE the guard: resolving and compiling a script is only worth
+        // paying for on the branch actually taken (a read must not compile the create/update
+        // branches). Indentation and ordering both prove containment.
+        assertTrue(generated.contains("    _run_deploy_ref <- include("),
+                "Include should be inside the if() block: " + generated);
+        assertTrue(generated.indexOf("if(@_run_deploy_cond, (") < generated.indexOf("_run_deploy_ref <- include("),
+                "Include should come after the guard opens: " + generated);
 
-        // execute_script + outputs should be grouped in a single if() block
+        // include + execute_script + outputs should be grouped in a single if() block
         assertTrue(generated.contains("if(@_run_deploy_cond, ("),
                 "Should have if() block grouping execution and outputs: " + generated);
         assertTrue(generated.contains("    _run_deploy_code <- execute_script(@_run_deploy_ref, @env)"),
