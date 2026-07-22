@@ -14,12 +14,12 @@ Compile-time annotation processor for generating AOT class descriptors. This pro
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-aot-annotation-processor</artifactId>
-    <version>3.0.0-ALPHA10</version>
+    <version>3.0.0-ALPHA11</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA10
+3.0.0-ALPHA11
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`

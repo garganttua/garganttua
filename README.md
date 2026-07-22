@@ -1,9 +1,9 @@
 # Garganttua
 
 <!-- AUTO-GENERATED-COVERAGE-START -->
-![coverage](https://img.shields.io/badge/coverage-66.4%25%20instructions-yellowgreen)
+![coverage](https://img.shields.io/badge/coverage-0.0%25%20instructions-red)
 
-Coverage: **66.4%** instructions · **60.3%** branches · **67.4%** lines across 38 modules (JaCoCo; full per-module report in CI artifacts).
+Coverage: **0.0%** instructions · **0.0%** branches · **0.0%** lines across 0 modules (JaCoCo; full per-module report in CI artifacts).
 <!-- AUTO-GENERATED-COVERAGE-STOP -->
 
 Unified reactor aggregating the three Garganttua framework libraries that form a tight,
@@ -94,6 +94,7 @@ Requires JDK 25.
 | \|    \|    \|- [**example-aot-only**](./core/examples/example-aot-only/README.md) | Minimal "AOT-only" consumer proving Garganttua AOT reflection (compile-time rich IClass descriptors) runs on just the AOT starter + reflection facade, with no injection, runtime, expression, bootstrap or workflow. |
 | \|    \|- [**execution**](./core/execution/README.md) | Task execution, orchestration, and fallback handling engine. |
 | \|    \|- [**expression**](./core/expression/README.md) | Advanced expression language for object supplying. |
+| \|    \|    \|- [**bin**](./core/expression/bin/README.md) | Advanced expression language for object supplying. |
 | \|    \|- [**injection**](./core/injection/README.md) | Dependency injection container with modular context support. |
 | \|    \|- [**lifecycle**](./core/lifecycle/README.md) | Abstract lifecycle management with thread-safe state transitions. |
 | \|    \|- [**mapper**](./core/mapper/README.md) | Declarative object-to-object mapping engine. |
@@ -104,6 +105,7 @@ Requires JDK 25.
 | \|    \|- [**runtime**](./core/runtime/README.md) | Runtime context management and lifecycle orchestration. |
 | \|    \|- [**runtime-reflection**](./core/runtime-reflection/README.md) | Runtime reflection utilities for Garganttua Core. |
 | \|    \|- [**script**](./core/script/README.md) | Scripting language engine with variables, control flow, and expression evaluation. |
+| \|    \|    \|- [**bin**](./core/script/bin/README.md) | Scripting language engine with variables, control flow, and expression evaluation. |
 | \|    \|- [**script-maven-plugin**](./core/script-maven-plugin/README.md) | Maven plugin to build JARs that can be included in Garganttua scripts (.gs files). Automatically adds Garganttua-Packages manifest attribute. |
 | \|    \|- [**starters**](./core/starters/README.md) | Aggregator for the four consumption starters (aot / runtime / hybrid / native) that bundle the reflection providers + scanners a downstream application needs to pick a reflection mode by changing a single Maven coordinate. |
 | \|    \|    \|- [**starter-aot**](./core/starters/starter-aot/README.md) | Pure-AOT starter: pulls the AOT reflection provider + annotation scanner. Cold-start optimised, no runtime classpath scan, prep for native-image. |
@@ -149,12 +151,12 @@ graph TD
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua</artifactId>
-    <version>3.0.0-ALPHA10</version>
+    <version>3.0.0-ALPHA11</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA10
+3.0.0-ALPHA11
 
 ### Dependencies
 
