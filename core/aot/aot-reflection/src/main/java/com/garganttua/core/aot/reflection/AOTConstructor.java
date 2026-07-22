@@ -327,7 +327,12 @@ public class AOTConstructor<T> implements IConstructor<T> {
                     for (int i = 0; i < parameterTypeNames.length; i++) {
                         paramClasses[i] = AOTMethod.resolveRawClass(parameterTypeNames[i]);
                     }
-                    resolvedConstructor = clazz.getDeclaredConstructor(paramClasses);
+                    Constructor<?> c = clazz.getDeclaredConstructor(paramClasses);
+                    // The handle is memoized and shared process-wide: open it once, here, and only
+                    // publish it once it is ready. Publishing first let a concurrent thread observe
+                    // a Constructor that was not yet accessible.
+                    c.trySetAccessible();
+                    resolvedConstructor = c;
                 } catch (ClassNotFoundException | NoSuchMethodException e) {
                     throw new IllegalStateException(
                             "Cannot resolve constructor: " + declaringClassName, e);

@@ -412,7 +412,12 @@ public class AOTMethod implements IMethod {
                     for (int i = 0; i < parameterTypeNames.length; i++) {
                         paramClasses[i] = resolveRawClass(parameterTypeNames[i]);
                     }
-                    resolvedMethod = clazz.getDeclaredMethod(name, paramClasses);
+                    Method m = clazz.getDeclaredMethod(name, paramClasses);
+                    // The handle is memoized and shared process-wide: open it once, here, and only
+                    // publish it once it is ready. Publishing first let a concurrent thread observe
+                    // a Method that was not yet accessible.
+                    m.trySetAccessible();
+                    resolvedMethod = m;
                 } catch (ClassNotFoundException | NoSuchMethodException e) {
                     throw new IllegalStateException(
                             "Cannot resolve method: " + declaringClassName + "." + name, e);

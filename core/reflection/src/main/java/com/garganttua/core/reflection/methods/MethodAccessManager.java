@@ -6,10 +6,14 @@ import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IMethod;
 
 /**
- * Scoped accessibility toggle for an {@link IMethod}.
+ * Scoped accessibility toggle for an {@link IMethod}, for use in a try-with-resources block.
  *
- * <p>On construction the method is made accessible; on {@link #close()} its original
- * accessibility is restored, making it suitable for use in a try-with-resources block.
+ * <p><b>{@link #close()} deliberately does not restore the original accessibility.</b>
+ * {@link IMethod} handles are memoized and shared process-wide ({@code RuntimeMethod} caches its
+ * mirrors in a static map; the AOT fallback caches the {@code AOTMethod}s it synthesizes, each
+ * memoizing one {@link java.lang.reflect.Method}), so restoring the flag here would tear it down
+ * under every other consumer of the same handle. See {@code FieldAccessManager} for the full
+ * rationale.</p>
  */
 public class MethodAccessManager implements AutoCloseable {
     private static final Logger log = Logger.getLogger(MethodAccessManager.class);
@@ -41,10 +45,13 @@ public class MethodAccessManager implements AutoCloseable {
 		log.debug("Set method {} accessible, original accessibility={}, force={}", method.getName(), originalAccessibility, force);
 	}
 
-	/** Restores the method's original accessibility. */
+	/**
+	 * No-op: accessibility is intentionally left open because the underlying handle is shared
+	 * process-wide. See the class javadoc.
+	 */
 	@Override
 	public void close() {
-		log.trace("Closing MethodAccessManager, restoring accessibility={} for method={}", originalAccessibility, method.getName());
-		this.method.setAccessible(originalAccessibility);
+		log.trace("Closing MethodAccessManager for method={} (accessibility left open: shared handle, original was {})",
+				method.getName(), originalAccessibility);
 	}
 }

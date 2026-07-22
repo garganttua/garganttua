@@ -7,7 +7,14 @@ import com.garganttua.core.reflection.IConstructor;
 
 /**
  * {@link AutoCloseable} guard that makes an {@link IConstructor} accessible for the duration of a
- * try-with-resources block and restores its original accessibility on {@link #close()}.
+ * try-with-resources block.
+ *
+ * <p><b>{@link #close()} deliberately does not restore the original accessibility.</b>
+ * {@link IConstructor} handles are memoized and shared process-wide ({@code RuntimeConstructor}
+ * caches its mirrors in a static map; the AOT fallback caches the {@code AOTConstructor}s it
+ * synthesizes — a path any single-constructor class takes via the shallow-descriptor threshold),
+ * so restoring the flag here would tear it down under every other consumer of the same handle.
+ * See {@code FieldAccessManager} for the full rationale.</p>
  */
 public class ConstructorAccessManager implements AutoCloseable {
     private static final Logger log = Logger.getLogger(ConstructorAccessManager.class);
@@ -39,10 +46,13 @@ public class ConstructorAccessManager implements AutoCloseable {
 		log.debug("Set constructor {} accessible, original accessibility={}, force={}", constructor.getName(), originalAccessibility, force);
 	}
 
-	/** Restores the constructor's original accessibility. */
+	/**
+	 * No-op: accessibility is intentionally left open because the underlying handle is shared
+	 * process-wide. See the class javadoc.
+	 */
 	@Override
 	public void close() {
-		log.trace("Closing ConstructorAccessManager, restoring accessibility={} for constructor={}", originalAccessibility, constructor.getName());
-		this.constructor.setAccessible(originalAccessibility);
+		log.trace("Closing ConstructorAccessManager for constructor={} (accessibility left open: shared handle, original was {})",
+				constructor.getName(), originalAccessibility);
 	}
 }

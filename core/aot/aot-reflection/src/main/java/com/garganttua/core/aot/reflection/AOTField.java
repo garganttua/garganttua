@@ -293,7 +293,12 @@ public class AOTField implements IField {
             if (resolvedField == null) {
                 try {
                     Class<?> clazz = Class.forName(declaringClassName);
-                    resolvedField = clazz.getDeclaredField(name);
+                    Field f = clazz.getDeclaredField(name);
+                    // The handle is memoized and shared process-wide: open it once, here, and only
+                    // publish it once it is ready. Publishing first let a concurrent thread observe
+                    // a Field that was not yet accessible.
+                    f.trySetAccessible();
+                    resolvedField = f;
                 } catch (ClassNotFoundException | NoSuchFieldException e) {
                     throw new IllegalStateException(
                             "Cannot resolve field: " + declaringClassName + "." + name, e);
