@@ -12,6 +12,7 @@ import com.garganttua.core.execution.IExecutorChain;
 import com.garganttua.core.injection.IInjectionContext;
 import com.garganttua.core.observability.IObservable;
 import com.garganttua.core.observability.IObserver;
+import com.garganttua.core.observability.HotPathProbe;
 import com.garganttua.core.observability.ObservabilityEmitter;
 import com.garganttua.core.observability.ObservableEvent;
 import com.garganttua.core.observability.ObservableRegistry;
@@ -135,30 +136,38 @@ public class Runtime<InputType, OutputType>
 
 	private IRuntimeContext<InputType, OutputType> openContext(InputType input, UUID uuid) {
 		log.debug("Creating runtime context");
+		long probe = HotPathProbe.start();
 		IRuntimeContext<InputType, OutputType> runtimeContext = this.injectionContext
 				.newChildContext(IClass.getClass(IRuntimeContext.class), input, this.outputType,
 						this.presetVariables, uuid);
 		runtimeContext.onInit().onStart();
+		HotPathProbe.end("runtime.openContext", probe);
 		return runtimeContext;
 	}
 
 	private void runChain(IRuntimeContext<InputType, OutputType> runtimeContext) {
 		log.debug("Building executor chain");
+		long buildProbe = HotPathProbe.start();
 		IExecutorChain<IRuntimeContext<InputType, OutputType>> chain = new ExecutorChain<>(false);
 		this.steps.values().forEach(step -> {
 			log.trace("Registering step");
 			step.defineExecutionStep(chain);
 		});
+		HotPathProbe.end("runtime.chainBuild", buildProbe);
 		log.debug("Executing runtime chain");
+		long execProbe = HotPathProbe.start();
 		chain.execute(runtimeContext);
+		HotPathProbe.end("runtime.chainExecute", execProbe);
 	}
 
 	private IRuntimeResult<InputType, OutputType> closeContext(IRuntimeContext<InputType, OutputType> runtimeContext) {
 		log.debug("Stopping runtime context");
+		long probe = HotPathProbe.start();
 		runtimeContext.onStop();
 		IRuntimeResult<InputType, OutputType> result = runtimeContext.getResult();
 		log.trace("Runtime result collected");
 		runtimeContext.onFlush();
+		HotPathProbe.end("runtime.closeContext", probe);
 		return result;
 	}
 }

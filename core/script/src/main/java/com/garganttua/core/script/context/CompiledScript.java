@@ -1,5 +1,6 @@
 package com.garganttua.core.script.context;
 
+import com.garganttua.core.observability.HotPathProbe;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -68,9 +69,13 @@ final class CompiledScript implements ICompiledScript {
                 // Fresh per-call frame: its own includedScripts registry + last-* state,
                 // so a re-entrant execute() of this same compiled instance cannot clobber
                 // the enclosing call's sub-scripts. The immutable runtime is shared.
+                long frameProbe = HotPathProbe.start();
                 ScriptContext frame = this.captured.createChildScript();
+                HotPathProbe.end("script.createChildFrame", frameProbe);
                 IScriptExecutionResult result = ScriptExecutionContext.callIn(frame, () -> {
+                    long runtimeProbe = HotPathProbe.start();
                     Optional<IRuntimeResult<Object[], Object>> raw = this.runtime.execute(args);
+                    HotPathProbe.end("script.runtimeExecute", runtimeProbe);
                     return wrap(raw);
                 });
                 scope.fireEnd("compiledscript:execute", result.code());

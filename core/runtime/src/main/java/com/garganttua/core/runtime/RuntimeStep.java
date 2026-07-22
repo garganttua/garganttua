@@ -1,5 +1,6 @@
 package com.garganttua.core.runtime;
 
+import com.garganttua.core.observability.HotPathProbe;
 import java.util.Optional;
 
 import com.garganttua.core.SuppressFBWarnings;
@@ -81,15 +82,20 @@ public class RuntimeStep<ExecutionReturn, InputType, OutputType>
 
     private IExecutor<IRuntimeContext<InputType, OutputType>> buildObservedExecutor(String source) {
         return (ctx, next) -> {
+            long stepProbe = HotPathProbe.start();
             try (ObservabilityEmitter.Scope scope = ObservabilityEmitter.joinCurrent()) {
                 scope.fireStart(source);
                 try {
+                    long binderProbe = HotPathProbe.start();
                     operationBinder.execute(ctx, next);
+                    HotPathProbe.end("step.binder:" + stepName, binderProbe);
                     scope.fireEnd(source);
                 } catch (RuntimeException | com.garganttua.core.execution.ExecutorException e) {
                     scope.fireError(source, e);
                     throw e;
                 }
+            } finally {
+                HotPathProbe.end("step.total:" + stepName, stepProbe);
             }
         };
     }

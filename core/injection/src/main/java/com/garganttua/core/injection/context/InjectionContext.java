@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.garganttua.core.observability.HotPathProbe;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.bootstrap.banner.IBootstrapSummaryContributor;
 import com.garganttua.core.dsl.DslException;
@@ -252,7 +253,9 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
     public <ChildContext extends IInjectionContext> ChildContext newChildContext(IClass<ChildContext> contextClass,
             Object... args) throws DiException {
         log.trace("Creating new child context of type: {}", contextClass.getName());
+        long probe = HotPathProbe.start();
         wrapLifecycle(this::ensureInitializedAndStarted, IClass.getClass(DiException.class));
+        try {
         synchronized (this.mutex) {
             ChildContext ctx = childContextFactories.stream()
                     .filter(factory -> matchesRequestedContext(factory, contextClass))
@@ -265,6 +268,9 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
                     });
             log.debug("Child context created: {}", ctx);
             return ctx;
+        }
+        } finally {
+            HotPathProbe.end("injection.newChildContext", probe);
         }
     }
 
@@ -565,7 +571,9 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
     @Override
     public IInjectionContext copy() throws CopyException {
         log.trace("Copying InjectionContext");
+        long probe = HotPathProbe.start();
         wrapLifecycle(this::ensureInitializedAndStarted, IClass.getClass(CopyException.class));
+        try {
         synchronized (this.copyMutex) {
             Map<String, IBeanProvider> beanProvidersCopy = this.beanProviders.entrySet().stream()
                     .filter(e -> e.getValue() != null)
@@ -585,6 +593,9 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
 
             log.debug("InjectionContext copied successfully");
             return copy;
+        }
+        } finally {
+            HotPathProbe.end("injection.copy", probe);
         }
     }
 

@@ -1,4 +1,5 @@
 package com.garganttua.api.core.expression;
+import com.garganttua.core.observability.HotPathProbe;
 import com.garganttua.api.core.SuppressFBWarnings;
 import com.garganttua.core.reflection.annotations.Reflected;
 
@@ -58,6 +59,7 @@ public class EntityLifecycleExpressions {
 		BeanDefinition<?> entityBeanDefinition = dc.getEntityBeanDefinition();
 		if (entityBeanDefinition == null) return entityList;
 
+		long probe = HotPathProbe.start();
 		BeanDefinition<Object> beanDef = (BeanDefinition<Object>) entityBeanDefinition;
 		BeanDefinition<Object> injectionOnlyDef = new BeanDefinition<>(
 				beanDef.reference(), beanDef.constructorBinder(),
@@ -66,6 +68,7 @@ public class EntityLifecycleExpressions {
 		for (Object entity : entityList) {
 			new BeanFactory<>(injectionOnlyDef, entity).supply();
 		}
+		HotPathProbe.end("entity.doInjection", probe);
 		return entityList;
 	}
 
@@ -75,6 +78,7 @@ public class EntityLifecycleExpressions {
 		List<Object> entityList = (List<Object>) entities;
 		if (entityList.isEmpty()) return entityList;
 
+		long probe = HotPathProbe.start();
 		try {
 			IOperationRequest opRequest = (IOperationRequest) request;
 			IDomain<?> dc = opRequest.arg(IOperationRequest.DOMAIN_CONTEXT).orElse(null);
@@ -96,6 +100,8 @@ public class EntityLifecycleExpressions {
 			throw e;
 		} catch (Exception e) {
 			throw new ApiException("Failed to execute afterGet lifecycle hooks", e);
+		} finally {
+			HotPathProbe.end("entity.runAfterGet", probe);
 		}
 		return entityList;
 	}

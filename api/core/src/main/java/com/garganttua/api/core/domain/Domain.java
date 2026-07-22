@@ -1,5 +1,6 @@
 package com.garganttua.api.core.domain;
 
+import com.garganttua.core.observability.HotPathProbe;
 import com.garganttua.api.core.SuppressFBWarnings;
 import java.util.Collections;
 import java.util.List;
@@ -315,8 +316,10 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
             }
             bindScriptArgs(request);
 
+            long probe = HotPathProbe.start();
             WorkflowResult result = this.workflow.execute(
                     WorkflowInput.of(request, buildWorkflowParams()), effectiveOptions(request, options));
+            HotPathProbe.end("domain.workflowExecute", probe);
             return mapWorkflowResult(result, request);
         } catch (Exception e) {
             log.error("Error executing workflow for domain {}: {}",
