@@ -32,12 +32,12 @@ Describe *what* your domain is, not *how* to serve it. Roles and characteristics
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api</artifactId>
-    <version>3.0.0-ALPHA11</version>
+    <version>3.0.0-ALPHA12</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA11
+3.0.0-ALPHA12
 
 ### Dependencies
 

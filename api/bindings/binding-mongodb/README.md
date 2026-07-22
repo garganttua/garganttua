@@ -20,12 +20,12 @@ The driver version is pinned once in the root POM (`mongodb-driver.version = 5.1
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-binding-mongodb</artifactId>
-    <version>3.0.0-ALPHA11</version>
+    <version>3.0.0-ALPHA12</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA11
+3.0.0-ALPHA12
 
 ### Dependencies
  - `org.mongodb:mongodb-driver-sync:${mongodb-driver.version}`
