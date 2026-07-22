@@ -516,5 +516,16 @@ String result5 = Supplier.contextualSupply(voidSupplier);
 9. **Reuse enums and interfaces** to maintain modular interoperability across modules
 10. **When creating new DSLs**, extend the commons DSL package to maintain standard patterns
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Parameters this module declares or reads. Pass them with `-D` — on the JVM running the application for runtime scope, on the Maven command line for build scope.
+
+| Parameter | Scope | Values | Default | Effect |
+|---|---|---|---|---|
+| `-Dgarganttua.log.level=<level>` | Runtime (JVM) | `TRACE`, `DEBUG`, `INFO`, `WARN` (`WARNING`), `ERROR`, `OFF` (`NONE`) | `INFO` | Log threshold of the observable `Logger`. Events below it are never constructed. Resolved once, at `Logger` class initialisation — setting it later has no effect. An unrecognised value silently falls back to `INFO`. |
+| `-Dgarganttua.perf.probe=true` | Runtime (JVM) | `true` (exactly; anything else, including an empty value, is false) | `false` | Enables `HotPathProbe`, the nanosecond attribution aid for hot paths (`HotPathProbe.report()` / `snapshot()`). Resolved once into a `static final`, so when off the JIT folds every probe call to dead code. A measurement aid, not an observability source — never leave it on in production. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 This module is distributed under the MIT License.

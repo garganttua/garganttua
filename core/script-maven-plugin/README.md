@@ -268,5 +268,20 @@ greet("World")  # Output: Hello, World!
 
 ## Tips and best practices
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Parameters this module declares or reads. Pass them with `-D` — on the JVM running the application for runtime scope, on the Maven command line for build scope.
+
+| Parameter | Scope | Values | Default | Effect |
+|---|---|---|---|---|
+| `-Dgarganttua.packages=<pkg>[,<pkg>...]` | Runtime (JVM) | comma-separated package names | the package of the class passed to `GarganttuaApplication.run(...)` | Packages scanned for bootstrap auto-detection. Also set as a project property by `garganttua-script-maven-plugin` so a packaged script JAR carries its scan scope. |
+| `-DjarName=<name>.jar` | Build (Maven plugin) | a file name | `${project.artifactId}-${project.version}-script.jar` | `garganttua-script-maven-plugin`: name of the executable script JAR produced. |
+| `-Dpackages=<pkg>[,<pkg>...]` | Build (Maven plugin) | package names | none (auto-detection only) | Packages always written to the manifest / native config, on top of whatever auto-detection finds. |
+| `-DautoDetect=<bool>` | Build (Maven plugin) | `true` \| `false` | `true` | `garganttua-script-maven-plugin`: scan for packages carrying Garganttua annotations instead of relying solely on `packages`. |
+| `-DscanPackages=<pkg>[,<pkg>...]` | Build (Maven plugin) | package names | every package of the output directory | `garganttua-script-maven-plugin`: roots of the auto-detection scan. |
+| `-DincludeResources=<bool>` | Build (Maven plugin) | `true` \| `false` | `true` | `garganttua-script-maven-plugin`: bundle the module's resources into the script JAR. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 This module is distributed under the MIT License.

@@ -99,6 +99,16 @@ Modules that already pull in `garganttua-api-core` or `garganttua-api-security` 
 - **Audit the exclusions** if you ever introduce another library that also depends on Jackson — check whether it re-declares Jackson transitive deps that would bypass the exclusion block.
 - **Reuse `ObjectMapper` instances** — `ObjectMapper` is thread-safe after configuration and expensive to construct. Declare it as a static final field or inject a shared instance rather than constructing one per call.
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Parameters this module declares or reads. Pass them with `-D` — on the JVM running the application for runtime scope, on the Maven command line for build scope.
+
+| Parameter | Scope | Values | Default | Effect |
+|---|---|---|---|---|
+| `-Dgarganttua.core.version=<version>` | Build (Maven / APT) | a `garganttua-core` version string | pinned to the reactor version | Version of the `garganttua-core` artifacts the api and events modules resolve. In the monorepo it must track the reactor version — a stale value silently skews the build onto published artifacts instead of the reactor ones. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 
 This module is distributed under the MIT License.

@@ -390,5 +390,15 @@ try {
 2. **Use RSA for key exchange**, then use AES for data encryption (hybrid cryptography)
 3. **Consider key size vs performance**: Larger keys are more secure but slower
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Parameters this module declares or reads. Pass them with `-D` — on the JVM running the application for runtime scope, on the Maven command line for build scope.
+
+| Parameter | Scope | Values | Default | Effect |
+|---|---|---|---|---|
+| `-Dgarganttua.direct.binders=true` | Build (Maven / APT) | `true` \| `false` | `false` (set in `core/pom.xml`; most function modules override it to `true`) | Maven property forwarded to javac as `-Agarganttua.direct.binders` and consumed by `garganttua-aot-annotation-processor`. When on, the module ships compile-time `AOTClass_*` descriptors for its `@Reflected` classes — required for a native build to see them. Modules inside the `aot-commons`/`aot-reflection` dependency cycle must stay `false`. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 This module is distributed under the MIT License.

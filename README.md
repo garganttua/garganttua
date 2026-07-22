@@ -160,6 +160,41 @@ graph TD
 
 <!-- AUTO-GENERATED-END -->
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Every `-D` switch the platform understands. Runtime parameters go on the JVM running the application (`java -D... -jar app.jar`); build parameters go on the Maven command line, where they override the value declared in the poms.
+
+### Runtime — JVM system properties
+
+| Parameter | Values | Default | Effect |
+|---|---|---|---|
+| `-Dgarganttua.log.level=<level>` | `TRACE`, `DEBUG`, `INFO`, `WARN` (`WARNING`), `ERROR`, `OFF` (`NONE`) | `INFO` | Log threshold of the observable `Logger`. Events below it are never constructed. Resolved once, at `Logger` class initialisation — setting it later has no effect. An unrecognised value silently falls back to `INFO`. |
+| `-Dgarganttua.perf.probe=true` | `true` (exactly; anything else, including an empty value, is false) | `false` | Enables `HotPathProbe`, the nanosecond attribution aid for hot paths (`HotPathProbe.report()` / `snapshot()`). Resolved once into a `static final`, so when off the JIT folds every probe call to dead code. A measurement aid, not an observability source — never leave it on in production. |
+| `-Dgarganttua.packages=<pkg>[,<pkg>...]` | comma-separated package names | the package of the class passed to `GarganttuaApplication.run(...)` | Packages scanned for bootstrap auto-detection. Also set as a project property by `garganttua-script-maven-plugin` so a packaged script JAR carries its scan scope. |
+
+### Build — Maven properties and annotation-processor options
+
+| Parameter | Values | Default | Effect |
+|---|---|---|---|
+| `-Dgarganttua.direct.binders=true` | `true` \| `false` | `false` (set in `core/pom.xml`; most function modules override it to `true`) | Maven property forwarded to javac as `-Agarganttua.direct.binders` and consumed by `garganttua-aot-annotation-processor`. When on, the module ships compile-time `AOTClass_*` descriptors for its `@Reflected` classes — required for a native build to see them. Modules inside the `aot-commons`/`aot-reflection` dependency cycle must stay `false`. |
+| `-Dgarganttua.core.version=<version>` | a `garganttua-core` version string | pinned to the reactor version | Version of the `garganttua-core` artifacts the api and events modules resolve. In the monorepo it must track the reactor version — a stale value silently skews the build onto published artifacts instead of the reactor ones. |
+
+### Build — Maven plugin parameters
+
+| Parameter | Values | Default | Effect |
+|---|---|---|---|
+| `-DjarName=<name>.jar` | a file name | `${project.artifactId}-${project.version}-script.jar` | `garganttua-script-maven-plugin`: name of the executable script JAR produced. |
+| `-Dpackages=<pkg>[,<pkg>...]` | package names | none (auto-detection only) | Packages always written to the manifest / native config, on top of whatever auto-detection finds. |
+| `-DautoDetect=<bool>` | `true` \| `false` | `true` | `garganttua-script-maven-plugin`: scan for packages carrying Garganttua annotations instead of relying solely on `packages`. |
+| `-DscanPackages=<pkg>[,<pkg>...]` | package names | every package of the output directory | `garganttua-script-maven-plugin`: roots of the auto-detection scan. |
+| `-DincludeResources=<bool>` | `true` \| `false` | `true` | `garganttua-script-maven-plugin`: bundle the module's resources into the script JAR. |
+| `-Dresources=<pattern>[,...]` | resource patterns | none | `garganttua-native-image-maven-plugin`: extra resource patterns written to the generated `resource-config.json`. |
+| `-Dreflections=<entries>` | `ReflectConfigEntry` items | none | `garganttua-native-image-maven-plugin`: extra entries written to the generated `reflect-config.json`. |
+| `-Ddependencies=<coords>` | artifact coordinates | none | `garganttua-native-image-maven-plugin`: dependencies whose native configuration is merged into this module's. |
+| `-DconfigOutputNamespace=<path>` | a sub-path, or empty for the flat legacy layout | `<groupId>/<artifactId>` | `garganttua-native-image-maven-plugin`: sub-path under `META-INF/native-image/` the configs are written to. The default is unique per artifact, which is what keeps uber-jars from colliding. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 
 This project is distributed under the MIT License. See [LICENSE](LICENSE).

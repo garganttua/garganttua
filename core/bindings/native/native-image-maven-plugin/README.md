@@ -872,5 +872,19 @@ ls -la src/main/resources/config/missing.yml
 </project>
 ```
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Parameters this module declares or reads. Pass them with `-D` — on the JVM running the application for runtime scope, on the Maven command line for build scope.
+
+| Parameter | Scope | Values | Default | Effect |
+|---|---|---|---|---|
+| `-Dpackages=<pkg>[,<pkg>...]` | Build (Maven plugin) | package names | none (auto-detection only) | Packages always written to the manifest / native config, on top of whatever auto-detection finds. |
+| `-Dresources=<pattern>[,...]` | Build (Maven plugin) | resource patterns | none | `garganttua-native-image-maven-plugin`: extra resource patterns written to the generated `resource-config.json`. |
+| `-Dreflections=<entries>` | Build (Maven plugin) | `ReflectConfigEntry` items | none | `garganttua-native-image-maven-plugin`: extra entries written to the generated `reflect-config.json`. |
+| `-Ddependencies=<coords>` | Build (Maven plugin) | artifact coordinates | none | `garganttua-native-image-maven-plugin`: dependencies whose native configuration is merged into this module's. |
+| `-DconfigOutputNamespace=<path>` | Build (Maven plugin) | a sub-path, or empty for the flat legacy layout | `<groupId>/<artifactId>` | `garganttua-native-image-maven-plugin`: sub-path under `META-INF/native-image/` the configs are written to. The default is unique per artifact, which is what keeps uber-jars from colliding. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 This module is distributed under the MIT License.

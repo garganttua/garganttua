@@ -754,5 +754,16 @@ détail des chantiers, voir [`MIGRATION.md`](MIGRATION.md).
 - **Parallel-keyed** (concurrence + ordre simultanés) : impossible tant que le SPI consumer `byte[]`
   n'expose pas de clé de partition (`RouteDispatcher` force le séquentiel si `garanteeOrder`).
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Parameters this module declares or reads. Pass them with `-D` — on the JVM running the application for runtime scope, on the Maven command line for build scope.
+
+| Parameter | Scope | Values | Default | Effect |
+|---|---|---|---|---|
+| `-Dgarganttua.direct.binders=true` | Build (Maven / APT) | `true` \| `false` | `false` (set in `core/pom.xml`; most function modules override it to `true`) | Maven property forwarded to javac as `-Agarganttua.direct.binders` and consumed by `garganttua-aot-annotation-processor`. When on, the module ships compile-time `AOTClass_*` descriptors for its `@Reflected` classes — required for a native build to see them. Modules inside the `aot-commons`/`aot-reflection` dependency cycle must stay `false`. |
+| `-Dgarganttua.core.version=<version>` | Build (Maven / APT) | a `garganttua-core` version string | pinned to the reactor version | Version of the `garganttua-core` artifacts the api and events modules resolve. In the monorepo it must track the reactor version — a stale value silently skews the build onto published artifacts instead of the reactor ones. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 This module is distributed under the MIT License.

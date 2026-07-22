@@ -52,5 +52,15 @@ builders (`ContextBuilder`, `RouteBuilder`, …) and JSON context I/O (`JsonCont
 
 ## Tips and best practices
 
+## Parameters
+
+<!-- AUTO-GENERATED-PARAMETERS-START -->
+Parameters this module declares or reads. Pass them with `-D` — on the JVM running the application for runtime scope, on the Maven command line for build scope.
+
+| Parameter | Scope | Values | Default | Effect |
+|---|---|---|---|---|
+| `-Dgarganttua.core.version=<version>` | Build (Maven / APT) | a `garganttua-core` version string | pinned to the reactor version | Version of the `garganttua-core` artifacts the api and events modules resolve. In the monorepo it must track the reactor version — a stale value silently skews the build onto published artifacts instead of the reactor ones. |
+<!-- AUTO-GENERATED-PARAMETERS-END -->
+
 ## License
 This module is distributed under the MIT License.
