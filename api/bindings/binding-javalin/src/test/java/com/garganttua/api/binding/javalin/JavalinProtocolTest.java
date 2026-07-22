@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -22,6 +23,15 @@ class JavalinProtocolTest {
 
 	private Context ctx;
 	private JavalinProtocol protocol;
+
+	@BeforeAll
+	static void installReflection() {
+		// Cold-start garganttua-core's ServiceLoader so IClass.getClass(...) has an IReflection
+		// installed (mirrors JavalinInterfaceTest). Without it requestType() only worked when
+		// another test class had already installed one in the same fork — an order-dependent
+		// green that broke as soon as this class ran first.
+		com.garganttua.core.bootstrap.dsl.Bootstrap.builder();
+	}
 
 	@BeforeEach
 	void setUp() {
