@@ -736,6 +736,28 @@ public class AOTClass<T> implements IAOTClassDescriptor<T> {
 
     // --- Lazy Class resolution ---
 
+    /**
+     * Seeds the descriptor with the live {@link Class} it was synthesised from, so its own type
+     * never has to be recovered by name. Without this, a shallow (type-identity) descriptor keeps
+     * only its binary name and {@link #getTypeResolved()} re-resolves it via
+     * {@code AOTMethod.resolveRawClass(name)} — a name round-trip that throws
+     * {@code ClassNotFoundException} in a closed-world native image for any class absent from
+     * reflect-config (e.g. a {@code List.of(...)} value's {@code java.util.ImmutableCollections$ListN}).
+     * The rule: a runtime value must carry its {@code Class} literal, never transit by its name.
+     *
+     * <p>Package-private, called once at synthesis before the descriptor escapes. Also seeds the
+     * live-class fallback so on-demand member synthesis skips {@code Class.forName} too.
+     *
+     * @param live the resolved class; ignored when {@code null}
+     */
+    void seedLiveClass(Class<T> live) {
+        if (live == null) {
+            return;
+        }
+        this.resolvedClass = live;
+        this.liveFallback.seed(live);
+    }
+
     @SuppressWarnings("unchecked")
     private Class<T> getTypeResolved() {
         Class<T> cached = resolvedClass;

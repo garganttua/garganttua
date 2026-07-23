@@ -56,6 +56,23 @@ final class AOTLiveClassFallback {
         this.name = name;
     }
 
+    /**
+     * Seeds the live-class cache with an already-resolved {@link Class}, so member synthesis never
+     * has to re-load it by name via {@code Class.forName}. Used when the owning {@link AOTClass} was
+     * synthesised from a live class literal (see {@code CoreInfrastructureSeed.synthesize}): in a
+     * closed-world native image the name may be absent from reflect-config, so a name round-trip
+     * would fail even though the live {@code Class} is in hand.
+     *
+     * @param live the resolved class; ignored when {@code null}
+     */
+    void seed(Class<?> live) {
+        if (live == null) {
+            return;
+        }
+        this.liveClassCache = live;
+        this.liveClassResolved = true;
+    }
+
     // UseProperClassLoader: the context loader IS preferred; this class's own loader is only the
     // documented last-resort fallback when no context loader is set.
     @SuppressWarnings("PMD.UseProperClassLoader")

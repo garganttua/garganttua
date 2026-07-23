@@ -294,7 +294,7 @@ public final class CoreInfrastructureSeed {
         String packageName = type.getPackageName() != null ? type.getPackageName() : "";
         AOTConstructor<?>[] constructors = synthesizeNoArgConstructor(type);
         Annotation[] annotations = safeAnnotations(type);
-        return new AOTClass<>(
+        AOTClass<T> descriptor = new AOTClass<>(
                 type.getName(),
                 type.getSimpleName(),
                 canonicalName,
@@ -319,6 +319,12 @@ public final class CoreInfrastructureSeed {
                 type.isAnonymousClass(),
                 type.isSynthetic()
         );
+        // Retain the live class literal we already hold: a shallow descriptor must never recover its
+        // own type by name (Class.forName), which fails in a closed-world native image for classes
+        // absent from reflect-config — the ImmutableCollections$ListN / descriptor-less runtime-value
+        // failure. See AOTClass#seedLiveClass.
+        descriptor.seedLiveClass(type);
+        return descriptor;
     }
 
     private static String[] interfaceNames(Class<?> type) {
