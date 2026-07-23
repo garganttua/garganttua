@@ -20,12 +20,12 @@ A domain that declares its own interface via `.interfasse(...)` keeps it — the
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-starter-javalin</artifactId>
-    <version>3.0.0-ALPHA12</version>
+    <version>3.0.0-ALPHA13</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA12
+3.0.0-ALPHA13
 
 ### Dependencies
  - `com.garganttua:garganttua-api-starter-bootstrap`

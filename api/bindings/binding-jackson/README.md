@@ -20,12 +20,12 @@ Consumers (`garganttua-api-core`, `garganttua-api-security`, `garganttua-api-jav
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-binding-jackson</artifactId>
-    <version>3.0.0-ALPHA12</version>
+    <version>3.0.0-ALPHA13</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA12
+3.0.0-ALPHA13
 
 ### Dependencies
  - `com.fasterxml.jackson.core:jackson-annotations:${jackson.version}`
