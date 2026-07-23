@@ -9,6 +9,7 @@ import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.protocol.IProtocol;
 import com.garganttua.api.core.caller.Caller;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.annotations.Reflected;
 
 import io.javalin.http.Context;
 
@@ -39,7 +40,17 @@ import io.javalin.http.Context;
  * {@code Authorization} header by {@code VERIFY_AUTHORIZATION}, not here. This
  * adapter never trusts {@code superTenant}/{@code superOwner} from the wire — they
  * default to {@code false} and are recomputed server-side.
+ *
+ * <h2>AOT</h2>
+ * {@code @Reflected} (NOT {@code @Protocol}) so a pure-AOT / native-image build ships an
+ * {@code AOTClass_JavalinProtocol} descriptor: on the secured path a reflective
+ * {@code IReflection.forName("…JavalinProtocol")} would otherwise miss in the closed world and
+ * throw {@code ClassNotFoundException}, breaking every {@code Access.authenticated} domain. We use
+ * {@code @Reflected} rather than {@code @Protocol} to gain the descriptor WITHOUT the {@code @Indexed}
+ * auto-detection: this adapter is registered manually by the starter
+ * ({@code apiBuilder().protocol(new JavalinProtocol())}), and auto-detection would double-register it.
  */
+@Reflected
 public class JavalinProtocol implements IProtocol<Context, Context> {
 
 	/** Header carrying the tenant the caller acts within. */
