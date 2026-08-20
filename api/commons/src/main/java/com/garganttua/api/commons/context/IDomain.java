@@ -11,6 +11,7 @@ import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
 import com.garganttua.api.commons.definition.IEntityDefinition;
+import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.operation.OperationDefinition;
@@ -92,11 +93,11 @@ public interface IDomain<E> extends ILifecycle, IObservable {
 	}
 
 	default Map<ObjectAddress, String> getAuthorizedUpdateFieldsAndAuthorizations() {
-		List<Pair<ObjectAddress, String>> updates = getEntityDefinition().updates();
+		List<EntityUpdateRule> updates = getEntityDefinition().updates();
 		if (updates == null) return Map.of();
 		Map<ObjectAddress, String> result = new HashMap<>();
-		for (Pair<ObjectAddress, String> pair : updates) {
-			result.put(pair.getValue0(), pair.getValue1());
+		for (EntityUpdateRule rule : updates) {
+			result.put(rule.field(), rule.authority());
 		}
 		return result;
 	}

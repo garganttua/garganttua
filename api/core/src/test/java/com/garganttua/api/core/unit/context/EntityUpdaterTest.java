@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 
-import org.javatuples.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -13,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import com.garganttua.api.core.entity.EntityUpdater;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
+import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.core.reflection.ObjectAddress;
 
 @DisplayName("EntityUpdater Tests")
@@ -87,9 +87,9 @@ class EntityUpdaterTest {
             Product stored = new Product("OldName", 10.0, "OldCat", "keep-me");
             Product updated = new Product("NewName", 20.0, "NewCat", "hacked");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), ""),
-                    Pair.with(new ObjectAddress("price"), "")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", false),
+                    new EntityUpdateRule(new ObjectAddress("price"), "", false)
             );
 
             Object result = updater.update(callerWith(null), stored, updated, authorizations);
@@ -102,22 +102,77 @@ class EntityUpdaterTest {
         }
 
         @Test
-        @DisplayName("does not overwrite with null values from updated entity")
-        void doesNotOverwriteWithNull() {
+        @DisplayName("a null incoming value ERASES the stored value by default (PUT semantics)")
+        void nullErasesByDefault() {
             Product stored = new Product("OldName", 10.0, "OldCat", null);
             Product updated = new Product(null, 20.0, null, null);
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), ""),
-                    Pair.with(new ObjectAddress("price"), ""),
-                    Pair.with(new ObjectAddress("category"), "")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", false),
+                    new EntityUpdateRule(new ObjectAddress("price"), "", false),
+                    new EntityUpdateRule(new ObjectAddress("category"), "", false)
             );
 
             updater.update(callerWith(null), stored, updated, authorizations);
 
-            assertEquals("OldName", stored.getName(), "Should not be overwritten by null");
+            assertNull(stored.getName(), "ignoreNull=false — the null must erase the stored value");
             assertEquals(20.0, stored.getPrice());
-            assertEquals("OldCat", stored.getCategory(), "Should not be overwritten by null");
+            assertNull(stored.getCategory(), "ignoreNull=false — the null must erase the stored value");
+        }
+
+        @Test
+        @DisplayName("ignoreNull=true leaves the stored value untouched (PATCH semantics)")
+        void ignoreNullLeavesStoredValue() {
+            Product stored = new Product("OldName", 10.0, "OldCat", "keep-me");
+            Product updated = new Product(null, 20.0, "NewCat", null);
+
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", true),
+                    new EntityUpdateRule(new ObjectAddress("price"), "", true),
+                    new EntityUpdateRule(new ObjectAddress("category"), "", true),
+                    new EntityUpdateRule(new ObjectAddress("secret"), "", true)
+            );
+
+            updater.update(callerWith(null), stored, updated, authorizations);
+
+            assertEquals("OldName", stored.getName(), "null incoming + ignoreNull => untouched");
+            assertEquals(20.0, stored.getPrice(), "non-null incoming still applies");
+            assertEquals("NewCat", stored.getCategory(), "non-null incoming still applies");
+            assertEquals("keep-me", stored.getSecret(), "null incoming + ignoreNull => untouched");
+        }
+
+        @Test
+        @DisplayName("the null policy is per-field: an erasing field and an ignoring field coexist")
+        void nullPolicyIsPerField() {
+            Product stored = new Product("OldName", 10.0, "OldCat", "keep-me");
+            Product updated = new Product(null, 10.0, null, null);
+
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", false),
+                    new EntityUpdateRule(new ObjectAddress("category"), "", true)
+            );
+
+            updater.update(callerWith(null), stored, updated, authorizations);
+
+            assertNull(stored.getName(), "ignoreNull=false — erased");
+            assertEquals("OldCat", stored.getCategory(), "ignoreNull=true — untouched");
+            assertEquals("keep-me", stored.getSecret(), "not declared — untouched either way");
+        }
+
+        @Test
+        @DisplayName("an unauthorized field is left untouched even when its incoming value is null")
+        void unauthorizedNullDoesNotErase() {
+            Product stored = new Product("OldName", 10.0, "OldCat", "secret");
+            Product updated = new Product(null, 10.0, "Cat", "secret");
+
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "ROLE_ADMIN", false)
+            );
+
+            updater.update(callerWith(List.of("ROLE_USER")), stored, updated, authorizations);
+
+            assertEquals("OldName", stored.getName(),
+                    "the authority gate runs first — an ungranted field is never erased");
         }
 
         @Test
@@ -155,8 +210,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 10.0, "Cat", "hacked");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "ROLE_ADMIN")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "ROLE_ADMIN", false)
             );
 
             updater.update(callerWith(List.of("ROLE_ADMIN", "ROLE_USER")), stored, updated, authorizations);
@@ -170,8 +225,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 10.0, "Cat", "hacked");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "ROLE_ADMIN")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "ROLE_ADMIN", false)
             );
 
             updater.update(callerWith(List.of("ROLE_USER")), stored, updated, authorizations);
@@ -185,8 +240,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 10.0, "Cat", "secret");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", false)
             );
 
             updater.update(callerWith(List.of()), stored, updated, authorizations);
@@ -200,8 +255,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 10.0, "Cat", "secret");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), (String) null)
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), (String) null, false)
             );
 
             updater.update(callerWith(List.of()), stored, updated, authorizations);
@@ -220,8 +275,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 10.0, "Cat", "secret");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "ROLE_ADMIN")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "ROLE_ADMIN", false)
             );
 
             updater.update(callerWith(null), stored, updated, authorizations);
@@ -236,8 +291,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 10.0, "Cat", "secret");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "ROLE_ADMIN")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "ROLE_ADMIN", false)
             );
 
             updater.update(callerWith(List.of()), stored, updated, authorizations);
@@ -252,10 +307,10 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 99.0, "NewCat", "hacked");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "ROLE_ADMIN"),
-                    Pair.with(new ObjectAddress("price"), "ROLE_PRICING"),
-                    Pair.with(new ObjectAddress("category"), "ROLE_CATEGORY_EDITOR")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "ROLE_ADMIN", false),
+                    new EntityUpdateRule(new ObjectAddress("price"), "ROLE_PRICING", false),
+                    new EntityUpdateRule(new ObjectAddress("category"), "ROLE_CATEGORY_EDITOR", false)
             );
 
             // Super-tenant WITHOUT the authorities: being super grants cross-tenant
@@ -281,8 +336,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 99.0, "NewCat", "hacked");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "ROLE_ADMIN")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "ROLE_ADMIN", false)
             );
 
             updater.update(callerWith(null, /*superTenant*/ false, /*superOwner*/ true),
@@ -298,10 +353,10 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "OldCat", "secret");
             Product updated = new Product("New", 99.0, "NewCat", "hacked");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), ""),
-                    Pair.with(new ObjectAddress("price"), "ROLE_ADMIN"),
-                    Pair.with(new ObjectAddress("category"), "ROLE_MANAGER")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", false),
+                    new EntityUpdateRule(new ObjectAddress("price"), "ROLE_ADMIN", false),
+                    new EntityUpdateRule(new ObjectAddress("category"), "ROLE_MANAGER", false)
             );
 
             updater.update(callerWith(List.of("ROLE_ADMIN")), stored, updated, authorizations);
@@ -323,8 +378,8 @@ class EntityUpdaterTest {
             Product stored = new Product("Old", 10.0, "Cat", "secret");
             Product updated = new Product("New", 10.0, "Cat", "secret");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", false)
             );
 
             ApiException ex = assertThrows(ApiException.class,
@@ -339,8 +394,8 @@ class EntityUpdaterTest {
             OtherEntity updated = new OtherEntity();
             updated.setName("New");
 
-            List<Pair<ObjectAddress, String>> authorizations = List.of(
-                    Pair.with(new ObjectAddress("name"), "")
+            List<EntityUpdateRule> authorizations = List.of(
+                    new EntityUpdateRule(new ObjectAddress("name"), "", false)
             );
 
             ApiException ex = assertThrows(ApiException.class,

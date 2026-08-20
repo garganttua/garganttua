@@ -16,7 +16,8 @@ import com.garganttua.api.commons.entity.annotations.BusinessAnnotations.EntityB
 import com.garganttua.api.commons.entity.annotations.BusinessAnnotations.EntityBeforeDelete;
 import com.garganttua.api.commons.entity.annotations.BusinessAnnotations.EntityBeforeUpdate;
 import com.garganttua.api.commons.entity.annotations.Entity;
-import com.garganttua.api.commons.entity.annotations.EntityAuthorizeUpdate;
+import com.garganttua.api.commons.entity.annotations.AuthorizeCreate;
+import com.garganttua.api.commons.entity.annotations.AuthorizeUpdate;
 import com.garganttua.api.commons.entity.annotations.EntityDeleteMethod;
 import com.garganttua.api.commons.entity.annotations.EntityDeleteMethodProvider;
 import com.garganttua.api.commons.entity.annotations.EntityEngine;
@@ -160,7 +161,8 @@ public class NativeImageConfigBuilder {
 		entryBuilder.fieldsAnnotatedWith(EntityUnicity.class);
 		entryBuilder.fieldsAnnotatedWith(EntityTenantId.class);
 		entryBuilder.fieldsAnnotatedWith(EntityId.class);
-		entryBuilder.fieldsAnnotatedWith(EntityAuthorizeUpdate.class);
+		entryBuilder.fieldsAnnotatedWith(AuthorizeUpdate.class);
+		entryBuilder.fieldsAnnotatedWith(AuthorizeCreate.class);
 		entryBuilder.fieldsAnnotatedWith(EntitySuperTenant.class);
 		entryBuilder.fieldsAnnotatedWith(EntitySuperOwner.class);
 		entryBuilder.fieldsAnnotatedWith(EntityOwnerId.class);

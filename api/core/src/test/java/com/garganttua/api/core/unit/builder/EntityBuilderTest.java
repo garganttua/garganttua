@@ -16,6 +16,7 @@ import com.garganttua.api.commons.context.IEntityContext;
 import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.context.dsl.IEntityBuilder;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.core.entity.EntityContext;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IMethod;
@@ -167,6 +168,50 @@ class EntityBuilderTest {
         @DisplayName("update() with authority accepts valid parameters")
         void updateWithAuthorityAcceptsValidParams() throws ApiException {
             assertDoesNotThrow(() -> entityBuilder.update("name", "users:update"));
+        }
+
+        @SuppressWarnings("unchecked")
+        private EntityUpdateRule ruleFor(String field) throws ApiException {
+            EntityContext<TestEntity> context = (EntityContext<TestEntity>) entityBuilder.build();
+            return context.getEntityDefinition().updates().stream()
+                    .filter(r -> field.equals(r.field().toString()))
+                    .findFirst().orElseThrow(() -> new AssertionError("no update rule for " + field));
+        }
+
+        @Test
+        @DisplayName("update(field) defaults to no authority and ignoreNull = false")
+        void updateDefaultsToErasingNulls() throws ApiException {
+            entityBuilder.id("id").uuid("uuid").tenantId("tenantId").update("name");
+
+            EntityUpdateRule rule = ruleFor("name");
+            assertNull(rule.authority());
+            assertFalse(rule.ignoreNull(), "the default policy lets a null erase the stored value");
+        }
+
+        @Test
+        @DisplayName("update(field, ignoreNull) records the null policy without an authority")
+        void updateWithIgnoreNull() throws ApiException {
+            entityBuilder.id("id").uuid("uuid").tenantId("tenantId").update("name", true);
+
+            EntityUpdateRule rule = ruleFor("name");
+            assertNull(rule.authority());
+            assertTrue(rule.ignoreNull());
+        }
+
+        @Test
+        @DisplayName("update(field, authority, ignoreNull) records both")
+        void updateWithAuthorityAndIgnoreNull() throws ApiException {
+            entityBuilder.id("id").uuid("uuid").tenantId("tenantId")
+                    .update("name", "users:update", true)
+                    .update("optionalField", "users:update", false);
+
+            EntityUpdateRule guardedPatch = ruleFor("name");
+            assertEquals("users:update", guardedPatch.authority());
+            assertTrue(guardedPatch.ignoreNull());
+
+            EntityUpdateRule guardedPut = ruleFor("optionalField");
+            assertEquals("users:update", guardedPut.authority());
+            assertFalse(guardedPut.ignoreNull(), "the policy is per-field, not per-builder");
         }
     }
 

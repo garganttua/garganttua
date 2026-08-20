@@ -29,6 +29,8 @@ import com.garganttua.api.commons.entity.annotations.EntityBeforeUpdate;
 import com.garganttua.api.commons.entity.annotations.EntityGeolocalized;
 import com.garganttua.api.commons.entity.annotations.EntityHiddenable;
 import com.garganttua.api.commons.entity.annotations.EntityId;
+import com.garganttua.api.commons.entity.annotations.AuthorizeCreate;
+import com.garganttua.api.commons.entity.annotations.AuthorizeUpdate;
 import com.garganttua.api.commons.entity.annotations.EntityMandatory;
 import com.garganttua.api.commons.entity.annotations.EntityOwned;
 import com.garganttua.api.commons.entity.annotations.EntityOwner;
@@ -282,6 +284,35 @@ public final class EntityAnnotationScanner {
         for (String addr : reflection.findFieldAddressesWithAnnotation(entityClass, IClass.getClass(EntityUnicity.class), true)) {
             entity.unicity(addr);
         }
+        applyWriteWhitelists(entity, entityClass);
+    }
+
+    /**
+     * Wires the {@link AuthorizeCreate} / {@link AuthorizeUpdate} field whitelists onto the entity
+     * DSL — the annotation counterpart of {@code entity().create(...)} / {@code entity().update(...)}.
+     */
+    private void applyWriteWhitelists(IEntityBuilder<Object> entity, IClass<?> entityClass) throws ApiException {
+        IClass<AuthorizeCreate> createAnnotation = IClass.getClass(AuthorizeCreate.class);
+        IClass<AuthorizeUpdate> updateAnnotation = IClass.getClass(AuthorizeUpdate.class);
+        IClass<?> clazz = entityClass;
+        while (clazz != null) {
+            for (IField field : clazz.getDeclaredFields()) {
+                AuthorizeCreate create = field.getAnnotation(createAnnotation);
+                if (create != null) {
+                    entity.create(field.getName(), emptyToNull(create.authority()));
+                }
+                AuthorizeUpdate update = field.getAnnotation(updateAnnotation);
+                if (update != null) {
+                    entity.update(field.getName(), emptyToNull(update.authority()), update.ignoreNull());
+                }
+            }
+            clazz = clazz.getSuperclass();
+        }
+    }
+
+    /** The annotations default their authority to "" — normalise it to the DSL's "no gate" null. */
+    private static String emptyToNull(String authority) {
+        return (authority == null || authority.isEmpty()) ? null : authority;
     }
 
     private void applyLifecycleHooks(IReflection reflection, IDomainBuilder<Object> domain, IClass<?> entityClass)

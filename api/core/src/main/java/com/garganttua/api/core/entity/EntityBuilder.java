@@ -17,6 +17,7 @@ import org.javatuples.Pair;
 import com.garganttua.api.commons.context.IEntityContext;
 import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.context.dsl.IEntityBuilder;
+import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
@@ -54,7 +55,7 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
     private List<ObjectAddress> mandatories = new ArrayList<>();
     private List<Pair<ObjectAddress, UnicityScope>> unicities = new ArrayList<>();
     private List<Pair<ObjectAddress, String>> creates = new ArrayList<>();
-    private List<Pair<ObjectAddress, String>> updates = new ArrayList<>();
+    private List<EntityUpdateRule> updates = new ArrayList<>();
     private List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedFields = new ArrayList<>();
     private List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedMethods = new ArrayList<>();
 
@@ -299,59 +300,78 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
 
     @Override
     public IEntityBuilder<E> update(String fieldName) throws ApiException {
-        Objects.requireNonNull(fieldName, "Field name cannot be null");
-
-        this.updates.add(new Pair<ObjectAddress, String>(
-                FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address(), null));
-
-        return this;
+        return update(fieldName, (String) null, false);
     }
 
     @Override
     public IEntityBuilder<E> update(IField field) throws ApiException {
-        Objects.requireNonNull(field, "Field cannot be null");
-
-        this.updates.add(new Pair<ObjectAddress, String>(FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(), null));
-
-        return this;
+        return update(field, (String) null, false);
     }
 
     @Override
     public IEntityBuilder<E> update(ObjectAddress fieldAddress) throws ApiException {
-        Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
+        return update(fieldAddress, (String) null, false);
+    }
 
-        this.updates.add(new Pair<ObjectAddress, String>(
-                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(), null));
+    @Override
+    public IEntityBuilder<E> update(String fieldName, boolean ignoreNull) throws ApiException {
+        return update(fieldName, (String) null, ignoreNull);
+    }
 
-        return this;
+    @Override
+    public IEntityBuilder<E> update(IField field, boolean ignoreNull) throws ApiException {
+        return update(field, (String) null, ignoreNull);
+    }
+
+    @Override
+    public IEntityBuilder<E> update(ObjectAddress fieldAddress, boolean ignoreNull) throws ApiException {
+        return update(fieldAddress, (String) null, ignoreNull);
     }
 
     @Override
     public IEntityBuilder<E> update(String fieldName, String authority) throws ApiException {
-        Objects.requireNonNull(fieldName, "Field name cannot be null");
-
-        this.updates.add(new Pair<ObjectAddress, String>(
-                FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address(), authority));
-
-        return this;
+        return update(fieldName, authority, false);
     }
 
     @Override
     public IEntityBuilder<E> update(IField field, String authority) throws ApiException {
-        Objects.requireNonNull(field, "Field cannot be null");
+        return update(field, authority, false);
+    }
 
-        this.updates
-                .add(new Pair<ObjectAddress, String>(FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(), authority));
+    @Override
+    public IEntityBuilder<E> update(ObjectAddress fieldAddress, String authority) throws ApiException {
+        return update(fieldAddress, authority, false);
+    }
+
+    @Override
+    public IEntityBuilder<E> update(String fieldName, String authority, boolean ignoreNull) throws ApiException {
+        Objects.requireNonNull(fieldName, "Field name cannot be null");
+
+        this.updates.add(new EntityUpdateRule(
+                FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address(),
+                authority, ignoreNull));
 
         return this;
     }
 
     @Override
-    public IEntityBuilder<E> update(ObjectAddress fieldAddress, String authority) throws ApiException {
+    public IEntityBuilder<E> update(IField field, String authority, boolean ignoreNull) throws ApiException {
+        Objects.requireNonNull(field, "Field cannot be null");
+
+        this.updates.add(new EntityUpdateRule(
+                FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(),
+                authority, ignoreNull));
+
+        return this;
+    }
+
+    @Override
+    public IEntityBuilder<E> update(ObjectAddress fieldAddress, String authority, boolean ignoreNull) throws ApiException {
         Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
 
-        this.updates.add(new Pair<ObjectAddress, String>(
-                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(), authority));
+        this.updates.add(new EntityUpdateRule(
+                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(),
+                authority, ignoreNull));
 
         return this;
     }

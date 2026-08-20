@@ -9,6 +9,7 @@ import java.util.Map;
 import org.javatuples.Pair;
 
 import com.garganttua.api.commons.definition.IEntityDefinition;
+import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.IUuidGenerator;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.core.reflection.IClass;
@@ -24,7 +25,7 @@ public record EntityDefinition<E>(
     List<ObjectAddress> mandatories,
     List<Pair<ObjectAddress, UnicityScope>> unicities,
     List<Pair<ObjectAddress, String>> creates,
-    List<Pair<ObjectAddress, String>> updates,
+    List<EntityUpdateRule> updates,
     List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedFields,
     List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedMethods,
     List<IMethodBinder<Void>> afterGetMethodBuilders,

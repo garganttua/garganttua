@@ -10,13 +10,56 @@ There is **no super bypass**: `superTenant` / `superOwner` status grants cross-t
 
 ## Update — guard a mutation (silent-skip)
 
-`entity().update(field[, "auth-name"])` declares the updatable fields. Only declared fields are ever merged onto the stored entity; for a guarded one the caller must carry the authority. A denied (or undeclared) field is **silently skipped** — the operation continues and the other fields update normally; 403 stays an operation-level concern via `VERIFY_AUTHORITY`.
+`entity().update(field[, "auth-name"][, ignoreNull])` declares the updatable fields. Only declared fields are ever merged onto the stored entity; for a guarded one the caller must carry the authority. A denied (or undeclared) field is **silently skipped** — the operation continues and the other fields update normally; 403 stays an operation-level concern via `VERIFY_AUTHORITY`.
 
 ```java
 entity()
     .update("email")                       // freely updatable
     .update("name", "user-update-name")    // mutable only with the authority
 ```
+
+### Null handling — `ignoreNull` (PUT vs PATCH)
+
+Each declaration carries its own policy for a **null incoming value**:
+
+| Declaration | A `null` in the body means | Semantics |
+|---|---|---|
+| `update("email")` (default, `ignoreNull = false`) | erase the stored value | PUT — the body describes the full state of every updatable field |
+| `update("email", true)` | not supplied → keep the stored value | PATCH — a partial body never wipes what it omits |
+
+```java
+entity()
+    .update("email")                            // null in the body => email becomes null
+    .update("comment", true)                    // null in the body => stored comment survives
+    .update("role", "admin-set-role", true)     // authority gate + PATCH semantics
+```
+
+The authority gate runs **first**: an ungranted field is never written, so a `null` cannot erase a field the caller may not mutate. Primitive fields can never be null and are therefore unaffected by the policy.
+
+A framework-internal write (startup seeding / `invokeInternal`) does not go through this whitelist at all — it merges every non-null field wholesale, so a partial server-side write never wipes data it did not mean to touch.
+
+## Annotations — the declarative form
+
+`@AuthorizeCreate` / `@AuthorizeUpdate` on the entity fields are the exact counterparts of the DSL calls, picked up by the entity annotation scanner:
+
+```java
+@Entity
+public class Article {
+    @AuthorizeCreate @AuthorizeUpdate
+    private String title;                       // free, PUT semantics
+
+    @AuthorizeCreate @AuthorizeUpdate(ignoreNull = true)
+    private String summary;                     // free, PATCH semantics
+
+    @AuthorizeCreate(authority = "article-publish")
+    @AuthorizeUpdate(authority = "article-publish")
+    private Boolean published;                  // guarded
+
+    private String internalNote;                // on neither whitelist — never client-writable
+}
+```
+
+An empty `authority()` (the default) means "no gate", exactly like `update(field)` / `create(field)`.
 
 ## Create — authorize valorization (whitelist, strip-on-deny)
 
@@ -42,3 +85,4 @@ The strip runs **before** framework stamping, so `uuid`/`tenantId`/`ownerId` are
 
 - Both are persistence-layer concerns enforced inside the business stage (`createEntity` / `updateEntity` expressions in `CREATE_ONE.gs` / `UPDATE_ONE.gs`); the entity keeps its declared shape.
 - The asymmetry — create defaults to *all allowed*, update defaults to *nothing updatable* — is intentional: creation must persist the body by default, whereas mutation is restrictive by default.
+- The null policy is per **declaration**, not per domain: an erasing field and an ignoring field coexist on the same entity.

@@ -88,17 +88,56 @@ public interface IEntityBuilder<E> extends IAutomaticLinkedBuilder<IEntityBuilde
 
     IEntityBuilder<E> create(ObjectAddress fieldAddress, String authority) throws ApiException;
 
+    /**
+     * Declares a field a caller may valorize at UPDATE (no authority required). Declaring any
+     * {@code update(...)} turns the update into a WHITELIST: only declared fields are merged from
+     * the client body onto the stored entity.
+     *
+     * <p>A {@code null} incoming value ERASES the stored value (PUT semantics). Use
+     * {@link #update(String, boolean)} with {@code ignoreNull = true} for PATCH semantics, where a
+     * {@code null} means "not supplied" and leaves the stored value untouched.
+     */
     IEntityBuilder<E> update(String string) throws ApiException;
 
     IEntityBuilder<E> update(IField field) throws ApiException;
 
     IEntityBuilder<E> update(ObjectAddress fieldAddress) throws ApiException;
 
+    /**
+     * Declares a field a caller may valorize at UPDATE, choosing how a {@code null} incoming value
+     * is interpreted: {@code ignoreNull = false} (the default) lets a {@code null} erase the stored
+     * value, {@code ignoreNull = true} treats it as "not supplied" and leaves the stored value
+     * untouched.
+     */
+    IEntityBuilder<E> update(String string, boolean ignoreNull) throws ApiException;
+
+    IEntityBuilder<E> update(IField field, boolean ignoreNull) throws ApiException;
+
+    IEntityBuilder<E> update(ObjectAddress fieldAddress, boolean ignoreNull) throws ApiException;
+
+    /**
+     * Declares a field a caller may valorize at UPDATE only when it carries {@code authority};
+     * otherwise the field is left untouched on the stored entity. A {@code null} incoming value
+     * erases — see {@link #update(String, String, boolean)} to opt into PATCH semantics.
+     */
     IEntityBuilder<E> update(String string, String authority) throws ApiException;
 
     IEntityBuilder<E> update(IField field, String authority) throws ApiException;
 
     IEntityBuilder<E> update(ObjectAddress fieldAddress, String authority) throws ApiException;
+
+    /**
+     * Full form: an authority gate plus the null-handling policy for the field.
+     *
+     * @param authority  authority the caller must carry, or {@code null}/empty for none
+     * @param ignoreNull {@code true} to leave the stored value untouched when the incoming value is
+     *                   {@code null}; {@code false} to let the {@code null} erase it
+     */
+    IEntityBuilder<E> update(String string, String authority, boolean ignoreNull) throws ApiException;
+
+    IEntityBuilder<E> update(IField field, String authority, boolean ignoreNull) throws ApiException;
+
+    IEntityBuilder<E> update(ObjectAddress fieldAddress, String authority, boolean ignoreNull) throws ApiException;
 
     IEntityBuilder<E> annotation(String elementName, IClass<? extends Annotation> annotation) throws ApiException;
 

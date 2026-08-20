@@ -2,23 +2,31 @@ package com.garganttua.api.core.entity;
 
 import java.util.List;
 
-import org.javatuples.Pair;
-
 import com.garganttua.api.core.mapper.DefaultMapper;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
+import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.IEntityUpdater;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.ObjectAddress;
 
+/**
+ * Merges the authorized fields of an incoming entity onto the stored one.
+ *
+ * <p><b>Null handling.</b> Each {@link EntityUpdateRule} carries its own policy. By default
+ * ({@code ignoreNull = false}) a {@code null} incoming value ERASES the stored value — PUT
+ * semantics: the client body describes the full state of every updatable field. A field declared
+ * with {@code ignoreNull = true} opts into PATCH semantics: a {@code null} means "not supplied" and
+ * the stored value is left untouched.
+ */
 public class EntityUpdater implements IEntityUpdater{
 
 	private static final IReflection REFLECTION = DefaultMapper.reflection();
 
 	@Override
 	public Object update(ICaller caller, Object storedEntity, Object updatedEntity,
-			List<Pair<ObjectAddress, String>> updateAuthorizations) {
-		if (updateAuthorizations == null || updateAuthorizations.isEmpty()) {
+			List<EntityUpdateRule> updateRules) {
+		if (updateRules == null || updateRules.isEmpty()) {
 			return storedEntity;
 		}
 		if (caller == null) {
@@ -30,17 +38,17 @@ public class EntityUpdater implements IEntityUpdater{
 		}
 
 		try {
-			for (Pair<ObjectAddress, String> entry : updateAuthorizations) {
-				ObjectAddress fieldAddress = entry.getValue0();
-				String requiredAuthority = entry.getValue1();
-
-				if (isAuthorized(caller, requiredAuthority)) {
-					String fieldName = fieldAddress.toString();
-					Object updatedValue = REFLECTION.getFieldValue(updatedEntity, fieldName);
-					if (updatedValue != null) {
-						REFLECTION.setFieldValue(storedEntity, fieldName, updatedValue);
-					}
+			for (EntityUpdateRule rule : updateRules) {
+				ObjectAddress fieldAddress = rule.field();
+				if (!isAuthorized(caller, rule.authority())) {
+					continue;
 				}
+				String fieldName = fieldAddress.toString();
+				Object updatedValue = REFLECTION.getFieldValue(updatedEntity, fieldName);
+				if (updatedValue == null && rule.ignoreNull()) {
+					continue;
+				}
+				REFLECTION.setFieldValue(storedEntity, fieldName, updatedValue);
 			}
 		} catch (ApiException e) {
 			throw e;

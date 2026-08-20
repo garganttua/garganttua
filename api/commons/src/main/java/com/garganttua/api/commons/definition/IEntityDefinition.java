@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.javatuples.Pair;
 
+import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.IUuidGenerator;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.core.reflection.IClass;
@@ -40,7 +41,13 @@ public interface IEntityDefinition<E> {
         return List.of();
     }
 
-    List<Pair<ObjectAddress, String>> updates();
+    /**
+     * UPDATE-time field whitelist: each rule binds a field a caller may valorize at update to the
+     * authority it requires and to its null-handling policy. When EMPTY, no field is updatable by a
+     * client. Declared via {@code entity().update(field[, authority][, ignoreNull])} or
+     * {@link com.garganttua.api.commons.entity.annotations.AuthorizeUpdate}.
+     */
+    List<EntityUpdateRule> updates();
 
     List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedFields();
 
