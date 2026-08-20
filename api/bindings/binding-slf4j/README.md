@@ -23,12 +23,12 @@ The Garganttua API framework itself does **not** depend on SLF4J internally; its
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-binding-slf4j</artifactId>
-    <version>3.0.0-ALPHA13</version>
+    <version>3.0.0-ALPHA14</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA13
+3.0.0-ALPHA14
 
 ### Dependencies
  - `org.slf4j:slf4j-api:${slf4j.version}`

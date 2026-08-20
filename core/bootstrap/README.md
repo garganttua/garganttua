@@ -49,12 +49,12 @@ triggers `bootstrap.rebuild()`.
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-bootstrap</artifactId>
-    <version>3.0.0-ALPHA13</version>
+    <version>3.0.0-ALPHA14</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA13
+3.0.0-ALPHA14
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
