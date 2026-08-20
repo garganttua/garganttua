@@ -26,7 +26,6 @@ import com.garganttua.core.reflection.IReflectionProvider;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.ReflectionException;
 import com.garganttua.core.reflection.fields.FieldResolver;
-import com.garganttua.core.reflection.methods.MethodResolver;
 import com.garganttua.core.reflection.query.ObjectQueryFactory;
 
 import com.garganttua.core.observability.Logger;
@@ -392,37 +391,13 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
 
     @Override
     public IEntityBuilder<E> annotation(IField field, IClass<? extends Annotation> annotation) throws ApiException {
-        Objects.requireNonNull(field, "Field cannot be null");
-        Objects.requireNonNull(annotation, "Annotation cannot be null");
-
-        ObjectAddress address = FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address();
-
-        Pair<ObjectAddress, IClass<? extends Annotation>> candidate = new Pair<>(address, annotation);
-
-        if (this.annotatedFields.contains(candidate)) {
-            return this;
-        }
-
-        this.annotatedFields.add(candidate);
-
+        EntityAnnotationDeclarations.field(this.entityClass, provider(), this.annotatedFields, field, annotation);
         return this;
     }
 
     @Override
     public IEntityBuilder<E> annotation(IMethod method, IClass<? extends Annotation> annotation) throws ApiException {
-        Objects.requireNonNull(method, "Method cannot be null");
-        Objects.requireNonNull(annotation, "Annotation cannot be null");
-        ObjectAddress address;
-        try {
-            address = MethodResolver.methodByMethod(this.entityClass, provider(), method).address();
-        } catch (ReflectionException e) {
-            throw new ApiException(e.getMessage(), e);
-        }
-        Pair<ObjectAddress, IClass<? extends Annotation>> candidate = new Pair<>(address, annotation);
-        if (this.annotatedMethods.contains(candidate)) {
-            return this;
-        }
-        this.annotatedMethods.add(candidate);
+        EntityAnnotationDeclarations.method(this.entityClass, provider(), this.annotatedMethods, method, annotation);
         return this;
     }
 
