@@ -67,6 +67,7 @@ Canonical keys are declared as typed `ArgKey<T>` constants on
 | `entityUuid`  | `String`  | client                                      | read/update/delete      | UUID for single-entity operations                  |
 | `identifier`  | `String`  | client                                      | read-one/update/delete  | raw identifier value                                |
 | `type`        | `String`  | client                                      | read-one/update/delete  | identifier type (`"uuid"`, etc.)                   |
+| `partialUpdate` | `Boolean` | transport (HTTP PATCH)                    | update                  | body carries only the changed fields — every update rule reads as `ignoreNull` |
 
 ### Caller identity (populated by protocol-extract via `setCallerArgs`)
 

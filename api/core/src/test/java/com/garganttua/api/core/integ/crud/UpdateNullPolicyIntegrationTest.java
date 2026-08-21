@@ -13,6 +13,7 @@ import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.context.dsl.IApiBuilder;
+import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.commons.service.IOperationResponse;
 import com.garganttua.api.commons.service.OperationResponseCode;
 import com.garganttua.api.core.caller.Caller;
@@ -110,6 +111,52 @@ class UpdateNullPolicyIntegrationTest extends AbstractCrudIntegrationTest {
 		User result = updated(users.updateOne("uuid-alice", body, caller));
 
 		assertEquals("new@example.com", result.getEmail());
+	}
+
+	@Test
+	@DisplayName("a PARTIAL update (HTTP PATCH) ignores nulls whatever the declared policy")
+	void partialUpdateForcesIgnoreNull() throws ApiException {
+		IDomain<?> users = domainWith(e -> { e.update("name"); e.update("email"); });
+
+		IOperationResponse response = users.request()
+				.updateOne("uuid-alice", nameOnly("Alice Updated"))
+				.caller(caller)
+				.param(IOperationRequest.PARTIAL_UPDATE, Boolean.TRUE)
+				.execute();
+
+		User result = updated(response);
+		assertEquals("Alice Updated", result.getName());
+		assertEquals("alice@example.com", result.getEmail(),
+				"'email' is declared with the erasing default, but a partial body means 'not supplied'");
+	}
+
+	@Test
+	@DisplayName("the same request without the partial marker erases — the flag is what makes the difference")
+	void withoutPartialMarkerTheNullErases() throws ApiException {
+		IDomain<?> users = domainWith(e -> { e.update("name"); e.update("email"); });
+
+		User result = updated(users.request()
+				.updateOne("uuid-alice", nameOnly("Alice Updated"))
+				.caller(caller)
+				.execute());
+
+		assertNull(result.getEmail(), "no partial marker — the declared erasing policy applies");
+	}
+
+	@Test
+	@DisplayName("a PARTIAL update does not widen the authority gate")
+	void partialUpdateDoesNotBypassAuthority() throws ApiException {
+		IDomain<?> users = domainWith(e -> e.update("name", "user-set-name", false));
+		ICaller withoutAuthority = new Caller("superTenant", "superTenant", "u1", "u1", true, true, List.of());
+
+		User result = updated(users.request()
+				.updateOne("uuid-alice", nameOnly("Hacked"))
+				.caller(withoutAuthority)
+				.param(IOperationRequest.PARTIAL_UPDATE, Boolean.TRUE)
+				.execute());
+
+		assertEquals("Alice", result.getName(),
+				"a partial body changes what a null means, never who may write the field");
 	}
 
 	@Test

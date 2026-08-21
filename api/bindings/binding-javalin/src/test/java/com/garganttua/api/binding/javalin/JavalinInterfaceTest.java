@@ -90,6 +90,8 @@ class JavalinInterfaceTest {
 		final IDomainDefinition<Object> definition;
 		volatile OperationDefinition lastOperation;
 		volatile String lastUuid;
+		/** The PARTIAL_UPDATE marker carried by the dispatched request (null when absent). */
+		volatile Boolean lastPartialUpdate;
 		volatile Object lastRawRequest;
 		volatile String lastMethod;
 		volatile String lastPath;
@@ -123,6 +125,7 @@ class JavalinInterfaceTest {
 			this.invokeCount++;
 			this.lastOperation = request.arg(IOperationRequest.OPERATION).orElse(null);
 			this.lastUuid = request.arg(IOperationRequest.ENTITY_UUID).orElse(null);
+			this.lastPartialUpdate = request.arg(IOperationRequest.PARTIAL_UPDATE).orElse(null);
 			Object raw = request.arg(IOperationRequest.RAW_REQUEST).orElse(null);
 			this.lastRawRequest = raw;
 			try {
@@ -296,7 +299,7 @@ class JavalinInterfaceTest {
 		}
 
 		@Test
-		@DisplayName("PUT /users/{uuid} → update, uuid + body captured")
+		@DisplayName("PUT /users/{uuid} → update, uuid + body captured, NOT flagged partial")
 		void putUpdate() throws Exception {
 			HttpResponse<String> resp = send("PUT", "/users/u-9", "Bob|bob@x.io");
 
@@ -305,6 +308,36 @@ class JavalinInterfaceTest {
 			assertEquals(BusinessOperation.update, domain.lastOperation.getBusinessOperation());
 			assertEquals("u-9", domain.lastUuid);
 			assertArrayEquals("Bob|bob@x.io".getBytes(StandardCharsets.UTF_8), domain.lastBody);
+			assertNull(domain.lastPartialUpdate,
+					"PUT is a full update — the body follows each field's declared null policy");
+		}
+
+		@Test
+		@DisplayName("PATCH /users/{uuid} → the same update operation, flagged partial")
+		void patchUpdate() throws Exception {
+			HttpResponse<String> resp = send("PATCH", "/users/u-9", "Bob|bob@x.io");
+
+			assertEquals(200, resp.statusCode());
+			assertEquals("ok:update", resp.body());
+			assertEquals(BusinessOperation.update, domain.lastOperation.getBusinessOperation(),
+					"PATCH reaches the same updateOne operation as PUT");
+			assertEquals("u-9", domain.lastUuid);
+			assertEquals("PATCH", domain.lastMethod);
+			assertArrayEquals("Bob|bob@x.io".getBytes(StandardCharsets.UTF_8), domain.lastBody);
+			assertEquals(Boolean.TRUE, domain.lastPartialUpdate,
+					"PATCH must flag the body as partial so an absent field keeps its stored value");
+		}
+
+		@Test
+		@DisplayName("no update operation on the domain → neither PATCH nor PUT is routed")
+		void patchAbsentWhenUpdateDisabled() throws Exception {
+			startWith(standardOperations().stream()
+					.filter(op -> op.getBusinessOperation() != BusinessOperation.update)
+					.toList());
+
+			assertEquals(404, send("PATCH", "/users/u-9", "Bob").statusCode());
+			assertEquals(404, send("PUT", "/users/u-9", "Bob").statusCode());
+			assertEquals(0, domain.invokeCount, "a disabled operation must reach no route at all");
 		}
 
 		@Test
@@ -618,6 +651,23 @@ class JavalinInterfaceTest {
 			assertEquals("activate", domain.lastOperation.useCaseName());
 			assertEquals("u-42", domain.lastUuid, "the ${uuid} segment must be threaded as ENTITY_UUID");
 			assertEquals("/users/activate/u-42", domain.lastPath);
+		}
+
+		@Test
+		@DisplayName("PATCH /users/activate/{uuid} → the same update use case, flagged partial")
+		void patchOneEntityUseCase() throws Exception {
+			startWith(List.of(useCaseOp("activate",
+					com.garganttua.api.commons.operation.TechnicalOperation.update,
+					com.garganttua.api.commons.operation.Scope.oneEntity, "/users/activate/${uuid}")));
+
+			HttpResponse<String> resp = send("PATCH", "/users/activate/u-42", "body");
+
+			assertEquals(200, resp.statusCode());
+			assertEquals(BusinessOperation.useCase, domain.lastOperation.getBusinessOperation());
+			assertEquals("activate", domain.lastOperation.useCaseName(),
+					"an update use case is reachable under PATCH as well as PUT");
+			assertEquals("u-42", domain.lastUuid);
+			assertEquals(Boolean.TRUE, domain.lastPartialUpdate);
 		}
 
 		@Test

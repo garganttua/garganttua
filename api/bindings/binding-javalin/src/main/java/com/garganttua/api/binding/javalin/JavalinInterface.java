@@ -33,10 +33,16 @@ import io.javalin.http.Handler;
  *   POST    /{domain}            → createOne
  *   GET     /{domain}            → readAll
  *   GET     /{domain}/{uuid}     → readOne
- *   PUT     /{domain}/{uuid}     → updateOne
+ *   PATCH   /{domain}/{uuid}     → updateOne  (partial — an absent field is left alone)
+ *   PUT     /{domain}/{uuid}     → updateOne  (full — an absent field follows its declared null policy)
  *   DELETE  /{domain}/{uuid}     → deleteOne
  *   DELETE  /{domain}            → deleteAll
  * </pre>
+ * <b>Prefer PATCH for updates.</b> Both verbs reach the same {@code updateOne} operation, but
+ * PATCH flags the body as partial ({@link IOperationRequest#PARTIAL_UPDATE}), so a field the
+ * client did not send keeps its stored value. PUT applies the declared per-field policy instead,
+ * where a null erases unless the field opted into {@code ignoreNull}. Neither verb changes which
+ * fields a caller may write — the field-level authority gate is identical.
  * Each handler hands the live Javalin {@link Context} to the pipeline as
  * {@code rawRequest} and invokes the domain. Transport extraction and response
  * writing are delegated to the companion {@link JavalinProtocol} (Mode A): this
@@ -167,7 +173,7 @@ public class JavalinInterface implements IInterface {
 		List<OperationDefinition> configured = domain.getDomainDefinition().operations();
 
 		// Use cases first: each declared use case is a routable operation carrying its own verb
-		// (read→GET, create→POST, update→PUT, delete→DELETE), its own path (defaulting to
+		// (read→GET, create→POST, update→PATCH+PUT, delete→DELETE), its own path (defaulting to
 		// /{domain}/{name}) and a {uuid} segment when scoped to a single entity. They are
 		// registered BEFORE the CRUD table so a literal use-case path (e.g. /users/greet) wins
 		// over readOne's /users/{uuid} — Javalin resolves a collision by registration order, so
@@ -180,13 +186,18 @@ public class JavalinInterface implements IInterface {
 			}
 			String path = toJavalinPath(op);
 			boolean hasUuid = path.contains("{uuid}");
-			Handler handler = ctx -> dispatch(domain, op, ctx, hasUuid ? ctx.pathParam("uuid") : null);
-			register(server, verbOf(op.technicalOperation()), path, handler);
+			for (HttpVerb verb : verbsOf(op.technicalOperation())) {
+				boolean partial = verb == HttpVerb.PATCH;
+				Handler handler = ctx -> dispatch(domain, op, ctx, hasUuid ? ctx.pathParam("uuid") : null, partial);
+				register(server, verb, path, handler);
+			}
 		}
 
 		route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false);
 		route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false);
 		route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true);
+		// Update is reachable under both verbs; only PATCH flags the body as partial.
+		route(server, HttpVerb.PATCH,  one,  domain, configured, BusinessOperation.update,    true);
 		route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true);
 		route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true);
 		route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false);
@@ -198,16 +209,20 @@ public class JavalinInterface implements IInterface {
 				BusinessOperation.authenticate, false);
 	}
 
-	/** The HTTP verb a use case's technical operation maps to. */
-	private static HttpVerb verbOf(com.garganttua.api.commons.operation.TechnicalOperation op) {
+	/**
+	 * The HTTP verbs a use case's technical operation maps to. An {@code update} use case is
+	 * reachable under both PATCH and PUT — PATCH first, since it is the preferred verb — exactly
+	 * like the CRUD update route.
+	 */
+	private static List<HttpVerb> verbsOf(com.garganttua.api.commons.operation.TechnicalOperation op) {
 		if (op == null) {
-			return HttpVerb.GET;
+			return List.of(HttpVerb.GET);
 		}
 		return switch (op) {
-			case create -> HttpVerb.POST;
-			case update -> HttpVerb.PUT;
-			case delete -> HttpVerb.DELETE;
-			case read -> HttpVerb.GET;
+			case create -> List.of(HttpVerb.POST);
+			case update -> List.of(HttpVerb.PATCH, HttpVerb.PUT);
+			case delete -> List.of(HttpVerb.DELETE);
+			case read -> List.of(HttpVerb.GET);
 		};
 	}
 
@@ -223,7 +238,7 @@ public class JavalinInterface implements IInterface {
 		return path.replace("${uuid}", "{uuid}");
 	}
 
-	private enum HttpVerb { GET, POST, PUT, DELETE }
+	private enum HttpVerb { GET, POST, PATCH, PUT, DELETE }
 
 	/**
 	 * Registers one route, but only when the domain actually exposes {@code bo} (the
@@ -237,7 +252,8 @@ public class JavalinInterface implements IInterface {
 		if (operation == null) {
 			return; // operation not enabled on this domain — no route
 		}
-		Handler handler = ctx -> dispatch(domain, operation, ctx, hasUuid ? ctx.pathParam("uuid") : null);
+		boolean partial = verb == HttpVerb.PATCH;
+		Handler handler = ctx -> dispatch(domain, operation, ctx, hasUuid ? ctx.pathParam("uuid") : null, partial);
 		register(server, verb, path, handler);
 	}
 
@@ -246,6 +262,7 @@ public class JavalinInterface implements IInterface {
 		switch (verb) {
 			case GET -> server.get(path, handler);
 			case POST -> server.post(path, handler);
+			case PATCH -> server.patch(path, handler);
 			case PUT -> server.put(path, handler);
 			case DELETE -> server.delete(path, handler);
 		}
@@ -275,13 +292,17 @@ public class JavalinInterface implements IInterface {
 	 * transport authoritative: the status follows {@link IOperationResponse#getResponseCode()},
 	 * and on failure the carried {@link Throwable}'s message becomes the body.
 	 */
-	private void dispatch(IDomain<?> domain, OperationDefinition operation, Context ctx, String uuid) {
+	private void dispatch(IDomain<?> domain, OperationDefinition operation, Context ctx, String uuid,
+			boolean partial) {
 		try {
 			IOperationRequest request = IOperationRequest.create();
 			request.arg(IOperationRequest.OPERATION, operation);
 			request.arg(IOperationRequest.RAW_REQUEST, ctx);
 			if (uuid != null) {
 				request.arg(IOperationRequest.ENTITY_UUID, uuid);
+			}
+			if (partial) {
+				request.arg(IOperationRequest.PARTIAL_UPDATE, Boolean.TRUE);
 			}
 			IOperationResponse response = domain.invoke(request);
 

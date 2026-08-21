@@ -27,4 +27,13 @@ public record EntityUpdateRule(ObjectAddress field, String authority, boolean ig
 	public static EntityUpdateRule of(ObjectAddress field, String authority) {
 		return new EntityUpdateRule(field, authority, false);
 	}
+
+	/**
+	 * This rule seen through PATCH semantics: the field and its authority are untouched, but a
+	 * {@code null} incoming value leaves the stored value alone. Used when the transport flags the
+	 * body as partial ({@code IOperationRequest.PARTIAL_UPDATE}).
+	 */
+	public EntityUpdateRule ignoringNull() {
+		return this.ignoreNull ? this : new EntityUpdateRule(this.field, this.authority, true);
+	}
 }

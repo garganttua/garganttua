@@ -31,6 +31,18 @@ public interface IOperationRequest {
 	ArgKey<Byte[]> RAW_BODY = ArgKey.of("rawBody", IClass.getClass(Byte[].class));
 	ArgKey<Object> BODY = ArgKey.of("body", IClass.getClass(Object.class));
 	ArgKey<String> ENTITY_UUID = ArgKey.of("entityUuid", IClass.getClass(String.class));
+	/**
+	 * Transport marker: the body carries only the fields the client means to change — HTTP
+	 * {@code PATCH} rather than {@code PUT}. When set, the update stage reads every declared
+	 * update rule as {@code ignoreNull}, whatever the per-field declaration says: a {@code null}
+	 * means "not supplied" and leaves the stored value alone, instead of erasing it.
+	 *
+	 * <p>It never widens what a caller may write — the field-level authority gate runs first and is
+	 * unaffected. Set server-side by the transport that knows the verb (see the Javalin interface's
+	 * PATCH routes); a client cannot forge it, since the extract stage publishes query parameters
+	 * under {@code queryParameters} and never as top-level args.
+	 */
+	ArgKey<Boolean> PARTIAL_UPDATE = ArgKey.of("partialUpdate", IClass.getClass(Boolean.class));
 	ArgKey<IFilter> FILTER = ArgKey.of("filter", IClass.getClass(IFilter.class));
 	// "pageable" — MUST match what READ_ALL.gs reads (:arg(@0, "pageable")), so the DSL .page()
 	// and IDomain.readAll(page) actually reach the pipeline.

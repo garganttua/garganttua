@@ -12,7 +12,7 @@
 The pinned version (`javalin.version` in the root POM) is currently **6.6.0**. Updating the entire framework to a new Javalin release requires changing exactly one property.
 
 **Key Features:**
-- **Javalin-backed `IInterface`** — `JavalinInterface` owns a Javalin server and, on `handle(domain)`, wires the standard CRUD route table (`POST`/`GET`/`PUT`/`DELETE` on `/{domain}` and `/{domain}/{uuid}`) onto it; idempotent `onStart`/`onStop` lifecycle
+- **Javalin-backed `IInterface`** — `JavalinInterface` owns a Javalin server and, on `handle(domain)`, wires the standard CRUD route table (`POST`/`GET`/`PATCH`/`PUT`/`DELETE` on `/{domain}` and `/{domain}/{uuid}`) onto it; idempotent `onStart`/`onStop` lifecycle
 - **Companion `IProtocol`** — `JavalinProtocol` extracts the transport fields (body, caller, headers, path, method, query) from a `Context` and writes the pipeline's response back onto it; reuses the framework's canonical `Caller`
 - **Single-version authority** — Javalin coordinates and version are defined once in the root POM `<properties>` block; every consumer inherits the same artifact without risk of split-brain versioning
 - **Lightweight HTTP/WebSocket server** — Javalin 6.x is a Kotlin/Java-friendly layer over Jetty 12 that exposes a concise, lambda-based routing API, HTTP/2, WebSocket, and SSE out of the box
@@ -116,14 +116,20 @@ ApiBuilder.builder()
 
 The generated routes for a `users` domain are:
 
-| Verb   | Path             | Operation   |
-|--------|------------------|-------------|
-| POST   | `/users`         | createOne   |
-| GET    | `/users`         | readAll     |
-| GET    | `/users/{uuid}`  | readOne     |
-| PUT    | `/users/{uuid}`  | updateOne   |
-| DELETE | `/users/{uuid}`  | deleteOne   |
-| DELETE | `/users`         | deleteAll   |
+| Verb   | Path             | Operation   | Notes |
+|--------|------------------|-------------|-------|
+| POST   | `/users`         | createOne   | |
+| GET    | `/users`         | readAll     | |
+| GET    | `/users/{uuid}`  | readOne     | |
+| PATCH  | `/users/{uuid}`  | updateOne   | **preferred** — partial body, an absent field keeps its stored value |
+| PUT    | `/users/{uuid}`  | updateOne   | full body, an absent field follows its declared null policy |
+| DELETE | `/users/{uuid}`  | deleteOne   | |
+| DELETE | `/users`         | deleteAll   | |
+
+**Prefer PATCH for updates.** Both verbs reach the same `updateOne` operation; PATCH additionally flags
+the request as partial (`IOperationRequest.PARTIAL_UPDATE`), so a field the client did not send is left
+alone instead of being erased. Neither verb changes which fields a caller may write — the field-level
+authority gate is identical. See `api/docs/field-level-authority.md`.
 
 You can still use this binding purely as the Javalin version anchor in any other module — it brings `io.javalin:javalin:6.6.0` (and its transitive closure) without you declaring the coordinates directly. To upgrade Javalin across the entire framework, change `javalin.version` in the root POM and rebuild.
 

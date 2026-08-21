@@ -38,6 +38,30 @@ The authority gate runs **first**: an ungranted field is never written, so a `nu
 
 A framework-internal write (startup seeding / `invokeInternal`) does not go through this whitelist at all — it merges every non-null field wholesale, so a partial server-side write never wipes data it did not mean to touch.
 
+### PATCH vs PUT over HTTP
+
+The per-field policy above is the **declared default**. A transport that knows the client sent a *partial* body overrides it for that one request by setting `IOperationRequest.PARTIAL_UPDATE`: every rule then reads as `ignoreNull`, whatever the declaration says.
+
+The Javalin interface routes both verbs to the same `updateOne` operation and sets the marker on PATCH only:
+
+```
+PATCH /users/{uuid}  {"name":"Alice"}   -> name updated, email untouched
+PUT   /users/{uuid}  {"name":"Alice"}   -> name updated, email erased
+                                           (unless declared .update("email", true))
+```
+
+**Prefer PATCH for updates.** It matches what clients expect from REST and spares you declaring `ignoreNull` on every field just to make partial bodies safe. Reach for PUT when the body really is the full new state of the updatable fields.
+
+The marker never widens what a caller may write: the authority gate runs first, so an ungranted field is skipped under both verbs. It is server-set only — the extract stage publishes query parameters under `queryParameters`, never as top-level args, so a client cannot forge it. Programmatically it is reachable through the request builder:
+
+```java
+domain.request()
+    .updateOne(uuid, body)
+    .caller(caller)
+    .param(IOperationRequest.PARTIAL_UPDATE, true)
+    .execute();
+```
+
 ## Annotations — the declarative form
 
 `@AuthorizeCreate` / `@AuthorizeUpdate` on the entity fields are the exact counterparts of the DSL calls, picked up by the entity annotation scanner:

@@ -32,7 +32,7 @@ public interface IUseCaseDefinition {
 
 	Scope scope();
 
-	/** The HTTP verb, expressed as a {@link TechnicalOperation} (read→GET, create→POST, update→PUT, delete→DELETE). */
+	/** The HTTP verb, expressed as a {@link TechnicalOperation} (read→GET, create→POST, update→PATCH and PUT, delete→DELETE). */
 	TechnicalOperation operation();
 
 	Access access();
