@@ -29,10 +29,26 @@ garganttua/
 ├── config/checkstyle/           # checkstyle config consumed by the -Pquality profile
 ├── .github/workflows/           # CI: maven-publish, release notes, script installer
 ├── .claude/rules/   # platform-wide rules (promoted from garganttua-core)
+├── demandes-externes/           # fiches déposées par les CONSOMMATEURS (bogues, écarts, manques)
 ├── core/            # garganttua-core   — foundation: DI, reflection, expression, scripting, workflow
 ├── api/             # garganttua-api    — declarative REST API generation (depends on core)
 └── events/          # garganttua-events — event routing (depends on core)
 ```
+
+### `demandes-externes/` — ce que les consommateurs remontent
+
+Les projets qui construisent sur la plateforme sans en écrire une ligne (palliad aujourd'hui)
+y déposent leurs fiches : bogue constaté, écart entre ce que le DSL donne à lire et ce qu'il fait,
+manque qui impose un contournement. `demandes-externes/README.md` porte le format attendu et
+l'index par gravité.
+
+Le dossier existe parce que ces fiches vivaient chez le consommateur, où elles décrivaient un
+défaut de la plateforme à des gens qui ne pouvaient pas le corriger — pendant que ceux qui le
+peuvent ignoraient leur existence. Elles citent des chemins comme `api/core/src/main/java/…` :
+ils se relisent d'ici, et de nulle part ailleurs.
+
+**Une fiche traitée se répond dans la fiche** (version qui corrige, ou refus motivé) plutôt qu'elle
+ne s'efface : celui qui l'a écrite viendra vérifier, et un dossier vide ne lui apprend rien.
 
 **Shared build/config lives ONLY at the root** — there are no longer per-library copies of
 `scripts/`, `cliff.toml`, `config/`, `templates/`, `LICENSE`, `.gitignore`, `new-*.sh`, `.github/`

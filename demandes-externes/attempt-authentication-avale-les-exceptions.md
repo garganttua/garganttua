@@ -1,0 +1,48 @@
+# Bogue — `attemptAuthentication` avale les exceptions des stratégies d'authentification
+
+**À l'attention de :** garganttua-api
+**Émis par :** palliad (consommateur v3, AOT pur)
+**Date :** 2026-08-24
+**Version constatée :** garganttua-api `3.0.0-ALPHA15`
+**Gravité :** moyenne — transforme toute faute de câblage en « identifiants invalides », sans trace.
+
+## Symptôme
+
+Une stratégie d'authentification qui lève — champ mal nommé, binder AOT absent, dépendance
+non injectée, cast impossible — produit exactement la même réponse qu'un mot de passe faux :
+un 401 générique. **Aucune ligne de journal**, aucune distinction possible entre « cet
+utilisateur s'est trompé » et « cette API est mal montée ».
+
+## Cause
+
+`api/core/src/main/java/com/garganttua/api/core/expression/SecurityAuthenticationExpressions.java:277-304`
+
+```java
+private static IAuthentication attemptAuthentication(IAuthenticationDefinition authDef) {
+    try {
+        ...
+    } catch (RuntimeException e) {
+        return null;          // ← ni log, ni rethrow, ni marqueur
+    }
+}
+```
+
+Le `catch` se justifie par la cascade : plusieurs `.authentication(...)` peuvent être
+déclarées sur un même authenticator, et l'échec de l'une ne doit pas empêcher d'essayer la
+suivante. Mais avaler **sans rien dire** rend la cascade indiscernable d'une panne.
+
+## Conséquence
+
+Le coût se paie au premier montage d'une authentification personnalisée : on cherche du côté
+des identifiants pendant que le vrai problème est un nom de champ ou un descripteur AOT
+manquant. En image native, où les fautes de résolution par nom sont fréquentes, c'est le
+scénario le plus probable.
+
+## Attendu
+
+Journaliser l'exception au niveau `warn` ou `debug` avec le nom de la stratégie, avant de
+rendre `null`. La cascade continue de fonctionner ; la panne cesse d'être muette.
+
+## Trace
+
+Constaté pendant l'introduction de `SharedSecretAuthentication` (palliad, 2026-08-24).
