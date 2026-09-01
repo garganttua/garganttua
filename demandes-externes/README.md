@@ -51,6 +51,7 @@ ne disent pas la même chose qu'un seul.
 | Fiche | Émise par | Date | Gravité | En une ligne |
 |---|---|---|---|---|
 | [toute-exception-de-crochet-rend-500](toute-exception-de-crochet-rend-500.md) | palliad | 2026-08-27 | élevée | Une règle métier refusée par un crochet rend 500 : un refus de saisie est indiscernable d'une panne. |
+| [crochets-afterget-ne-tirent-jamais](crochets-afterget-ne-tirent-jamais.md) | autonom | 2026-09-01 | élevée | `afterGet` ne s'exécute jamais, dans aucune des deux formes : le DSL décrit une protection qui n'existe pas, et son usage naturel est de retirer un secret avant le réseau. |
 | [crochets-de-suppression-ne-tirent-jamais](crochets-de-suppression-ne-tirent-jamais.md) | palliad | 2026-08-25 | élevée | `beforeDelete`/`afterDelete` libres ne sont jamais appelés — la purge écrite par le consommateur ne tourne pas. |
 | [mandatory-teste-la-nullite-et-seulement-a-la-creation](mandatory-teste-la-nullite-et-seulement-a-la-creation.md) | palliad | 2026-08-27 | moyenne | `mandatory` laisse passer la chaîne vide, et ne tient pas à la mise à jour. |
 | [operation-request-caller-reconstruit](operation-request-caller-reconstruit.md) | palliad | 2026-08-24 | moyenne | `OperationRequest.caller()` rebâtit l'appelant depuis `X-Tenant-Id` : un contrôle qui a l'air de protéger ne protège rien. |
