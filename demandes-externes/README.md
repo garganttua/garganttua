@@ -44,16 +44,19 @@ vérifier, et un dossier vide ne lui apprend rien.
 
 ## Fiches ouvertes
 
-Toutes émises par **palliad** (consommateur v3, AOT pur), constatées sur `3.0.0-ALPHA15`.
+Émises par **palliad** et **autonom** (consommateurs v3, AOT purs), constatées sur
+`3.0.0-ALPHA15`. La colonne « Émise par » compte : deux consommateurs qui butent sur la même chose
+ne disent pas la même chose qu'un seul.
 
-| Fiche | Date | Gravité | En une ligne |
-|---|---|---|---|
-| [toute-exception-de-crochet-rend-500](toute-exception-de-crochet-rend-500.md) | 2026-08-27 | élevée | Une règle métier refusée par un crochet rend 500 : un refus de saisie est indiscernable d'une panne. |
-| [crochets-de-suppression-ne-tirent-jamais](crochets-de-suppression-ne-tirent-jamais.md) | 2026-08-25 | élevée | `beforeDelete`/`afterDelete` libres ne sont jamais appelés — la purge écrite par le consommateur ne tourne pas. |
-| [mandatory-teste-la-nullite-et-seulement-a-la-creation](mandatory-teste-la-nullite-et-seulement-a-la-creation.md) | 2026-08-27 | moyenne | `mandatory` laisse passer la chaîne vide, et ne tient pas à la mise à jour. |
-| [operation-request-caller-reconstruit](operation-request-caller-reconstruit.md) | 2026-08-24 | moyenne | `OperationRequest.caller()` rebâtit l'appelant depuis `X-Tenant-Id` : un contrôle qui a l'air de protéger ne protège rien. |
-| [attempt-authentication-avale-les-exceptions](attempt-authentication-avale-les-exceptions.md) | 2026-08-24 | moyenne | Une stratégie qui lève rend le même 401 qu'un mot de passe faux, sans une ligne de journal. |
-| [champs-ecartes-silencieusement](champs-ecartes-silencieusement.md) | 2026-08-26 | observabilité | Un champ refusé à l'écriture rend 200 sans le dire : l'écran affiche un succès qui n'a rien écrit. |
-| [authenticator-authorities-decoratif](authenticator-authorities-decoratif.md) | 2026-08-24 | malentendu | `.authorities(champ)` sur un authenticator n'est relu nulle part — le DSL décrit un comportement qui n'existe pas. |
+| Fiche | Émise par | Date | Gravité | En une ligne |
+|---|---|---|---|---|
+| [toute-exception-de-crochet-rend-500](toute-exception-de-crochet-rend-500.md) | palliad | 2026-08-27 | élevée | Une règle métier refusée par un crochet rend 500 : un refus de saisie est indiscernable d'une panne. |
+| [crochets-de-suppression-ne-tirent-jamais](crochets-de-suppression-ne-tirent-jamais.md) | palliad | 2026-08-25 | élevée | `beforeDelete`/`afterDelete` libres ne sont jamais appelés — la purge écrite par le consommateur ne tourne pas. |
+| [mandatory-teste-la-nullite-et-seulement-a-la-creation](mandatory-teste-la-nullite-et-seulement-a-la-creation.md) | palliad | 2026-08-27 | moyenne | `mandatory` laisse passer la chaîne vide, et ne tient pas à la mise à jour. |
+| [operation-request-caller-reconstruit](operation-request-caller-reconstruit.md) | palliad | 2026-08-24 | moyenne | `OperationRequest.caller()` rebâtit l'appelant depuis `X-Tenant-Id` : un contrôle qui a l'air de protéger ne protège rien. |
+| [attempt-authentication-avale-les-exceptions](attempt-authentication-avale-les-exceptions.md) | palliad | 2026-08-24 | moyenne | Une stratégie qui lève rend le même 401 qu'un mot de passe faux, sans une ligne de journal. |
+| [champs-ecartes-silencieusement](champs-ecartes-silencieusement.md) | palliad | 2026-08-26 | observabilité | Un champ refusé à l'écriture rend 200 sans le dire : l'écran affiche un succès qui n'a rien écrit. |
+| [authenticator-authorities-decoratif](authenticator-authorities-decoratif.md) | palliad | 2026-08-24 | malentendu | `.authorities(champ)` sur un authenticator n'est relu nulle part — le DSL décrit un comportement qui n'existe pas. |
+| [prefixe-http-non-configurable](prefixe-http-non-configurable.md) | autonom | 2026-09-01 | évolution | Les routes générées se montent à la racine, sans préfixe possible : une application qui partage son serveur tient deux espaces de noms HTTP. |
 
 Rangées par gravité, pas par date : c'est l'ordre dans lequel elles se lisent utilement.
