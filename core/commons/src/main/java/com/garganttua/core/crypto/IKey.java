@@ -100,4 +100,25 @@ public interface IKey {
 	 */
 	SignatureAlgorithm getSignatureAlgorithm();
 
+	/**
+	 * Whether this key's material can be exported as JDK-encoded bytes.
+	 *
+	 * <p>{@code false} means the material never leaves its holder — a PKCS#11 token, an HSM, a KMS.
+	 * Such a key still {@link #sign signs} and {@link #verifySignature verifies}, but
+	 * {@link #getKey()} yields a handle whose {@code getEncoded()} is {@code null} (or throws), so
+	 * any code that rebuilds a key from bytes must use the key AS IT STANDS instead.
+	 *
+	 * <p>The default is {@code true}: every implementation that carries its own material keeps
+	 * working unchanged. Only a key backed by an external holder overrides it — and that single
+	 * declaration is what lets the framework keep such a key out of any byte-based reconstruction
+	 * path. Without it, «&nbsp;the private key never leaves the token&nbsp;» is not expressible: the
+	 * reconstruction demands bytes the holder will never give.
+	 *
+	 * @return {@code true} when {@link #getKey()} yields exportable material
+	 * @since 3.0.0-ALPHA16
+	 */
+	default boolean isExportable() {
+		return true;
+	}
+
 }

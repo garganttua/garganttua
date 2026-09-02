@@ -18,6 +18,7 @@ import com.garganttua.core.crypto.KeyAlgorithm;
 import com.garganttua.core.crypto.KeyMaterialEnvelope;
 import com.garganttua.core.crypto.KeyRealm;
 import com.garganttua.core.crypto.KeyType;
+import com.garganttua.core.crypto.ExternalKeyRealm;
 import com.garganttua.core.crypto.SealedKey;
 import com.garganttua.core.crypto.SignatureAlgorithm;
 import com.garganttua.core.reflection.IClass;
@@ -60,6 +61,15 @@ final class SecurityKeyExpressions {
 
         IKeyAlgorithm algorithm = parseKeyAlgorithm(algorithmRaw);
         SignatureAlgorithm sigAlgo = parseKeySignature(signatureRaw);
+
+        // MATERIAL THAT CANNOT BE EXPORTED IS USED AS IT STANDS. A key held in a PKCS#11 token, an
+        // HSM or a KMS signs on request and yields no bytes — getEncoded() is null by design. Feeding
+        // it to a byte-based factory is not merely lossy, it is impossible, and that impossibility is
+        // what used to make « the private key never leaves its holder » inexpressible whatever the
+        // storage underneath. The realm therefore wraps the keys and delegates to them.
+        if (!signingKey.isExportable()) {
+            return ExternalKeyRealm.of(name, algorithm, signingKey, verificationKey, expiration, revoked);
+        }
 
         // Extract JDK-encoded bytes from the IKey objects carried on the entity and rebuild a
         // fully-stitched IKeyRealm via core's factory. We do not pass the IKey instances directly:
