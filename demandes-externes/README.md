@@ -50,6 +50,7 @@ ne disent pas la même chose qu'un seul.
 
 | Fiche | Émise par | Date | Gravité | En une ligne |
 |---|---|---|---|---|
+| [resolution-par-requete-et-exceptions-sur-le-chemin-chaud](resolution-par-requete-et-exceptions-sur-le-chemin-chaud.md) | autonom | 2026-09-02 | élevée | ~40 ms sur CHAQUE requête authentifiée, passés à lever des exceptions pour dire « ce n'est pas un champ » et à re-résoudre par réflexion ce que l'AOT a déjà calculé. |
 | [toute-exception-de-crochet-rend-500](toute-exception-de-crochet-rend-500.md) | palliad | 2026-08-27 | élevée | Une règle métier refusée par un crochet rend 500 : un refus de saisie est indiscernable d'une panne. |
 | [afterget-ne-tire-que-sur-readone](afterget-ne-tire-que-sur-readone.md) | autonom | 2026-09-01 | moyenne | `afterGet` s'exécute sur `GET /<domaine>/{uuid}` et jamais sur `GET /<domaine>` : qui s'en sert pour retirer un secret est protégé sur une route et pas sur l'autre. |
 | [crochets-de-suppression-ne-tirent-jamais](crochets-de-suppression-ne-tirent-jamais.md) | palliad | 2026-08-25 | élevée | `beforeDelete`/`afterDelete` libres ne sont jamais appelés — la purge écrite par le consommateur ne tourne pas. |
