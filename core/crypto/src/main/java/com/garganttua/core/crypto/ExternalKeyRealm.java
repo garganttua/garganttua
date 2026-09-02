@@ -28,6 +28,7 @@ import com.garganttua.core.observability.Logger;
  *
  * @since 3.0.0-ALPHA16
  */
+@SuppressWarnings("PMD.ReplaceJavaUtilDate")
 public final class ExternalKeyRealm implements IKeyRealm {
 
 	private static final Logger log = Logger.getLogger(ExternalKeyRealm.class);
@@ -52,7 +53,7 @@ public final class ExternalKeyRealm implements IKeyRealm {
 		this.keyAlgorithm = keyAlgorithm;
 		this.signingKey = signingKey;
 		this.verificationKey = verificationKey;
-		this.expiration = expiration == null ? null : new Date(expiration.getTime());
+		this.expiration = copy(expiration);
 		this.revoked = revoked;
 		this.version = version;
 	}
@@ -125,7 +126,18 @@ public final class ExternalKeyRealm implements IKeyRealm {
 
 	@Override
 	public Date getExpiration() {
-		return this.expiration == null ? null : new Date(this.expiration.getTime());
+		return copy(this.expiration);
+	}
+
+	/**
+	 * Copie defensive d'une date — {@code null} traverse tel quel.
+	 *
+	 * <p>Un realm rend sa date d'echeance a qui la demande : rendre l'instance interne laisserait
+	 * l'appelant la modifier, et l'expiration d'une cle de signature n'est pas une donnee qu'on
+	 * laisse muter depuis l'exterieur.
+	 */
+	private static Date copy(Date date) {
+		return date == null ? null : new Date(date.getTime());
 	}
 
 	@Override

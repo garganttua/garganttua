@@ -20,12 +20,12 @@ The **garganttua-bindings** module is the parent module for external framework i
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-bindings</artifactId>
-    <version>3.0.0-ALPHA15</version>
+    <version>3.0.0-ALPHA16</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA15
+3.0.0-ALPHA16
 
 ### Dependencies
 

@@ -28,12 +28,12 @@ The Supply framework enables you to define **declarative object suppliers** that
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-supply</artifactId>
-    <version>3.0.0-ALPHA15</version>
+    <version>3.0.0-ALPHA16</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA15
+3.0.0-ALPHA16
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

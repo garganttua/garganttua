@@ -24,12 +24,12 @@ The `garganttua-properties` module bridges standard Java `.properties` files wit
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-properties</artifactId>
-    <version>3.0.0-ALPHA15</version>
+    <version>3.0.0-ALPHA16</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA15
+3.0.0-ALPHA16
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
