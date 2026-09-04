@@ -25,6 +25,11 @@ import com.garganttua.core.CoreException;
  *
  * @see com.garganttua.api.commons.service.OperationResponseCode#fromExceptionCode(ApiException)
  */
+// AvoidFieldNameMatchingMethodName: each status constant deliberately pairs with the factory that
+// builds it (UNAUTHORIZED / unauthorized(), FORBIDDEN / forbidden(), CONFLICT / conflict()). PMD
+// compares the names case-insensitively; renaming either half to satisfy it would break the pairing
+// that makes this API readable.
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class ApiException extends CoreException {
 
     private static final long serialVersionUID = 1L;

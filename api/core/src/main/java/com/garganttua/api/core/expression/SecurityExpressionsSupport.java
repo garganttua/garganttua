@@ -346,21 +346,29 @@ final class SecurityExpressionsSupport {
             reflection.setFieldValue(entity, authzDef.revoked(), false);
         }
 
-        // Refresh-token fields — populated when the authorization is refreshable. The expiration
-        // window comes from the authenticator's authorization def (refreshLifeTime); the revoked flag
-        // starts false so the authorization domain's repository can later flip it to invalidate.
-        if (authzDef.refreshable()) {
-            if (authzDef.refreshExpiration() != null && authDef.authorizationDefinition() != null) {
-                var authzAuthDef = authDef.authorizationDefinition();
-                if (authzAuthDef.refreshUnit() != null && authzAuthDef.refreshDuration() > 0) {
-                    long millis = authzAuthDef.refreshUnit().toMillis(authzAuthDef.refreshDuration());
-                    reflection.setFieldValue(entity, authzDef.refreshExpiration(),
-                            Instant.now().plusMillis(millis));
-                }
+        populateRefreshFields(entity, authzDef, authDef, reflection);
+    }
+
+    /**
+     * The refresh-token half, populated only when the authorization is refreshable. The expiration
+     * window comes from the authenticator's authorization def (refreshLifeTime); the revoked flag
+     * starts false so the authorization domain's repository can later flip it to invalidate.
+     */
+    private static void populateRefreshFields(Object entity, IDomainAuthorizationDefinition authzDef,
+            IAuthenticatorDefinition authDef, IReflection reflection) {
+        if (!authzDef.refreshable()) {
+            return;
+        }
+        if (authzDef.refreshExpiration() != null && authDef.authorizationDefinition() != null) {
+            var authzAuthDef = authDef.authorizationDefinition();
+            if (authzAuthDef.refreshUnit() != null && authzAuthDef.refreshDuration() > 0) {
+                long millis = authzAuthDef.refreshUnit().toMillis(authzAuthDef.refreshDuration());
+                reflection.setFieldValue(entity, authzDef.refreshExpiration(),
+                        Instant.now().plusMillis(millis));
             }
-            if (authzDef.refreshRevoked() != null) {
-                reflection.setFieldValue(entity, authzDef.refreshRevoked(), false);
-            }
+        }
+        if (authzDef.refreshRevoked() != null) {
+            reflection.setFieldValue(entity, authzDef.refreshRevoked(), false);
         }
     }
 }

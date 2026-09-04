@@ -43,23 +43,7 @@ public class EntityUpdater implements IEntityUpdater{
 		List<ObjectAddress> rejected = new ArrayList<>();
 		try {
 			for (EntityUpdateRule rule : updateRules) {
-				ObjectAddress fieldAddress = rule.field();
-				String fieldName = fieldAddress.toString();
-				Object updatedValue = REFLECTION.getFieldValue(updatedEntity, fieldName);
-				if (!isAuthorized(caller, rule.authority())) {
-					// Refused for lack of the required authority. Reported only when the client
-					// actually SENT a value: a null here means the field was absent from the body
-					// (or explicitly null), and refusing to write nothing is not a refusal to report.
-					if (updatedValue != null) {
-						rejected.add(fieldAddress);
-					}
-					continue;
-				}
-				if (updatedValue == null && rule.ignoreNull()) {
-					continue;
-				}
-				REFLECTION.setFieldValue(storedEntity, fieldName, updatedValue);
-				applied.add(fieldAddress);
+				applyRule(caller, storedEntity, updatedEntity, rule, applied, rejected);
 			}
 		} catch (ApiException e) {
 			throw e;
@@ -68,6 +52,33 @@ public class EntityUpdater implements IEntityUpdater{
 		}
 
 		return new EntityWriteOutcome(storedEntity, applied, rejected);
+	}
+
+	/**
+	 * Applies one rule and files the field under what actually happened to it.
+	 *
+	 * <p>
+	 * A field refused for lack of the required authority is reported ONLY when the client actually
+	 * sent a value: a {@code null} here means the field was absent from the body (or explicitly
+	 * null), and declining to write nothing is not a refusal worth telling the caller about.
+	 * </p>
+	 */
+	private static void applyRule(ICaller caller, Object storedEntity, Object updatedEntity,
+			EntityUpdateRule rule, List<ObjectAddress> applied, List<ObjectAddress> rejected) {
+		ObjectAddress fieldAddress = rule.field();
+		String fieldName = fieldAddress.toString();
+		Object updatedValue = REFLECTION.getFieldValue(updatedEntity, fieldName);
+		if (!isAuthorized(caller, rule.authority())) {
+			if (updatedValue != null) {
+				rejected.add(fieldAddress);
+			}
+			return;
+		}
+		if (updatedValue == null && rule.ignoreNull()) {
+			return;
+		}
+		REFLECTION.setFieldValue(storedEntity, fieldName, updatedValue);
+		applied.add(fieldAddress);
 	}
 
 	/**

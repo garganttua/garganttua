@@ -28,6 +28,7 @@ import com.garganttua.api.core.domain.WorkflowDefinition;
 import com.garganttua.api.core.expression.ApiExpressions;
 import com.garganttua.api.core.expression.AuthorizationProtocolExpressions;
 import com.garganttua.api.core.expression.CrudExpressions;
+import com.garganttua.api.core.expression.EntityConstraintExpressions;
 import com.garganttua.api.core.expression.EntityLifecycleExpressions;
 import com.garganttua.api.core.expression.ProtocolExpressions;
 import com.garganttua.api.core.expression.SecurityExpressions;
@@ -130,6 +131,7 @@ public class ApiCoreInfrastructureSeed implements IAOTInfrastructureSeed {
         context.registerClass(AuthorizationProtocolExpressions.class);
         context.registerClass(CrudExpressions.class);
         context.registerClass(EntityLifecycleExpressions.class);
+        context.registerClass(EntityConstraintExpressions.class);
         context.registerClass(ProtocolExpressions.class);
         context.registerClass(SecurityExpressions.class);
         context.registerClass(SerializationExpressions.class);

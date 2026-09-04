@@ -75,6 +75,10 @@ import io.javalin.http.Handler;
  * keeps full control of the lifecycle. Several domains can share one server this way.
  */
 @Interface
+// AvoidFieldNameMatchingMethodName: the fluent/lifecycle accessor idiom used throughout — a field x
+// paired with a public accessor x() (ownsServer, app, status, mountPath). Declared once for the
+// class rather than on each field, which would repeat the same literal four times.
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class JavalinInterface implements IInterface {
 
 	/** Default HTTP port when none is supplied. */
@@ -99,13 +103,6 @@ public class JavalinInterface implements IInterface {
 	private static final ArgKey<Object> AUTHENTICATION =
 			ArgKey.of("authentication", IClass.getClass(Object.class));
 
-	/**
-	 * Response headers naming the DTO fields a write applied and those it dropped. Always both, and
-	 * always present on a write — see {@link #writeFieldReport}.
-	 */
-	private static final String FIELDS_APPLIED_HEADER = "X-Garganttua-Fields-Applied";
-	private static final String FIELDS_REJECTED_HEADER = "X-Garganttua-Fields-Rejected";
-
 	private static final Logger LOGGER = Logger.getLogger(JavalinInterface.class);
 
 	private final int port;
@@ -117,15 +114,9 @@ public class JavalinInterface implements IInterface {
 	 */
 	private final String mountPath;
 	/** Whether this interface owns (creates + starts + stops) its Javalin server. */
-	// justification: fluent/lifecycle accessor idiom — field x paired with public accessor x().
-	@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 	private final boolean ownsServer;
-	// justification: field paired with the lazy app() server accessor — intentional idiom.
-	@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 	private Javalin app;
 	private boolean started;
-	// justification: field paired with the ILifecycle status() accessor — intentional idiom.
-	@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 	private LifecycleStatus status = LifecycleStatus.NEW;
 
 	/** Binds an owned server to {@link #DEFAULT_PORT}. Required no-arg form for {@code .interfasse(IClass)}. */
@@ -268,20 +259,20 @@ public class JavalinInterface implements IInterface {
 			}
 		}
 
-		route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false, mounted);
-		route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false, mounted);
-		route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true,  mounted);
+		record(mounted, route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false));
+		record(mounted, route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false));
+		record(mounted, route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true));
 		// Update is reachable under both verbs; only PATCH flags the body as partial.
-		route(server, HttpVerb.PATCH,  one,  domain, configured, BusinessOperation.update,    true,  mounted);
-		route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true,  mounted);
-		route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true,  mounted);
-		route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false, mounted);
+		record(mounted, route(server, HttpVerb.PATCH,  one,  domain, configured, BusinessOperation.update,    true));
+		record(mounted, route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true));
+		record(mounted, route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true));
+		record(mounted, route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false));
 
 		// Authentication entry point (anonymous): the credentials travel in the body as
 		// an AuthenticationRequest. Registered only when the domain has an authenticator
 		// (its authenticate operation is then present in the configured operations).
-		route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
-				BusinessOperation.authenticate, false, mounted);
+		record(mounted, route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
+				BusinessOperation.authenticate, false));
 
 		// Name what is ACTUALLY mounted, not what was declared: with a mount path in play, the two
 		// differ, and this line is how an operator checks which of the two is online.
@@ -334,20 +325,26 @@ public class JavalinInterface implements IInterface {
 	 * The dispatched operation is the domain's own — carrying its declared
 	 * access/authority — never a synthesized standard-security one.
 	 */
-	private void route(Javalin server, HttpVerb verb, String path, IDomain<?> domain,
-			List<OperationDefinition> configured, BusinessOperation bo, boolean hasUuid,
-			List<String> mounted) {
+	private String route(Javalin server, HttpVerb verb, String path, IDomain<?> domain,
+			List<OperationDefinition> configured, BusinessOperation bo, boolean hasUuid) {
 		OperationDefinition operation = findOperation(configured, bo);
 		if (operation == null) {
-			return; // operation not enabled on this domain — no route
+			return null; // operation not enabled on this domain — no route
 		}
 		boolean partial = verb == HttpVerb.PATCH;
 		Handler handler = ctx -> dispatch(domain, operation, ctx, hasUuid ? ctx.pathParam("uuid") : null, partial);
 		register(server, verb, path, handler);
-		mounted.add(verb + " " + path);
+		return verb + " " + path;
 	}
 
 	/** Binds a handler to a Javalin route for the given verb. */
+	/** Records a mounted route, skipping the operations the domain does not expose. */
+	private static void record(List<String> mounted, String route) {
+		if (route != null) {
+			mounted.add(route);
+		}
+	}
+
 	private void register(Javalin server, HttpVerb verb, String path, Handler handler) {
 		switch (verb) {
 			case GET -> server.get(path, handler);
@@ -395,7 +392,7 @@ public class JavalinInterface implements IInterface {
 				request.arg(IOperationRequest.PARTIAL_UPDATE, Boolean.TRUE);
 			}
 			IOperationResponse response = domain.invoke(request);
-			writeFieldReport(ctx, operation, response);
+			JavalinResponses.writeFieldReport(ctx, operation, response);
 
 			// A token-minting op (authenticate / refreshAuthorization) that produced an
 			// encoded authorization returns it in the X-Authorization response header; the
@@ -403,176 +400,23 @@ public class JavalinInterface implements IInterface {
 			// super/authorities, never credentials/principal). The token travels in the header,
 			// never the body. The failure path is unchanged (applyOutcome surfaces the 4xx).
 			Object encoded = request.arg(ENCODED_AUTHORIZATION).orElse(null);
-			if (encoded != null && isSuccess(response)) {
-				ctx.header(AUTHORIZATION_RESPONSE_HEADER, asTokenString(encoded));
-				int status = httpStatus(response.getResponseCode());
+			if (encoded != null && JavalinResponses.isSuccess(response)) {
+				ctx.header(AUTHORIZATION_RESPONSE_HEADER, JavalinResponses.asTokenString(encoded));
+				int status = JavalinResponses.httpStatus(response.getResponseCode());
 				// Rendered in the client's negotiated media (JSON, XML, …) via the serializer
 				// registry; degrades to plain "ok" only when no registered serializer satisfies
 				// Accept, or when the pipeline published no authentication.
 				Object authentication = request.arg(AUTHENTICATION).orElse(null);
-				Object body = authentication != null ? authentication : new StatusEnvelope("ok");
-				writeEnvelope(ctx, domain, status, body, "ok");
+				Object body = authentication != null ? authentication : new JavalinResponses.StatusEnvelope("ok");
+				JavalinResponses.writeEnvelope(ctx, domain, status, body, "ok");
 				return;
 			}
-			applyOutcome(ctx, domain, response);
+			JavalinResponses.applyOutcome(ctx, domain, response);
 		} catch (RuntimeException e) {
 			// Defensive: the pipeline returns error codes rather than throwing, but a
 			// transport-level failure (e.g. no protocol resolved) must still answer.
 			ctx.status(500).result("Internal error: " + e.getMessage());
 		}
-	}
-
-	/** A successful outcome carries a payload, not a {@link Throwable}. */
-	private static boolean isSuccess(IOperationResponse response) {
-		return response != null && !(response.getResponse() instanceof Throwable);
-	}
-
-	/**
-	 * Reports, on every WRITE, which of the fields the client named were applied and which were
-	 * dropped.
-	 *
-	 * <p>
-	 * Both headers are emitted even when nothing was rejected — an empty value rather than no
-	 * header. Their absence would be ambiguous between "nothing rejected" and "a framework too old
-	 * to say", and no client could then rely on them. The status is deliberately NOT changed: the
-	 * request was processed, partially; turning a 200 into a 403 would break every client that
-	 * treats 2xx as success, for a problem that is one of observability.
-	 * </p>
-	 */
-	private static void writeFieldReport(Context ctx, OperationDefinition operation, IOperationResponse response) {
-		// A null response is a legitimate outcome here (the pipeline answered on the Context
-		// directly); there is then nothing to report, and this must not be what turns it into a 500.
-		if (response == null || !isWrite(operation)) {
-			return;
-		}
-		WrittenFields fields = response.getWrittenFields();
-		ctx.header(FIELDS_APPLIED_HEADER, String.join(",", fields.applied()));
-		ctx.header(FIELDS_REJECTED_HEADER, String.join(",", fields.rejected()));
-	}
-
-	/** Whether this operation writes an entity — the only ones for which a field report means anything. */
-	private static boolean isWrite(OperationDefinition operation) {
-		if (operation == null) {
-			return false;
-		}
-		BusinessOperation bo = operation.getBusinessOperation();
-		return bo == BusinessOperation.create || bo == BusinessOperation.update;
-	}
-
-	/** Renders the encoded token as a header string (it may be a String or a byte[]/Byte[] wire form). */
-	private static String asTokenString(Object encoded) {
-		if (encoded instanceof String s) {
-			return s;
-		}
-		if (encoded instanceof byte[] b) {
-			return new String(b, java.nio.charset.StandardCharsets.UTF_8);
-		}
-		if (encoded instanceof Byte[] boxed) {
-			byte[] out = new byte[boxed.length];
-			for (int i = 0; i < boxed.length; i++) {
-				out[i] = boxed[i];
-			}
-			return new String(out, java.nio.charset.StandardCharsets.UTF_8);
-		}
-		return String.valueOf(encoded);
-	}
-
-	/**
-	 * Reconciles the HTTP response with the pipeline's {@link IOperationResponse} so the
-	 * wire reflects the operation, not the always-200 default. On failure (the response
-	 * carries a {@link Throwable}) the status comes from the response code; on success
-	 * the RESPONSE stage already serialized the body, so only the status is corrected.
-	 * <p>
-	 * The error body is rendered in the client's negotiated media (JSON, XML, …) via
-	 * the serializer registry. It degrades to {@code text/plain} (the raw message) only
-	 * when no registered serializer satisfies {@code Accept} — the very situation a
-	 * {@code 406} reports, where answering in a served media would repeat the
-	 * content-negotiation violation being signalled. {@code text/plain} every client accepts.
-	 */
-	private void applyOutcome(Context ctx, IDomain<?> domain, IOperationResponse response) {
-		if (response == null) {
-			return;
-		}
-		int status = httpStatus(response.getResponseCode());
-		Object payload = response.getResponse();
-		if (payload instanceof Throwable t) {
-			String message = (t.getMessage() != null && !t.getMessage().isBlank())
-					? t.getMessage() : t.getClass().getSimpleName();
-			writeEnvelope(ctx, domain, status, new ErrorEnvelope(message), message);
-		} else {
-			ctx.status(status);
-		}
-	}
-
-	/**
-	 * Writes a small envelope object as the response body in the client's negotiated
-	 * media. Reuses the framework's RFC 7231 negotiation ({@link SerializationExpressions#negotiateSerializer})
-	 * over the API's serializer registry, labels the response with the chosen media type,
-	 * and falls back to {@code text/plain} (the supplied raw text) only when the API has
-	 * no serializer or none satisfies {@code Accept}.
-	 */
-	// justification: GuardLogStatement is moot with {}-parameterized logging (accepted noise per code-quality rules).
-	@SuppressWarnings("PMD.GuardLogStatement")
-	private void writeEnvelope(Context ctx, IDomain<?> domain, int status, Object envelope, String fallbackText) {
-		IApi api = apiOf(domain);
-		if (api != null) {
-			try {
-				ISerializer serializer = SerializationExpressions.negotiateSerializer(api, ctx.header("Accept"));
-				byte[] body = serializer.serialize(envelope);
-				ctx.status(status);
-				if (serializer.mimeType() != null) {
-					ctx.contentType(serializer.mimeType().toString());
-				}
-				ctx.result(body);
-				return;
-			} catch (RuntimeException negotiationOrSerializationFailed) {
-				// No serializer satisfies Accept (or serialization failed) — degrade to plain text.
-				// negotiateSerializer/serialize raise the unchecked ApiException (e.g. 415); any
-				// runtime failure here is non-fatal and falls through to the text/plain branch.
-				LOGGER.debug("Serializer negotiation/serialization failed, degrading to text/plain: {}",
-						negotiationOrSerializationFailed.getMessage());
-			}
-		}
-		ctx.status(status).contentType("text/plain").result(fallbackText);
-	}
-
-	/** The API context backing a domain (the serializer registry lives on it), or null. */
-	private static IApi apiOf(IDomain<?> domain) {
-		return domain != null ? domain.getApiContext() : null;
-	}
-
-	/** Minimal success envelope: serializes to {@code {"status":"ok"}} (JSON) / {@code <StatusEnvelope><status>ok</status></StatusEnvelope>} (XML). */
-	public static final class StatusEnvelope {
-		private final String status;
-		public StatusEnvelope(String status) { this.status = status; }
-		public String getStatus() { return this.status; }
-	}
-
-	/** Minimal error envelope: serializes to {@code {"error":"…"}} (JSON) / {@code <ErrorEnvelope><error>…</error></ErrorEnvelope>} (XML). */
-	public static final class ErrorEnvelope {
-		private final String error;
-		public ErrorEnvelope(String error) { this.error = error; }
-		public String getError() { return this.error; }
-	}
-
-	/** Maps the framework's response code to an HTTP status. */
-	private static int httpStatus(OperationResponseCode code) {
-		if (code == null) {
-			return 200;
-		}
-		return switch (code) {
-			case OK, UPDATED, DELETED -> 200;
-			case CREATED -> 201;
-			case CLIENT_ERROR -> 400;
-			case UNAUTHORIZED -> 401;
-			case FORBIDDEN -> 403;
-			case NOT_FOUND -> 404;
-			case NOT_ACCEPTABLE -> 406;
-			case CONFLICT -> 409;
-			case UNSUPPORTED_MEDIA_TYPE -> 415;
-			case NOT_AVAILABLE -> 503;
-			case SERVER_ERROR -> 500;
-		};
 	}
 
 	@Override

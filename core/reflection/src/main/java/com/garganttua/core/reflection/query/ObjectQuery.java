@@ -41,6 +41,8 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
     private IClass<?> objectIClass;
     private IClass<?> collectionIClass;
     private IClass<?> mapIClass;
+    /** Descent into nested fields (map / array / collection / plain object) — see {@link NestedFieldScan}. */
+    private NestedFieldScan nested;
 
     /**
      * Creates a query bound to a class and reflection provider.
@@ -66,6 +68,7 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
         this.objectIClass = provider.getClass(Object.class);
         this.collectionIClass = provider.getClass(Collection.class);
         this.mapIClass = provider.getClass(Map.class);
+        this.nested = new NestedFieldScan(this, this.provider, this.collectionIClass, this.mapIClass);
     }
 
     // --- IObjectQuery implementation ---
@@ -293,7 +296,7 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
         }
     }
 
-    private List<ObjectAddress> addresses(IClass<?> objectClass, String elementName, ObjectAddress baseAddress)
+    List<ObjectAddress> addresses(IClass<?> objectClass, String elementName, ObjectAddress baseAddress)
             throws ReflectionException {
         log.trace("Resolving all addresses for element='{}', class={}, baseAddress={}", elementName, objectClass,
                 baseAddress);
@@ -327,20 +330,20 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
         for (IField f : objectClass.getDeclaredFields()) {
             if (Fields.isNotPrimitiveOrInternal(f.getType())) {
                 List<ObjectAddress> a;
-                if ((a = doIfIsCollectionForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
+                if ((a = nested.doIfIsCollectionForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
                     return a;
-                if ((a = doIfIsMapForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
+                if ((a = nested.doIfIsMapForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
                     return a;
-                if ((a = doIfIsArrayForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
+                if ((a = nested.doIfIsArrayForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
                     return a;
-                if ((a = doIfNotEnumForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
+                if ((a = nested.doIfNotEnumForAddresses(f, elementName, baseAddress)) != null && !a.isEmpty())
                     return a;
             }
         }
         return null;
     }
 
-    private ObjectAddress address(IClass<?> objectClass, String elementName, ObjectAddress address)
+    ObjectAddress address(IClass<?> objectClass, String elementName, ObjectAddress address)
             throws ReflectionException {
         log.trace("Resolving address element='{}', class={}, baseAddress={}", elementName, objectClass,
                 address);
@@ -379,132 +382,17 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
         for (IField f : objectClass.getDeclaredFields()) {
             if (Fields.isNotPrimitiveOrInternal(f.getType())) {
                 ObjectAddress a;
-                if ((a = doIfIsCollection(f, elementName, address)) != null)
+                if ((a = nested.doIfIsCollection(f, elementName, address)) != null)
                     return a;
-                if ((a = doIfIsMap(f, elementName, address)) != null)
+                if ((a = nested.doIfIsMap(f, elementName, address)) != null)
                     return a;
-                if ((a = doIfIsArray(f, elementName, address)) != null)
+                if ((a = nested.doIfIsArray(f, elementName, address)) != null)
                     return a;
-                if ((a = doIfNotEnum(f, elementName, address)) != null)
-                    return a;
-            }
-        }
-        return null;
-    }
-
-    private ObjectAddress doIfIsMap(IField f, String elementName, ObjectAddress address) throws ReflectionException {
-        if (mapIClass.isAssignableFrom(f.getType())) {
-            log.trace("doIfIsMap checking field '{}' for element '{}'", f.getName(), elementName);
-            IClass<?> keyClass = Fields.getGenericType(f, 0, provider);
-            IClass<?> valueClass = Fields.getGenericType(f, 1, provider);
-            if (keyClass != null && Fields.isNotPrimitive(keyClass) && !Fields.BlackList.isBlackListed(keyClass)) {
-                ObjectAddress keyAddress = address == null ? new ObjectAddress(f.getName(), true)
-                        : address.addElement(f.getName());
-                keyAddress = keyAddress.addElement(ObjectAddress.MAP_KEY_INDICATOR);
-                ObjectAddress a = address(keyClass, elementName, keyAddress);
-                if (a != null)
-                    return a;
-            }
-            if (valueClass != null && Fields.isNotPrimitive(valueClass) && !Fields.BlackList.isBlackListed(valueClass)) {
-                ObjectAddress valueAddress = address == null ? new ObjectAddress(f.getName(), true)
-                        : address.addElement(f.getName());
-                valueAddress = valueAddress.addElement(ObjectAddress.MAP_VALUE_INDICATOR);
-                ObjectAddress a = address(valueClass, elementName, valueAddress);
-                if (a != null)
+                if ((a = nested.doIfNotEnum(f, elementName, address)) != null)
                     return a;
             }
         }
         return null;
     }
 
-    private ObjectAddress doIfIsArray(IField f, String elementName, ObjectAddress address) throws ReflectionException {
-        if (f.getType().isArray()) {
-            log.trace("doIfIsArray checking array field '{}' for element '{}'", f.getName(), elementName);
-            IClass<?> componentType = f.getType().getComponentType();
-            ObjectAddress newAddress = address == null ? new ObjectAddress(f.getName(), true)
-                    : address.addElement(f.getName());
-            return address(componentType, elementName, newAddress);
-        }
-        return null;
-    }
-
-    private ObjectAddress doIfIsCollection(IField f, String elementName, ObjectAddress address)
-            throws ReflectionException {
-        if (collectionIClass.isAssignableFrom(f.getType())) {
-            log.trace("doIfIsCollection checking field '{}' for element '{}'", f.getName(), elementName);
-            IClass<?> t = Fields.getGenericType(f, 0, provider);
-            ObjectAddress newAddress = address == null ? new ObjectAddress(f.getName(), true)
-                    : address.addElement(f.getName());
-            return address(t, elementName, newAddress);
-        }
-        return null;
-    }
-
-    private ObjectAddress doIfNotEnum(IField f, String elementName, ObjectAddress address) throws ReflectionException {
-        if (!f.getType().isEnum() && Fields.isNotPrimitiveOrInternal(f.getType())) {
-            log.trace("doIfNotEnum checking field '{}' for element '{}'", f.getName(), elementName);
-            ObjectAddress newAddress = address == null ? new ObjectAddress(f.getName(), true)
-                    : address.addElement(f.getName());
-            return address(f.getType(), elementName, newAddress);
-        }
-        return null;
-    }
-
-    private List<ObjectAddress> doIfIsMapForAddresses(IField f, String elementName, ObjectAddress address) throws ReflectionException {
-        if (mapIClass.isAssignableFrom(f.getType())) {
-            log.trace("doIfIsMapForAddresses checking field '{}' for element '{}'", f.getName(), elementName);
-            IClass<?> keyClass = Fields.getGenericType(f, 0, provider);
-            IClass<?> valueClass = Fields.getGenericType(f, 1, provider);
-            if (keyClass != null && Fields.isNotPrimitive(keyClass) && !Fields.BlackList.isBlackListed(keyClass)) {
-                ObjectAddress keyAddress = address == null ? new ObjectAddress(f.getName(), true)
-                        : address.addElement(f.getName());
-                keyAddress = keyAddress.addElement(ObjectAddress.MAP_KEY_INDICATOR);
-                List<ObjectAddress> a = addresses(keyClass, elementName, keyAddress);
-                if (!a.isEmpty())
-                    return a;
-            }
-            if (valueClass != null && Fields.isNotPrimitive(valueClass) && !Fields.BlackList.isBlackListed(valueClass)) {
-                ObjectAddress valueAddress = address == null ? new ObjectAddress(f.getName(), true)
-                        : address.addElement(f.getName());
-                valueAddress = valueAddress.addElement(ObjectAddress.MAP_VALUE_INDICATOR);
-                List<ObjectAddress> a = addresses(valueClass, elementName, valueAddress);
-                if (!a.isEmpty())
-                    return a;
-            }
-        }
-        return null;
-    }
-
-    private List<ObjectAddress> doIfIsArrayForAddresses(IField f, String elementName, ObjectAddress address) throws ReflectionException {
-        if (f.getType().isArray()) {
-            log.trace("doIfIsArrayForAddresses checking array field '{}' for element '{}'", f.getName(), elementName);
-            IClass<?> componentType = f.getType().getComponentType();
-            ObjectAddress newAddress = address == null ? new ObjectAddress(f.getName(), true)
-                    : address.addElement(f.getName());
-            return addresses(componentType, elementName, newAddress);
-        }
-        return null;
-    }
-
-    private List<ObjectAddress> doIfIsCollectionForAddresses(IField f, String elementName, ObjectAddress address)
-            throws ReflectionException {
-        if (collectionIClass.isAssignableFrom(f.getType())) {
-            log.trace("doIfIsCollectionForAddresses checking field '{}' for element '{}'", f.getName(), elementName);
-            IClass<?> t = Fields.getGenericType(f, 0, provider);
-            ObjectAddress newAddress = address == null ? new ObjectAddress(f.getName(), true)
-                    : address.addElement(f.getName());
-            return addresses(t, elementName, newAddress);
-        }
-        return null;
-    }
-
-    private List<ObjectAddress> doIfNotEnumForAddresses(IField f, String elementName, ObjectAddress address) throws ReflectionException {
-        if (!f.getType().isEnum() && Fields.isNotPrimitiveOrInternal(f.getType())) {
-            log.trace("doIfNotEnumForAddresses checking field '{}' for element '{}'", f.getName(), elementName);
-            ObjectAddress newAddress = address == null ? new ObjectAddress(f.getName(), true)
-                    : address.addElement(f.getName());
-            return addresses(f.getType(), elementName, newAddress);
-        }
-        return null;
-    }
 }

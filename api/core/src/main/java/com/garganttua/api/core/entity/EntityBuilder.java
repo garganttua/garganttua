@@ -215,32 +215,17 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
 
     @Override
     public IEntityBuilder<E> unicity(IField field) throws ApiException {
-        Objects.requireNonNull(field, "Field cannot be null");
-
-        this.unicities.add(new Pair<ObjectAddress, UnicityScope>(FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(),
-                UnicityScope.system));
-
-        return this;
+        return unicity(field, UnicityScope.system);
     }
 
     @Override
     public IEntityBuilder<E> unicity(String fieldName) throws ApiException {
-        Objects.requireNonNull(fieldName, "Field name cannot be null");
-
-        this.unicities.add(new Pair<ObjectAddress, UnicityScope>(
-                FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address(), UnicityScope.system));
-
-        return this;
+        return unicity(fieldName, UnicityScope.system);
     }
 
     @Override
     public IEntityBuilder<E> unicity(ObjectAddress fieldAddress) throws ApiException {
-        Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
-
-        this.unicities.add(new Pair<ObjectAddress, UnicityScope>(
-                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(), UnicityScope.system));
-
-        return this;
+        return unicity(fieldAddress, UnicityScope.system);
     }
 
     @Override
@@ -286,10 +271,7 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
 
     @Override
     public IEntityBuilder<E> create(ObjectAddress fieldAddress) throws ApiException {
-        Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
-        this.creates.add(new Pair<ObjectAddress, String>(
-                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(), null));
-        return this;
+        return create(fieldAddress, null);
     }
 
     @Override
@@ -303,9 +285,7 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
     @Override
     public IEntityBuilder<E> create(IField field, String authority) throws ApiException {
         Objects.requireNonNull(field, "Field cannot be null");
-        this.creates.add(new Pair<ObjectAddress, String>(
-                FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(), authority));
-        return this;
+        return create(field.getName(), authority);
     }
 
     @Override
