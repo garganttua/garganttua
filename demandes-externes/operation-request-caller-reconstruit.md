@@ -59,3 +59,54 @@ travail de l'étape de vérification à l'intérieur du cas d'usage.
 Constaté pendant l'introduction de l'authentification machine-à-machine des serveurs
 on-prem (palliad, 2026-08-24), sur `EnrolmentUseCases.issueEnrolmentToken` et
 `EnrolmentUseCases.revoke`.
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée, exactement comme demandée.** Corrigée sur `main`, à paraître dans `3.0.0-ALPHA17`.
+
+Le diagnostic était juste, et le correctif tient en trois lignes — parce que **la moitié du travail
+était déjà faite**. `VERIFY_AUTHORIZATION.gs:83` publie l'appelant réconcilié depuis toujours :
+
+```
+_caller <- reconcileCaller(@_authResult, :arg(@0, "caller"), @0, @2, @3)
+setRequestArg(@0, "caller", @_caller)
+```
+
+`caller()` ne le lisait simplement pas. Il rebâtissait un `Caller` à partir de `TENANT_ID`,
+`CALLER_ID`, `OWNER_ID` — les valeurs de la couche protocole, c'est-à-dire les en-têtes. Il préfère
+désormais l'appelant réconcilié et ne retombe sur la reconstruction que pour une opération qui n'est
+jamais passée par la vérification : un appel réellement anonyme, une invocation interne du cadre, un
+harnais de test.
+
+### Plus large que ce que la fiche mesure
+
+Vous décrivez `@Caller` dans un cas d'usage. **Cinq** fournisseurs passent par `request.caller()` —
+`CallerSupplier` (celui de `@Caller`), `TenantSupplier`, `LoginSupplier`, `AuthoritiesSupplier`,
+`OwnerIdSupplier`. Un seul correctif les redresse tous les cinq ; tout contrôle écrit à partir de
+l'un d'eux était décoratif de la même façon.
+
+Les deux implémentations d'`IOperationRequest` étaient touchées (`OperationRequest` côté core,
+`MapBackedOperationRequest` côté commons via `MapBackedCaller`) ; les deux sont corrigées.
+
+### Ce qui est ajouté à l'API
+
+Une seule chose, additive : `IOperationRequest.CALLER`, la clé typée sous laquelle l'appelant
+vérifié voyage. Elle existait en chaîne nue (`"caller"`), redéclarée en privé là où on en avait
+besoin. Sa javadoc dit ce que les autres clés sont vraiment — les valeurs du protocole, la
+prétention du client — pour que le prochain lecteur ne refasse pas l'erreur.
+
+### Ce que votre code va voir changer
+
+`caller().tenantId()` rend maintenant l'équipe **du jeton**. Si un endroit de palliad lisait cette
+valeur en attendant l'équipe **demandée** par l'en-tête, elle est toujours là, séparément :
+`caller().requestedTenantId()`. C'est ce que `reconcile` distingue déjà — l'appelant réconcilié
+porte les deux, ce qui change est lequel des deux est l'identité.
+
+Le contrôle d'`EnrolmentUseCases.issueEnrolmentToken` que la fiche cite devrait donc protéger ce
+qu'il dit protéger. À vérifier chez vous : c'est le genre de correctif dont l'effet ne se voit qu'en
+rejouant le scénario qui l'a révélé — l'administrateur maître refusé avec `X-Tenant-Id: 0` et
+accepté en annonçant l'équipe.
+
+**Couvert par :** `ReconciledCallerTest` (4 tests).

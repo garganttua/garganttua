@@ -121,3 +121,78 @@ Rien : nous gardons les deux bases, et deux tests les verrouillent côté front 
 chaque domaine déclaré est relayé par le proxy et connu de l'intercepteur, l'autre que les cas
 d'usage partent bien à la racine. C'est une discipline, pas une garantie : rien ne fait échouer
 l'écran qui l'oublie, seulement une suite de tests qu'il faut penser à étendre.
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée, purement additive.** Corrigée sur `main`, à paraître dans `3.0.0-ALPHA17`.
+
+Le préfixe est porté par le connecteur, exactement dans la forme que la fiche propose :
+
+```java
+new JavalinInterface(sharedApp, "/api");   // /api/invoices, /api/invoices/{uuid}, /api/invoices/issue
+new JavalinInterface(sharedApp);           // inchangé : la racine
+new JavalinInterface(8080, "/api");        // idem pour un serveur possédé
+```
+
+Le domaine ne sait rien de son montage, et son nom reste le nom de sa collection Mongo.
+
+### Vos cinq critères d'acceptation
+
+- [x] **Sans préfixe, les chemins sont identiques à ALPHA15/16.** `null`, `""`, `"  "` et `"/"`
+      donnent tous le montage racine. Aucun consommateur existant ne bouge — palliad compris.
+- [x] **Avec `/api`, les chemins préfixés répondent et les chemins racine rendent 404.** Vérifié sur
+      un domaine à CRUD complet, y compris l'extraction du segment `{uuid}` : le préfixe fait partie
+      du montage, pas des paramètres de chemin.
+- [x] **`api`, `/api` et `/api/` produisent le même montage.** Normalisé en `/api` ; `/api//invoices`
+      est impossible. `api/v1/` donne `/api/v1`.
+- [x] **Un cas d'usage littéral reste enregistré avant `readOne`, préfixe compris.** L'ordre
+      d'enregistrement est inchangé (les cas d'usage d'abord), et le préfixe s'applique aux deux
+      uniformément. Un test le verrouille : `GET /api/users/greet` atteint le cas d'usage et non
+      `readOne` avec `uuid = "greet"`.
+- [x] **La bannière nomme les chemins effectivement montés.** Elle n'existait pas — aucun chemin
+      n'était journalisé. Une ligne `INFO` par domaine liste maintenant ce qui est réellement en
+      ligne, verbe par verbe :
+
+      ```
+      Domain 'invoices' mounted on /api: [POST /api/invoices, GET /api/invoices,
+      GET /api/invoices/{uuid}, PATCH /api/invoices/{uuid}, ...]
+      ```
+
+### Le point à trancher : `completePath`
+
+Tranché **dans votre sens**. `completePath` signifie complet *à l'intérieur du montage* : un cas
+d'usage déclaré `/health` répond sur `/api/health` et plus sur `/health`. La javadoc de
+`toJavalinPath` porte la raison — un connecteur qui laisserait certaines de ses routes échapper à
+son préfixe rendrait à l'application les deux espaces de noms que le préfixe existe pour supprimer.
+
+Conséquence à connaître : un consommateur qui utilise déjà `completePath` **et** qui adopte ensuite
+un préfixe verra ces chemins bouger. Sans préfixe, rien ne bouge.
+
+### Un angle mort qu'il faut vous dire
+
+`.interfasse(IClass)` instancie l'interface par son **constructeur sans argument**
+(`DomainBuilderBuildSupport:153`, « A public no-arg constructor is required »). Un préfixe passé au
+constructeur est donc **inatteignable par cette surcharge**. Pour le déclarer, il faut construire le
+`JavalinInterface` vous-même et passer par `.interfasse(ISupplierBuilder)`, qui existe déjà.
+
+Nous n'avons pas remonté la notion de point de montage sur `IInterface` : elle appartient au
+connecteur, comme votre fiche le dit, et l'y mettre reviendrait à faire porter à un contrat partagé
+un besoin d'un seul connecteur. Si la voie déclarative vous manque, dites-le — un accesseur sur
+`JavalinInterface` serait le geste le moins cher.
+
+### Ce que la fiche ne demandait pas, et qui n'a pas été fait
+
+Rien de ce que vous excluez : pas de préfixe par domaine, pas de renommage de domaine, pas de
+réécriture de chemin côté serveur, aucune rupture.
+
+### Ce que ça devrait vous rendre
+
+Vos 36 règles de proxy ancrées deviennent une, et la collision entre `/missions` et le chunk
+`missions.component-QX343J4L.js` cesse d'exister. Les trois fichiers à tenir d'accord à chaque
+nouveau domaine redeviennent un. C'est à vous de le constater — nous avons vérifié le montage, pas
+votre chaîne front.
+
+**Couvert par :** 7 tests dans `JavalinInterfaceTest` (nested « Connector mount path »), sur un
+serveur Javalin réel et un vrai client HTTP.

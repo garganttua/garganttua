@@ -78,3 +78,84 @@ Une contrainte déclarative rendant un **400** (c'est déjà le cas de `mandator
 règlerait au passage, pour tous les cas de présence, le problème décrit dans
 [`toute-exception-de-crochet-rend-500.md`](toute-exception-de-crochet-rend-500.md) : aujourd'hui, une règle équivalente écrite
 par le consommateur rend un 500.
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée, en option déclarative.** Corrigée sur `main`, à paraître dans `3.0.0-ALPHA17`.
+
+### Une rectification sur le mécanisme
+
+Le titre de la fiche dit « et seulement à la création ». La lecture des sources dit autre chose :
+**`validateMandatories` tourne déjà à la mise à jour**, `UPDATE_ONE.gs:54`, commentaire compris —
+*« Validate mandatory fields on the merged entity »*. Elle ne « ne tient pas » : elle tourne, sur
+l'entité **fusionnée**, où le champ n'est jamais `null` — il y est soit conservé, soit posé à `""`.
+Le test de nullité passe donc toujours.
+
+Le trou est donc unique, et c'est celui que votre tableau mesure : **la valeur vide**, sur les deux
+routes. Ce n'est pas une nuance de vocabulaire — cela décide de la forme du correctif. Rejouer la
+règle de création à la mise à jour n'aurait rien ajouté ; ce qu'il fallait, c'est un contrôle qui
+regarde **ce que le client a envoyé**, pas le résultat de la fusion. Après fusion, un effacement est
+indiscernable d'une valeur légitime.
+
+Votre précision d'emblée est confirmée au passage : **l'unicité est bien tenue à la mise à jour**,
+rien n'a été touché de ce côté.
+
+### Ce qui est ajouté
+
+Une politique déclarative, `MandatoryPolicy`, avec le défaut inchangé :
+
+```java
+.mandatory("description")                              // inchangé : refuse null, rien d'autre
+.mandatory("description", MandatoryPolicy.nonBlank)    // nouveau
+
+@EntityMandatory                                        // inchangé
+@EntityMandatory(MandatoryPolicy.nonBlank)              // nouveau
+```
+
+Sous `nonBlank`, exactement le partage de votre tableau — c'est celui que nous avons implémenté,
+ligne pour ligne :
+
+| Ce que le corps contient | Décision |
+|---|---|
+| champ absent | laisser passer |
+| champ à `null` | laisser passer (sémantique `ignoreNull`) |
+| champ à `""` ou `"   "` | **refuser**, 400 |
+
+À la création, `null`, `""` et `"   "` sont refusés ensemble.
+
+### Pourquoi une option plutôt qu'un durcissement
+
+La fiche ne demandait pas d'opt-in — elle demandait que `mandatory` signifie « porte une valeur ».
+Nous avons choisi l'option quand même, pour une raison que la fiche ne pouvait pas peser : un
+consommateur qui stocke aujourd'hui une chaîne vide dans un champ `mandatory` recevrait un 400 à la
+montée de version, sans l'avoir demandé ni pouvoir l'anticiper. Aucune déclaration existante ne
+change donc de sens ; c'est la déclaration qui décide.
+
+Le geste concret chez vous : remplacer `Require.present` / `Require.nonVideSiFourni` par la
+déclaration, domaine par domaine, en montant l'un après l'autre plutôt que d'un coup.
+
+### Votre point de vigilance
+
+Confirmé et conservé : `validateMandatories` — et maintenant `validateProvidedMandatories` — tournent
+**avant** les crochets libres. Un consommateur qui pose un défaut en `beforeUpdate` sur un champ
+obligatoire verra sa requête refusée avant que le défaut ne s'applique. C'est cohérent avec la
+création, et cela reste vrai.
+
+### Votre effet de bord souhaitable
+
+Il est là, et par deux chemins : la contrainte déclarative rend un 400, et depuis le traitement de
+[`toute-exception-de-crochet-rend-500`](toute-exception-de-crochet-rend-500.md) une règle équivalente
+que vous écrivez à la main peut rendre 400 aussi, via `ApiException.badRequest(...)`.
+
+### Rupture d'API
+
+`IEntityDefinition.mandatories()` rend désormais `List<Pair<ObjectAddress, MandatoryPolicy>>` et non
+`List<ObjectAddress>` — la politique doit voyager avec le champ, sans quoi le contrôle en aval
+devrait la deviner. Idem pour `IDomain.getMandatoryFields()`, qui délègue. **Si votre code lit l'une
+des deux, il faudra le recompiler.** Nous n'avons pas trouvé d'appelant hors du cadre ; c'est écrit
+ici pour que vous le vérifiiez plutôt que de le découvrir.
+
+**Couvert par :** `MandatoryPolicyIntegrationTest` (6 tests) — les trois formes vides à la création,
+l'effacement refusé à la mise à jour, le champ absent laissé tranquille, et le défaut inchangé.

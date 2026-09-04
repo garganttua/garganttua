@@ -44,22 +44,13 @@ vérifier, et un dossier vide ne lui apprend rien.
 
 ## Fiches ouvertes
 
-Émises par **palliad** et **autonom** (consommateurs v3, AOT purs), constatées sur
-`3.0.0-ALPHA15`. La colonne « Émise par » compte : deux consommateurs qui butent sur la même chose
-ne disent pas la même chose qu'un seul.
+Aucune. Les dix fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
 
-Les quatre restantes changent un comportement public — ce qu'une contrainte refuse, ce qu'un
-appelant peut lire, ce qu'une réponse annonce, où les routes se montent. Elles demandent donc un
-arbitrage avant d'être écrites, là où les six traitées étaient des défauts francs.
-
-| Fiche | Émise par | Date | Gravité | En une ligne |
-|---|---|---|---|---|
-| [mandatory-teste-la-nullite-et-seulement-a-la-creation](mandatory-teste-la-nullite-et-seulement-a-la-creation.md) | palliad | 2026-08-27 | moyenne | `mandatory` laisse passer la chaîne vide, et ne tient pas à la mise à jour. |
-| [operation-request-caller-reconstruit](operation-request-caller-reconstruit.md) | palliad | 2026-08-24 | moyenne | `OperationRequest.caller()` rebâtit l'appelant depuis `X-Tenant-Id` : un contrôle qui a l'air de protéger ne protège rien. |
-| [champs-ecartes-silencieusement](champs-ecartes-silencieusement.md) | palliad | 2026-08-26 | observabilité | Un champ refusé à l'écriture rend 200 sans le dire : l'écran affiche un succès qui n'a rien écrit. |
-| [prefixe-http-non-configurable](prefixe-http-non-configurable.md) | autonom | 2026-09-01 | évolution | Les routes générées se montent à la racine, sans préfixe possible : une application qui partage son serveur tient deux espaces de noms HTTP. |
-
-Rangées par gravité, pas par date : c'est l'ordre dans lequel elles se lisent utilement.
+Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
+constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
+attendent d'ailleurs un retour, et sont nommés dans leur fiche : le plancher de ~40 ms, à
+re-mesurer chez autonom après ALPHA17, et le champ non déclaré à la mise à jour, non rapporté dans
+les en-têtes de champs écartés.
 
 ## Fiches répondues
 
@@ -70,9 +61,28 @@ a écrites puisse vérifier.
 
 | Fiche | Émise par | Réponse |
 |---|---|---|
-| [resolution-par-requete-et-exceptions-sur-le-chemin-chaud](resolution-par-requete-et-exceptions-sur-le-chemin-chaud.md) | autonom | Corrigée, les trois pistes. 8 à 9 fois moins cher sur le chemin de résolution isolé (1 395–1 670 ns → 173–178 ns). Deux sites levaient, pas un : le second est dans le repli AOT, donc sur VOTRE déploiement. La mémo porte la FORME de la classe, pas les adresses — celles-ci dépendent de l'adresse de base. Le chemin est désormais instrumenté et le rapport tombe à l'arrêt de la JVM. Les ~40 ms n'ont pas été reproduites ici : à re-mesurer chez vous. |
+| [resolution-par-requete-et-exceptions-sur-le-chemin-chaud](resolution-par-requete-et-exceptions-sur-le-chemin-chaud.md) | autonom | Corrigée, les trois pistes. 8 à 9 fois moins cher sur le chemin de résolution isolé (1 395–1 670 ns → 173–178 ns). Deux sites levaient, pas un : le second est dans le repli AOT, donc sur VOTRE déploiement. La mémo porte la FORME de la classe, pas les adresses — celles-ci dépendent de l'adresse de base. Le chemin est désormais instrumenté et le rapport tombe à l'arrêt de la JVM. Les ~40 ms n'ont pas été reproduites ici : **à re-mesurer chez vous**. |
 | [toute-exception-de-crochet-rend-500](toute-exception-de-crochet-rend-500.md) | palliad | Corrigée — mais pas là où la fiche le pensait : le `switch` vide était du code mort, le 500 venait du `-> 500` de l'étape. Un statut choisi par le consommateur (`ApiException.badRequest(...)`) l'emporte désormais sur celui de l'étape. |
 | [crochets-de-suppression-ne-tirent-jamais](crochets-de-suppression-ne-tirent-jamais.md) | palliad | Corrigée, les deux défauts. Le second était plus large que mesuré : les crochets liés à l'entité étaient cassés sur TOUTES les opérations, pas seulement la suppression. |
 | [afterget-ne-tire-que-sur-readone](afterget-ne-tire-que-sur-readone.md) | autonom | Corrigée dans le sens de la demande 1. Ce n'était pas un choix de contrat : `READ_ALL` exigeait un `?mode=full` qu'une lecture ordinaire n'envoie pas, ce qui sautait aussi l'injection. L'exemption des lectures internes, que la fiche signalait, est maintenant explicite — elle tenait par accident. |
+| [mandatory-teste-la-nullite-et-seulement-a-la-creation](mandatory-teste-la-nullite-et-seulement-a-la-creation.md) | palliad | Corrigée en option déclarative (`MandatoryPolicy.nonBlank`), défaut inchangé. Rectification : la contrainte tourne DÉJÀ à la mise à jour — sur l'entité fusionnée, où le champ n'est jamais nul. Le partage absent / null / vide du tableau de la fiche est implémenté ligne pour ligne. Rupture : `IEntityDefinition.mandatories()`. |
+| [operation-request-caller-reconstruit](operation-request-caller-reconstruit.md) | palliad | Corrigée telle que demandée, en trois lignes : la vérification publiait déjà l'appelant réconcilié, personne ne le lisait. Plus large que la fiche : cinq suppliers passent par `request.caller()`. |
+| [champs-ecartes-silencieusement](champs-ecartes-silencieusement.md) | palliad | Corrigée : les deux en-têtes, avec les noms de DTO, toujours présents, statut inchangé à 200. Exigence 1 tenue à la création, **partielle à la mise à jour** — le champ non déclaré n'est pas rapporté, et la fiche dit pourquoi. |
 | [attempt-authentication-avale-les-exceptions](attempt-authentication-avale-les-exceptions.md) | palliad | Corrigée telle que demandée : `warn` nommant la stratégie, la cascade inchangée. |
 | [authenticator-authorities-decoratif](authenticator-authorities-decoratif.md) | palliad | Corrigée par l'option 1 : la déclaration est honorée en retombée (la stratégie garde la main, une liste vide reste autoritative), et un champ illisible se signale au lieu de rendre un jeton vide. |
+| [prefixe-http-non-configurable](prefixe-http-non-configurable.md) | autonom | Corrigée, purement additive : `new JavalinInterface(app, "/api")`. Les cinq critères d'acceptation sont tenus, `completePath` tranché dans votre sens. Un angle mort à connaître : `.interfasse(IClass)` instancie sans argument, le préfixe passe par `.interfasse(ISupplierBuilder)`. |
+
+## Ruptures d'API à la montée en `3.0.0-ALPHA17`
+
+Le dossier n'est pas une file de tickets, mais une rupture se prévient. Trois signatures de
+`garganttua-api-commons` changent ; seul le cadre les implémente aujourd'hui, et rien n'a été trouvé
+qui les appelle hors de lui — c'est écrit ici pour que vous le vérifiiez plutôt que de le découvrir
+à la compilation.
+
+| Élément | Avant | Après |
+|---|---|---|
+| `IEntityDefinition.mandatories()` (et `IDomain.getMandatoryFields()`) | `List<ObjectAddress>` | `List<Pair<ObjectAddress, MandatoryPolicy>>` |
+| `IEntityUpdater.update(...)` | rend l'entité | rend un `EntityWriteOutcome` (entité + champs appliqués/écartés) |
+| `IEntityCreator.create(...)` | rend l'entité | rend un `EntityWriteOutcome` |
+
+Tout le reste est additif.
