@@ -5,21 +5,29 @@ import java.time.Duration;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.service.IOperationResponse;
 import com.garganttua.api.commons.service.OperationResponseCode;
+import com.garganttua.api.commons.service.WrittenFields;
 
 public class OperationResponse implements IOperationResponse {
 
     private final OperationResponseCode responseCode;
     private final Object response;
     private final Duration processingTime;
+    private final WrittenFields writtenFields;
 
     public OperationResponse(OperationResponseCode responseCode, Object response) {
         this(responseCode, response, null);
     }
 
     public OperationResponse(OperationResponseCode responseCode, Object response, Duration processingTime) {
+        this(responseCode, response, processingTime, WrittenFields.none());
+    }
+
+    public OperationResponse(OperationResponseCode responseCode, Object response, Duration processingTime,
+            WrittenFields writtenFields) {
         this.responseCode = responseCode;
         this.response = response;
         this.processingTime = processingTime;
+        this.writtenFields = writtenFields == null ? WrittenFields.none() : writtenFields;
     }
 
     @Override
@@ -36,7 +44,20 @@ public class OperationResponse implements IOperationResponse {
      * instance. Pass {@code null} to clear the timing.
      */
     public OperationResponse withProcessingTime(Duration processingTime) {
-        return new OperationResponse(this.responseCode, this.response, processingTime);
+        return new OperationResponse(this.responseCode, this.response, processingTime, this.writtenFields);
+    }
+
+    @Override
+    public WrittenFields getWrittenFields() {
+        return this.writtenFields;
+    }
+
+    /**
+     * {@return a copy of this response carrying the field report} Used by {@code Domain.invoke()} to
+     * attach, right before returning, what the write actually applied and refused.
+     */
+    public OperationResponse withWrittenFields(WrittenFields writtenFields) {
+        return new OperationResponse(this.responseCode, this.response, this.processingTime, writtenFields);
     }
 
     public static OperationResponse ok(Object data) {

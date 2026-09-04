@@ -92,7 +92,7 @@ class EntityUpdaterTest {
                     new EntityUpdateRule(new ObjectAddress("price"), "", false)
             );
 
-            Object result = updater.update(callerWith(null), stored, updated, authorizations);
+            Object result = updater.update(callerWith(null), stored, updated, authorizations).entity();
 
             assertSame(stored, result);
             assertEquals("NewName", stored.getName());
@@ -181,7 +181,7 @@ class EntityUpdaterTest {
             Product stored = new Product("OldName", 10.0, "OldCat", "secret");
             Product updated = new Product("NewName", 99.0, "NewCat", "hacked");
 
-            Object result = updater.update(callerWith(null), stored, updated, List.of());
+            Object result = updater.update(callerWith(null), stored, updated, List.of()).entity();
 
             assertSame(stored, result);
             assertEquals("OldName", stored.getName());
@@ -193,7 +193,7 @@ class EntityUpdaterTest {
             Product stored = new Product("OldName", 10.0, "OldCat", "secret");
             Product updated = new Product("NewName", 99.0, "NewCat", "hacked");
 
-            Object result = updater.update(callerWith(null), stored, updated, null);
+            Object result = updater.update(callerWith(null), stored, updated, null).entity();
 
             assertSame(stored, result);
             assertEquals("OldName", stored.getName());

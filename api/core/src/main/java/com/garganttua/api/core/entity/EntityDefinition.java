@@ -10,6 +10,7 @@ import org.javatuples.Pair;
 
 import com.garganttua.api.commons.definition.IEntityDefinition;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
+import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.api.commons.entity.IUuidGenerator;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.core.reflection.IClass;
@@ -22,7 +23,7 @@ public record EntityDefinition<E>(
     ObjectAddress id,
     ObjectAddress uuid,
     ObjectAddress tenantId,
-    List<ObjectAddress> mandatories,
+    List<Pair<ObjectAddress, MandatoryPolicy>> mandatories,
     List<Pair<ObjectAddress, UnicityScope>> unicities,
     List<Pair<ObjectAddress, String>> creates,
     List<EntityUpdateRule> updates,

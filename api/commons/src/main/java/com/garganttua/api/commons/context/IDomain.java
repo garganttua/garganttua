@@ -12,6 +12,7 @@ import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
 import com.garganttua.api.commons.definition.IEntityDefinition;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
+import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.operation.OperationDefinition;
@@ -84,7 +85,7 @@ public interface IDomain<E> extends ILifecycle, IObservable {
 		return getDomainDefinition().owned();
 	}
 
-	default List<ObjectAddress> getMandatoryFields() {
+	default List<Pair<ObjectAddress, MandatoryPolicy>> getMandatoryFields() {
 		return getEntityDefinition().mandatories();
 	}
 

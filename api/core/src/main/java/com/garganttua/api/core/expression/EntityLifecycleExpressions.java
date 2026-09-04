@@ -25,6 +25,8 @@ import com.garganttua.core.runtime.IRuntimeContext;
 import com.garganttua.core.runtime.RuntimeExpressionContext;
 import com.garganttua.api.commons.definition.IEntityDefinition;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
+import com.garganttua.api.commons.entity.EntityWriteOutcome;
+import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.repository.IRepository;
@@ -198,18 +200,25 @@ public class EntityLifecycleExpressions {
 		}
 	}
 
-	@Expression(name = "validateMandatories", description = "Validates that all @EntityMandatory fields are non-null")
+	@Expression(name = "validateMandatories",
+			description = "Validates the @EntityMandatory fields of a COMPLETE entity: every one must be non-null, and "
+					+ "a field declared nonBlank must additionally not be empty or whitespace. This is the creation "
+					+ "rule; validateProvidedMandatories carries the partial-body rule for updates.")
 	public static void validateMandatories(Object entity, Object context) {
 		try {
 			IDomain<?> dc = toDomain(context);
 			EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
-			List<ObjectAddress> mandatories = entityDef.mandatories();
+			List<Pair<ObjectAddress, MandatoryPolicy>> mandatories = entityDef.mandatories();
 			if (mandatories == null || mandatories.isEmpty()) return;
 
-			for (ObjectAddress address : mandatories) {
+			for (Pair<ObjectAddress, MandatoryPolicy> mandatory : mandatories) {
+				ObjectAddress address = mandatory.getValue0();
 				Object value = REFLECTION.getFieldValue(entity, address.toString());
 				if (value == null) {
-					throw new ApiException("Mandatory field '" + address + "' is null");
+					throw ApiException.badRequest("Mandatory field '" + address + "' is null");
+				}
+				if (mandatory.getValue1() == MandatoryPolicy.nonBlank && isBlank(value)) {
+					throw ApiException.badRequest("Mandatory field '" + address + "' is empty");
 				}
 			}
 		} catch (ApiException e) {
@@ -217,6 +226,49 @@ public class EntityLifecycleExpressions {
 		} catch (Exception e) {
 			throw new ApiException("Failed to validate mandatory fields", e);
 		}
+	}
+
+	@Expression(name = "validateProvidedMandatories",
+			description = "The UPDATE counterpart of validateMandatories. Since PATCH became the update verb the body "
+					+ "is partial, so replaying the creation rule would refuse nearly every request a screen emits. "
+					+ "This looks ONLY at what the client actually sent: an absent field and a null field pass (the "
+					+ "latter is already the ignoreNull semantics), while an empty or whitespace value on a field "
+					+ "declared nonBlank is refused — it is an explicit erasure of a field that must carry a value.")
+	public static void validateProvidedMandatories(Object submitted, Object context) {
+		Object body = unwrapOptional(submitted);
+		if (body == null) return;
+		try {
+			IDomain<?> dc = toDomain(context);
+			EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
+			List<Pair<ObjectAddress, MandatoryPolicy>> mandatories = entityDef.mandatories();
+			if (mandatories == null || mandatories.isEmpty()) return;
+
+			for (Pair<ObjectAddress, MandatoryPolicy> mandatory : mandatories) {
+				if (mandatory.getValue1() != MandatoryPolicy.nonBlank) {
+					continue;
+				}
+				ObjectAddress address = mandatory.getValue0();
+				Object value = REFLECTION.getFieldValue(body, address.toString());
+				// null covers BOTH "absent from the body" and "explicitly null": the mapping renders
+				// them identically, and both are meant to pass.
+				if (value != null && isBlank(value)) {
+					throw ApiException.badRequest(
+							"Mandatory field '" + address + "' cannot be set to an empty value");
+				}
+			}
+		} catch (ApiException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new ApiException("Failed to validate provided mandatory fields", e);
+		}
+	}
+
+	/**
+	 * Whether a supplied value counts as "no value" under {@link MandatoryPolicy#nonBlank}. Only
+	 * character data can be blank; any other type that is present carries a value by definition.
+	 */
+	private static boolean isBlank(Object value) {
+		return value instanceof CharSequence text && text.toString().isBlank();
 	}
 
 	@Expression(name = "validateUnicity", description = "Checks unicity constraints against existing entities in repository")
@@ -306,7 +358,7 @@ public class EntityLifecycleExpressions {
 		ICaller c = (ICaller) unwrapOptional(caller);
 		IDomain<?> dc = toDomain(context);
 		EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
-		return new EntityCreator().create(c, e, entityDef.creates());
+		return recordWrittenFields(req, new EntityCreator().create(c, e, entityDef.creates()));
 	}
 
 	@Expression(name = "updateEntity", description = "Applies authorized field updates from updatedEntity onto storedEntity. A PARTIAL update (HTTP PATCH, flagged by the transport) reads every rule as ignoreNull, so an absent field is left alone. A FRAMEWORK-INTERNAL write (flagged server-side by invokeInternal, never settable by a client) carries a complete entity and supersedes the stored one wholesale — mirroring the create path — because the authorized-update whitelist describes what CLIENTS may change, not what the framework itself writes.")
@@ -318,8 +370,26 @@ public class EntityLifecycleExpressions {
 		ICaller c = (ICaller) unwrapOptional(caller);
 		IDomain<?> dc = toDomain(context);
 		EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
-		return new EntityUpdater().update(c, storedEntity, updatedEntity,
-				EntityUpdateSupport.updateRules(entityDef, EntityUpdateSupport.isPartialUpdate(request)));
+		IOperationRequest req = (unwrapOptional(request) instanceof IOperationRequest r) ? r : null;
+		return recordWrittenFields(req, new EntityUpdater().update(c, storedEntity, updatedEntity,
+				EntityUpdateSupport.updateRules(entityDef, EntityUpdateSupport.isPartialUpdate(request))));
+	}
+
+	/**
+	 * Well-known request arg under which a write stashes what it applied and what it dropped, for
+	 * {@code Domain} to translate into the caller's vocabulary and attach to the response. It travels
+	 * on the request rather than through the script because the script's business stages carry the
+	 * ENTITY from one stage to the next, and threading a second value through every one of them
+	 * would change signatures that consumers can call.
+	 */
+	public static final String WRITTEN_FIELDS_ARG = "_writtenFields";
+
+	/** Stashes the write outcome on the request and returns the entity the script expects. */
+	private static Object recordWrittenFields(IOperationRequest request, EntityWriteOutcome outcome) {
+		if (request != null) {
+			request.arg(WRITTEN_FIELDS_ARG, outcome);
+		}
+		return outcome.entity();
 	}
 
 

@@ -8,6 +8,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.garganttua.api.commons.entity.EntityWriteOutcome;
+import com.garganttua.api.core.entity.WrittenFieldsTranslator;
+import com.garganttua.api.core.expression.EntityLifecycleExpressions;
 import com.garganttua.api.core.service.OperationResponse;
 import com.garganttua.api.core.service.RequestBuilder;
 import com.garganttua.api.core.repository.Repository;
@@ -408,7 +411,7 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         String domainName = this.domainDefinition.domainName();
 
         if (result.isSuccess()) {
-            return mapSuccessCode(opLabel, result.output());
+            return attachWrittenFields(mapSuccessCode(opLabel, result.output()), request);
         }
         if (result.hasAborted()) {
             // The workflow surfaced a Throwable directly — propagate it. Fallback synthesizes an
@@ -444,6 +447,24 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         log.warn("Workflow returned code {} for domain {} op {}: {}",
                 result.code(), domainName, opLabel, functional.getMessage());
         return mapWorkflowCode(statusFor(result.code(), functional), functional);
+    }
+
+    /**
+     * Attaches what the write actually applied and refused, rendered in the client's vocabulary.
+     *
+     * <p>
+     * A no-op for anything that is not a write: only {@code createEntity} / {@code updateEntity}
+     * stash an outcome. The framework has always known which fields it dropped — it is the field
+     * whitelist that drops them — and answered {@code 200} without saying so, which is the correct
+     * security outcome reported in a way a screen reads as success.
+     * </p>
+     */
+    private OperationResponse attachWrittenFields(OperationResponse response, IOperationRequest request) {
+        Object outcome = request.arg(EntityLifecycleExpressions.WRITTEN_FIELDS_ARG).orElse(null);
+        if (!(outcome instanceof EntityWriteOutcome written)) {
+            return response;
+        }
+        return response.withWrittenFields(WrittenFieldsTranslator.translate(this, written));
     }
 
     /**

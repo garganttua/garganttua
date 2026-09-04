@@ -1,6 +1,7 @@
 package com.garganttua.api.core.entity;
 
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -9,6 +10,7 @@ import org.javatuples.Pair;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
+import com.garganttua.api.commons.entity.EntityWriteOutcome;
 import com.garganttua.api.commons.entity.IEntityCreator;
 import com.garganttua.api.core.mapper.DefaultMapper;
 import com.garganttua.core.reflection.IClass;
@@ -37,10 +39,10 @@ public class EntityCreator implements IEntityCreator {
 			"boolean", "byte", "char", "short", "int", "long", "float", "double");
 
 	@Override
-	public Object create(ICaller caller, Object entity,
+	public EntityWriteOutcome create(ICaller caller, Object entity,
 			List<Pair<ObjectAddress, String>> createAuthorizations) {
 		if (createAuthorizations == null || createAuthorizations.isEmpty()) {
-			return entity; // no whitelist declared → creation is unrestricted
+			return EntityWriteOutcome.unrestricted(entity); // no whitelist declared → creation is unrestricted
 		}
 		if (caller == null) {
 			throw new ApiException("Caller is null");
@@ -54,18 +56,31 @@ public class EntityCreator implements IEntityCreator {
 			}
 		}
 
+		List<ObjectAddress> applied = new ArrayList<>();
+		List<ObjectAddress> rejected = new ArrayList<>();
 		try {
-			stripUnauthorizedFields(entity, allowed);
+			stripUnauthorizedFields(entity, allowed, applied, rejected);
 		} catch (ApiException e) {
 			throw e;
 		} catch (Exception e) {
 			throw new ApiException("Failed to strip unauthorized fields at creation", e);
 		}
-		return entity;
+		return new EntityWriteOutcome(entity, applied, rejected);
 	}
 
-	/** Nulls out every non-static, non-transient, non-primitive field that is not in {@code allowed}. */
-	private static void stripUnauthorizedFields(Object entity, Set<String> allowed) {
+	/**
+	 * Nulls out every non-static, non-transient, non-primitive field that is not in {@code allowed},
+	 * and sorts the fields the client actually SENT into the two lists.
+	 *
+	 * <p>
+	 * Only a field carrying a value is reported, on either side: a field the client left out is
+	 * null before the strip and null after it, and neither applying nor refusing nothing is worth
+	 * telling the caller about. Primitives are skipped for the reason they always were — they carry
+	 * no "unset" state to distinguish.
+	 * </p>
+	 */
+	private static void stripUnauthorizedFields(Object entity, Set<String> allowed,
+			List<ObjectAddress> applied, List<ObjectAddress> rejected) {
 		IClass<?> clazz = IClass.getClass(entity.getClass());
 		while (clazz != null) {
 			for (IField field : clazz.getDeclaredFields()) {
@@ -74,8 +89,18 @@ public class EntityCreator implements IEntityCreator {
 					continue;
 				}
 				String fieldName = field.getName();
-				if (allowed.contains(fieldName) || PRIMITIVES.contains(field.getType().getName())) {
+				if (PRIMITIVES.contains(field.getType().getName())) {
 					continue;
+				}
+				boolean carriedAValue = REFLECTION.getFieldValue(entity, fieldName) != null;
+				if (allowed.contains(fieldName)) {
+					if (carriedAValue) {
+						applied.add(new ObjectAddress(fieldName));
+					}
+					continue;
+				}
+				if (carriedAValue) {
+					rejected.add(new ObjectAddress(fieldName));
 				}
 				REFLECTION.setFieldValue(entity, fieldName, null);
 			}

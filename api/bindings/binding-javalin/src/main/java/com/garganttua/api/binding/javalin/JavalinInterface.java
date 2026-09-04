@@ -1,5 +1,6 @@
 package com.garganttua.api.binding.javalin;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -13,6 +14,7 @@ import com.garganttua.api.commons.serialization.ISerializer;
 import com.garganttua.api.commons.service.ArgKey;
 import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.commons.service.IOperationResponse;
+import com.garganttua.api.commons.service.WrittenFields;
 import com.garganttua.api.commons.service.OperationResponseCode;
 import com.garganttua.api.core.expression.SerializationExpressions;
 import com.garganttua.core.lifecycle.ILifecycle;
@@ -97,9 +99,23 @@ public class JavalinInterface implements IInterface {
 	private static final ArgKey<Object> AUTHENTICATION =
 			ArgKey.of("authentication", IClass.getClass(Object.class));
 
+	/**
+	 * Response headers naming the DTO fields a write applied and those it dropped. Always both, and
+	 * always present on a write — see {@link #writeFieldReport}.
+	 */
+	private static final String FIELDS_APPLIED_HEADER = "X-Garganttua-Fields-Applied";
+	private static final String FIELDS_REJECTED_HEADER = "X-Garganttua-Fields-Rejected";
+
 	private static final Logger LOGGER = Logger.getLogger(JavalinInterface.class);
 
 	private final int port;
+	/**
+	 * Where this connector mounts everything it registers: {@code ""} (the root, the historical and
+	 * default behaviour) or a normalised prefix such as {@code "/api"}. It belongs to the CONNECTOR,
+	 * not to the domains — a domain knows nothing of its HTTP mounting, and its name stays the name
+	 * of its collection.
+	 */
+	private final String mountPath;
 	/** Whether this interface owns (creates + starts + stops) its Javalin server. */
 	// justification: fluent/lifecycle accessor idiom — field x paired with public accessor x().
 	@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
@@ -119,8 +135,20 @@ public class JavalinInterface implements IInterface {
 
 	/** Owns a Javalin server bound to {@code port}; this interface starts and stops it. */
 	public JavalinInterface(int port) {
+		this(port, null);
+	}
+
+	/**
+	 * Owns a Javalin server bound to {@code port} and mounts every route it registers under
+	 * {@code mountPath}.
+	 *
+	 * @param port      the port to bind
+	 * @param mountPath the common prefix; {@code null} or blank keeps the historical root mounting
+	 */
+	public JavalinInterface(int port, String mountPath) {
 		this.port = port;
 		this.ownsServer = true;
+		this.mountPath = normaliseMountPath(mountPath);
 	}
 
 	/**
@@ -130,9 +158,54 @@ public class JavalinInterface implements IInterface {
 	 * Multiple domains can pass the same instance to share one server.
 	 */
 	public JavalinInterface(Javalin app) {
+		this(app, null);
+	}
+
+	/**
+	 * Attaches to a caller-provided Javalin server and mounts every route it registers under
+	 * {@code mountPath} — the form for an application that SHARES its server with the framework and
+	 * wants one HTTP namespace rather than two: the generated CRUD under the prefix, alongside the
+	 * routes the application mounts itself (a multipart upload, a binary stream) under the same one.
+	 *
+	 * <pre>{@code
+	 * new JavalinInterface(sharedApp, "/api");  // /api/invoices, /api/invoices/{uuid}, …
+	 * new JavalinInterface(sharedApp);          // unchanged: the root
+	 * }</pre>
+	 *
+	 * @param app       the server to register on; its lifecycle stays the caller's
+	 * @param mountPath the common prefix; {@code null} or blank keeps the historical root mounting.
+	 *                  {@code "api"}, {@code "/api"} and {@code "/api/"} all mount at {@code /api}.
+	 */
+	public JavalinInterface(Javalin app, String mountPath) {
 		this.app = Objects.requireNonNull(app, "Javalin app cannot be null");
 		this.ownsServer = false;
 		this.port = -1;
+		this.mountPath = normaliseMountPath(mountPath);
+	}
+
+	/**
+	 * Normalises a declared mount path to either {@code ""} or {@code "/segment[/segment…]"}:
+	 * a missing leading slash is added, trailing slashes are dropped, and {@code null} / blank /
+	 * {@code "/"} all mean "the root", so that {@code "api"}, {@code "/api"} and {@code "/api/"}
+	 * cannot produce three different mountings — nor {@code /api//invoices}.
+	 */
+	private static String normaliseMountPath(String mountPath) {
+		if (mountPath == null || mountPath.isBlank()) {
+			return "";
+		}
+		String trimmed = mountPath.trim();
+		while (trimmed.endsWith("/")) {
+			trimmed = trimmed.substring(0, trimmed.length() - 1);
+		}
+		if (trimmed.isEmpty()) {
+			return "";
+		}
+		return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
+	}
+
+	/** {@return the normalised prefix every route of this connector is mounted under} Empty for the root. */
+	public String mountPath() {
+		return this.mountPath;
 	}
 
 	/** The bound port for an owned server, or {@code -1} when the server is provided externally. */
@@ -160,9 +233,10 @@ public class JavalinInterface implements IInterface {
 
 	@Override
 	public void handle(IDomain<?> domain) {
-		String base = "/" + domain.getDomainName();
+		String base = this.mountPath + "/" + domain.getDomainName();
 		String one = base + "/{uuid}";
 		Javalin server = app();
+		List<String> mounted = new ArrayList<>();
 
 		// Resolve each route's operation from the domain's CONFIGURED operations so the
 		// access/authority the request carries matches what the domain declared (e.g.
@@ -184,29 +258,35 @@ public class JavalinInterface implements IInterface {
 			if (op.getBusinessOperation() != BusinessOperation.useCase) {
 				continue;
 			}
-			String path = toJavalinPath(op);
+			String path = this.mountPath + toJavalinPath(op);
 			boolean hasUuid = path.contains("{uuid}");
 			for (HttpVerb verb : verbsOf(op.technicalOperation())) {
 				boolean partial = verb == HttpVerb.PATCH;
 				Handler handler = ctx -> dispatch(domain, op, ctx, hasUuid ? ctx.pathParam("uuid") : null, partial);
 				register(server, verb, path, handler);
+				mounted.add(verb + " " + path);
 			}
 		}
 
-		route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false);
-		route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false);
-		route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true);
+		route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false, mounted);
+		route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false, mounted);
+		route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true,  mounted);
 		// Update is reachable under both verbs; only PATCH flags the body as partial.
-		route(server, HttpVerb.PATCH,  one,  domain, configured, BusinessOperation.update,    true);
-		route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true);
-		route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true);
-		route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false);
+		route(server, HttpVerb.PATCH,  one,  domain, configured, BusinessOperation.update,    true,  mounted);
+		route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true,  mounted);
+		route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true,  mounted);
+		route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false, mounted);
 
 		// Authentication entry point (anonymous): the credentials travel in the body as
 		// an AuthenticationRequest. Registered only when the domain has an authenticator
 		// (its authenticate operation is then present in the configured operations).
 		route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
-				BusinessOperation.authenticate, false);
+				BusinessOperation.authenticate, false, mounted);
+
+		// Name what is ACTUALLY mounted, not what was declared: with a mount path in play, the two
+		// differ, and this line is how an operator checks which of the two is online.
+		LOGGER.info("Domain '{}' mounted on {}: {}", domain.getDomainName(),
+				this.mountPath.isEmpty() ? "/" : this.mountPath, mounted);
 	}
 
 	/**
@@ -227,8 +307,16 @@ public class JavalinInterface implements IInterface {
 	}
 
 	/**
-	 * The Javalin route path for an operation: its declared {@link OperationDefinition#getPath()}
-	 * with the framework's {@code ${uuid}} placeholder rewritten to Javalin's {@code {uuid}}.
+	 * The Javalin route path for an operation, RELATIVE to this connector's mount path: its declared
+	 * {@link OperationDefinition#getPath()} with the framework's {@code ${uuid}} placeholder
+	 * rewritten to Javalin's {@code {uuid}}. The caller prepends {@code mountPath}.
+	 *
+	 * <p>
+	 * This covers a use case declared with {@code completePath(...)} as well: "complete" is
+	 * complete <em>within the mounting</em>, not absolute. A connector that let some of its own
+	 * routes escape its prefix would hand the application back the two HTTP namespaces the mount
+	 * path exists to remove.
+	 * </p>
 	 */
 	private static String toJavalinPath(OperationDefinition op) {
 		String path = op.getPath() != null ? op.getPath().path() : null;
@@ -247,7 +335,8 @@ public class JavalinInterface implements IInterface {
 	 * access/authority — never a synthesized standard-security one.
 	 */
 	private void route(Javalin server, HttpVerb verb, String path, IDomain<?> domain,
-			List<OperationDefinition> configured, BusinessOperation bo, boolean hasUuid) {
+			List<OperationDefinition> configured, BusinessOperation bo, boolean hasUuid,
+			List<String> mounted) {
 		OperationDefinition operation = findOperation(configured, bo);
 		if (operation == null) {
 			return; // operation not enabled on this domain — no route
@@ -255,6 +344,7 @@ public class JavalinInterface implements IInterface {
 		boolean partial = verb == HttpVerb.PATCH;
 		Handler handler = ctx -> dispatch(domain, operation, ctx, hasUuid ? ctx.pathParam("uuid") : null, partial);
 		register(server, verb, path, handler);
+		mounted.add(verb + " " + path);
 	}
 
 	/** Binds a handler to a Javalin route for the given verb. */
@@ -305,6 +395,7 @@ public class JavalinInterface implements IInterface {
 				request.arg(IOperationRequest.PARTIAL_UPDATE, Boolean.TRUE);
 			}
 			IOperationResponse response = domain.invoke(request);
+			writeFieldReport(ctx, operation, response);
 
 			// A token-minting op (authenticate / refreshAuthorization) that produced an
 			// encoded authorization returns it in the X-Authorization response header; the
@@ -334,6 +425,38 @@ public class JavalinInterface implements IInterface {
 	/** A successful outcome carries a payload, not a {@link Throwable}. */
 	private static boolean isSuccess(IOperationResponse response) {
 		return response != null && !(response.getResponse() instanceof Throwable);
+	}
+
+	/**
+	 * Reports, on every WRITE, which of the fields the client named were applied and which were
+	 * dropped.
+	 *
+	 * <p>
+	 * Both headers are emitted even when nothing was rejected — an empty value rather than no
+	 * header. Their absence would be ambiguous between "nothing rejected" and "a framework too old
+	 * to say", and no client could then rely on them. The status is deliberately NOT changed: the
+	 * request was processed, partially; turning a 200 into a 403 would break every client that
+	 * treats 2xx as success, for a problem that is one of observability.
+	 * </p>
+	 */
+	private static void writeFieldReport(Context ctx, OperationDefinition operation, IOperationResponse response) {
+		// A null response is a legitimate outcome here (the pipeline answered on the Context
+		// directly); there is then nothing to report, and this must not be what turns it into a 500.
+		if (response == null || !isWrite(operation)) {
+			return;
+		}
+		WrittenFields fields = response.getWrittenFields();
+		ctx.header(FIELDS_APPLIED_HEADER, String.join(",", fields.applied()));
+		ctx.header(FIELDS_REJECTED_HEADER, String.join(",", fields.rejected()));
+	}
+
+	/** Whether this operation writes an entity — the only ones for which a field report means anything. */
+	private static boolean isWrite(OperationDefinition operation) {
+		if (operation == null) {
+			return false;
+		}
+		BusinessOperation bo = operation.getBusinessOperation();
+		return bo == BusinessOperation.create || bo == BusinessOperation.update;
 	}
 
 	/** Renders the encoded token as a header string (it may be a String or a byte[]/Byte[] wire form). */

@@ -37,6 +37,20 @@ public interface IOperationResponse {
 	}
 
 	/**
+	 * Which of the fields the request named were written and which were dropped, in the client's own
+	 * vocabulary.
+	 *
+	 * <p>
+	 * Always {@link WrittenFields#none()} for anything that is not a write. On a write it is what
+	 * lets the transport tell the caller that a named field did not land — the framework knows,
+	 * because it is the framework that drops it, and used to say nothing.
+	 * </p>
+	 */
+	default WrittenFields getWrittenFields() {
+		return WrittenFields.none();
+	}
+
+	/**
 	 * Convenience accessor for the failure path: returns the carried
 	 * {@link Throwable} when the response is a failure, empty otherwise.
 	 */

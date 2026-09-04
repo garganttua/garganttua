@@ -59,6 +59,21 @@ public interface IOperationRequest {
 	@SuppressWarnings("rawtypes")
 	ArgKey<List> PROJECTION = ArgKey.of("projection", IClass.getClass(List.class));
 
+	/**
+	 * The caller the VERIFICATION stage reconciled and published — the authenticated identity, not
+	 * what the client announced.
+	 *
+	 * <p>
+	 * {@code VERIFY_AUTHORIZATION.gs} folds the (untrusted) protocol-layer caller into the verified
+	 * authentication and stores the result here; {@link #caller()} returns it whenever it is
+	 * present. The individual keys below ({@link #TENANT_ID}, {@link #CALLER_ID}, …) carry the
+	 * PROTOCOL-layer values — what arrived in the headers — and are what {@code caller()} falls back
+	 * to for a genuinely anonymous operation. Reading them directly on a verified operation reads
+	 * the client's claim, not the server's conclusion.
+	 * </p>
+	 */
+	ArgKey<ICaller> CALLER = ArgKey.of("caller", IClass.getClass(ICaller.class));
+
 	ArgKey<String> CALLER_ID = ArgKey.of("callerId", IClass.getClass(String.class));
 	ArgKey<String> TENANT_ID = ArgKey.of("tenantId", IClass.getClass(String.class));
 	ArgKey<String> REQUESTED_TENANT_ID = ArgKey.of("requestedTenantId", IClass.getClass(String.class));

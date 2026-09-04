@@ -8,6 +8,7 @@ import com.garganttua.api.commons.context.IEntityContext;
 import com.garganttua.api.commons.entity.IUuidGenerator;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.core.dsl.IAutomaticLinkedBuilder;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
@@ -51,6 +52,29 @@ public interface IEntityBuilder<E> extends IAutomaticLinkedBuilder<IEntityBuilde
     IEntityBuilder<E> mandatory(String string) throws ApiException;
 
     IEntityBuilder<E> mandatory(ObjectAddress fieldAddress) throws ApiException;
+
+    /**
+     * Declares a mandatory field under an explicit policy.
+     *
+     * <p>
+     * {@code mandatory(field)} means "not {@code null}" and nothing more — an empty string passes.
+     * {@link MandatoryPolicy#nonBlank} is the form that matches what a screen guard does: it also
+     * refuses {@code ""} and whitespace, at creation, and at update on any value the client
+     * actually sent (an absent field is still left alone).
+     * </p>
+     *
+     * @param field  the field on the entity
+     * @param policy what the field is required to carry
+     * @return this builder
+     * @throws ApiException if the field cannot be resolved on the entity
+     */
+    IEntityBuilder<E> mandatory(IField field, MandatoryPolicy policy) throws ApiException;
+
+    /** @see #mandatory(IField, MandatoryPolicy) */
+    IEntityBuilder<E> mandatory(String string, MandatoryPolicy policy) throws ApiException;
+
+    /** @see #mandatory(IField, MandatoryPolicy) */
+    IEntityBuilder<E> mandatory(ObjectAddress fieldAddress, MandatoryPolicy policy) throws ApiException;
 
     IEntityBuilder<E> unicity(IField field) throws ApiException;
 

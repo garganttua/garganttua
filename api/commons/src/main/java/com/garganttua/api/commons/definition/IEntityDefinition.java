@@ -9,6 +9,7 @@ import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.IUuidGenerator;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.core.reflection.ObjectAddress;
 
 public interface IEntityDefinition<E> {
@@ -27,7 +28,17 @@ public interface IEntityDefinition<E> {
 
     ObjectAddress tenantId();
 
-    List<ObjectAddress> mandatories();
+    /**
+     * The mandatory fields, each paired with what it is required to carry.
+     *
+     * <p>
+     * <b>Changed in 3.0.0-ALPHA17</b> — this returned a bare {@code List<ObjectAddress>} while
+     * {@code mandatory} could only mean "not null". Now that a field can declare
+     * {@link MandatoryPolicy#nonBlank}, the policy has to travel with the address, or the check
+     * downstream would have to guess it.
+     * </p>
+     */
+    List<Pair<ObjectAddress, MandatoryPolicy>> mandatories();
 
     List<Pair<ObjectAddress, UnicityScope>> unicities();
 

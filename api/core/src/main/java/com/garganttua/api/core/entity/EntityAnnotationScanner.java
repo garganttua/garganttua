@@ -31,6 +31,7 @@ import com.garganttua.api.commons.entity.annotations.EntityHiddenable;
 import com.garganttua.api.commons.entity.annotations.EntityId;
 import com.garganttua.api.commons.entity.annotations.AuthorizeCreate;
 import com.garganttua.api.commons.entity.annotations.AuthorizeUpdate;
+import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.api.commons.entity.annotations.EntityMandatory;
 import com.garganttua.api.commons.entity.annotations.EntityOwned;
 import com.garganttua.api.commons.entity.annotations.EntityOwner;
@@ -279,12 +280,25 @@ public final class EntityAnnotationScanner {
         if (superTenantField.isPresent()) domain.superTenant(superTenantField.get().getName());
 
         for (String addr : reflection.findFieldAddressesWithAnnotation(entityClass, IClass.getClass(EntityMandatory.class), true)) {
-            entity.mandatory(addr);
+            entity.mandatory(addr, declaredMandatoryPolicy(reflection, entityClass, addr));
         }
         for (String addr : reflection.findFieldAddressesWithAnnotation(entityClass, IClass.getClass(EntityUnicity.class), true)) {
             entity.unicity(addr);
         }
         applyWriteWhitelists(entity, entityClass);
+    }
+
+    /**
+     * The policy a field's {@code @EntityMandatory} declares. Falls back to the historical
+     * {@link MandatoryPolicy#anyValue} when the field cannot be resolved by its address — a nested
+     * address, typically, which the annotation scan reports but this flat lookup does not reach.
+     */
+    private static MandatoryPolicy declaredMandatoryPolicy(IReflection reflection, IClass<?> entityClass,
+            String address) {
+        return reflection.findField(entityClass, address)
+                .map(field -> field.getAnnotation(IClass.getClass(EntityMandatory.class)))
+                .map(EntityMandatory::value)
+                .orElse(MandatoryPolicy.anyValue);
     }
 
     /**

@@ -48,8 +48,32 @@ public class OperationRequest implements IOperationRequest {
 		return path != null ? path.domain() : null;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>
+	 * Returns the caller the verification stage RECONCILED and published under {@link #CALLER} when
+	 * there is one, and only falls back to rebuilding one from the protocol-layer args for an
+	 * operation that never went through verification (a genuinely anonymous call, a
+	 * framework-internal invocation, a test harness).
+	 * </p>
+	 *
+	 * <p>
+	 * The fallback used to be unconditional, and that made every membership check written against
+	 * {@code ICaller} decorative: the tenant it exposed came from the {@code X-Tenant-Id} header —
+	 * a value the caller chooses — rather than from the token the server verified. A consumer had
+	 * no way to see it, {@code ICaller} being precisely the type handed to it to answer "who is
+	 * calling". Note that the reconciled caller still carries the header's target separately, in
+	 * {@link ICaller#requestedTenantId()} / {@link ICaller#requestedOwnerId()}: what changes is that
+	 * the HOME tenant/owner is now the authenticated one.
+	 * </p>
+	 */
 	@Override
 	public ICaller caller() {
+		ICaller verified = arg(CALLER).orElse(null);
+		if (verified != null) {
+			return verified;
+		}
 		return new Caller(
 				arg(TENANT_ID).orElse(null),
 				arg(REQUESTED_TENANT_ID).orElse(null),

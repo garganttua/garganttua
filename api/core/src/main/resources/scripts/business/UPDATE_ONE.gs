@@ -50,8 +50,14 @@ storedEntity <- updateEntity(@caller, @storedEntity, @entity, @2, @0)
 requireSignedPayloadUnchanged(@signedPayloadBefore, @storedEntity, @2)
 ! => recordCaughtException(@0, @exception) -> 400
 
-// Validate mandatory fields on the merged entity
+// Validate mandatory fields on the merged entity (every one must still be set)
 validateMandatories(@storedEntity, @2)
+! => recordCaughtException(@0, @exception) -> 400
+
+// And on what the CLIENT actually sent: a field declared nonBlank may not be erased with "".
+// This reads the submitted body, not the merge — after merging, an erasure is indistinguishable
+// from a legitimate value, which is why the check above cannot catch it.
+validateProvidedMandatories(@entity, @2)
 ! => recordCaughtException(@0, @exception) -> 400
 
 // Check unicity constraints on the merged entity

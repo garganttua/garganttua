@@ -1,11 +1,13 @@
 package com.garganttua.api.core.entity;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.garganttua.api.core.mapper.DefaultMapper;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
+import com.garganttua.api.commons.entity.EntityWriteOutcome;
 import com.garganttua.api.commons.entity.IEntityUpdater;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.ObjectAddress;
@@ -24,10 +26,10 @@ public class EntityUpdater implements IEntityUpdater{
 	private static final IReflection REFLECTION = DefaultMapper.reflection();
 
 	@Override
-	public Object update(ICaller caller, Object storedEntity, Object updatedEntity,
+	public EntityWriteOutcome update(ICaller caller, Object storedEntity, Object updatedEntity,
 			List<EntityUpdateRule> updateRules) {
 		if (updateRules == null || updateRules.isEmpty()) {
-			return storedEntity;
+			return EntityWriteOutcome.unrestricted(storedEntity);
 		}
 		if (caller == null) {
 			throw new ApiException("Caller is null");
@@ -37,18 +39,27 @@ public class EntityUpdater implements IEntityUpdater{
 					+ "] and updated entity type [" + updatedEntity.getClass().getSimpleName() + "] mismatch");
 		}
 
+		List<ObjectAddress> applied = new ArrayList<>();
+		List<ObjectAddress> rejected = new ArrayList<>();
 		try {
 			for (EntityUpdateRule rule : updateRules) {
 				ObjectAddress fieldAddress = rule.field();
-				if (!isAuthorized(caller, rule.authority())) {
-					continue;
-				}
 				String fieldName = fieldAddress.toString();
 				Object updatedValue = REFLECTION.getFieldValue(updatedEntity, fieldName);
+				if (!isAuthorized(caller, rule.authority())) {
+					// Refused for lack of the required authority. Reported only when the client
+					// actually SENT a value: a null here means the field was absent from the body
+					// (or explicitly null), and refusing to write nothing is not a refusal to report.
+					if (updatedValue != null) {
+						rejected.add(fieldAddress);
+					}
+					continue;
+				}
 				if (updatedValue == null && rule.ignoreNull()) {
 					continue;
 				}
 				REFLECTION.setFieldValue(storedEntity, fieldName, updatedValue);
+				applied.add(fieldAddress);
 			}
 		} catch (ApiException e) {
 			throw e;
@@ -56,7 +67,7 @@ public class EntityUpdater implements IEntityUpdater{
 			throw new ApiException("Failed to update entity", e);
 		}
 
-		return storedEntity;
+		return new EntityWriteOutcome(storedEntity, applied, rejected);
 	}
 
 	/**

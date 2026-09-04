@@ -227,6 +227,129 @@ class JavalinInterfaceTest {
 	}
 
 	@Nested
+	@DisplayName("Connector mount path")
+	class MountPath {
+
+		private JavalinInterface prefixed;
+		private CapturingDomain prefixedDomain;
+		private int prefixedPort;
+
+		/** Starts a second interface, mounted under {@code mount}, on its own port. */
+		private void startPrefixed(String mount) {
+			startPrefixed(mount, standardOperations());
+		}
+
+		private void startPrefixed(String mount, List<OperationDefinition> operations) {
+			prefixedPort = freePort();
+			prefixedDomain = new CapturingDomain(operations);
+			prefixed = new JavalinInterface(prefixedPort, mount);
+			prefixed.handle(prefixedDomain);
+			prefixed.onInit();
+			prefixed.onStart();
+		}
+
+		private HttpResponse<String> call(String method, String path) throws Exception {
+			HttpRequest request = HttpRequest.newBuilder()
+					.uri(URI.create("http://localhost:" + prefixedPort + path))
+					.method(method, HttpRequest.BodyPublishers.noBody())
+					.build();
+			return http.send(request, HttpResponse.BodyHandlers.ofString());
+		}
+
+		@AfterEach
+		void stopPrefixed() {
+			if (prefixed != null && prefixed.isStarted()) {
+				prefixed.onStop();
+			}
+		}
+
+		@Test
+		@DisplayName("no prefix mounts at the root, exactly as before")
+		void noPrefixIsUnchanged() {
+			assertEquals("", new JavalinInterface(1).mountPath());
+			assertEquals("", new JavalinInterface(1, null).mountPath());
+			assertEquals("", new JavalinInterface(1, "  ").mountPath());
+			assertEquals("", new JavalinInterface(1, "/").mountPath(),
+					"a lone slash is the root, not a segment");
+		}
+
+		@Test
+		@DisplayName("api, /api and /api/ all produce the same mounting")
+		void spellingsAgree() {
+			assertEquals("/api", new JavalinInterface(1, "api").mountPath());
+			assertEquals("/api", new JavalinInterface(1, "/api").mountPath());
+			assertEquals("/api", new JavalinInterface(1, "/api/").mountPath(),
+					"a trailing slash must not yield /api//invoices");
+			assertEquals("/api/v1", new JavalinInterface(1, "api/v1/").mountPath());
+		}
+
+		@Test
+		@DisplayName("the CRUD routes answer under the prefix, and the root paths are gone")
+		void crudMovesUnderThePrefix() throws Exception {
+			startPrefixed("/api");
+
+			assertEquals(200, call("GET", "/api/users").statusCode());
+			assertEquals(200, call("GET", "/api/users/abc").statusCode());
+			assertEquals(404, call("GET", "/users").statusCode(),
+					"the root path must no longer answer — one namespace, not two");
+			assertEquals(404, call("GET", "/users/abc").statusCode());
+		}
+
+		@Test
+		@DisplayName("the uuid segment is still extracted once the route moved under the prefix")
+		void uuidIsStillExtractedUnderThePrefix() throws Exception {
+			startPrefixed("/api");
+
+			call("GET", "/api/users/abc-123");
+
+			assertEquals("abc-123", prefixedDomain.lastUuid,
+					"the prefix must be part of the mounting, not of the path parameters");
+			assertEquals(BusinessOperation.readOne, prefixedDomain.lastOperation.getBusinessOperation());
+		}
+
+		@Test
+		@DisplayName("a literal use-case path still wins over readOne, prefix included")
+		void literalUseCaseStillBeatsReadOne() throws Exception {
+			// The registration order is what makes this work: use cases go in before the CRUD table,
+			// so Javalin resolves /api/users/greet to the use case rather than to readOne with
+			// uuid="greet". The prefix must not disturb that — it applies to both, uniformly.
+			List<OperationDefinition> ops = new java.util.ArrayList<>(standardOperations());
+			ops.add(useCaseOp("greet",
+					com.garganttua.api.commons.operation.TechnicalOperation.read,
+					com.garganttua.api.commons.operation.Scope.allEntities, "/users/greet"));
+			startPrefixed("/api", ops);
+
+			assertEquals(200, call("GET", "/api/users/greet").statusCode());
+			assertEquals(BusinessOperation.useCase, prefixedDomain.lastOperation.getBusinessOperation(),
+					"readOne must not have swallowed it as uuid=greet");
+			assertEquals("greet", prefixedDomain.lastOperation.useCaseName());
+		}
+
+		@Test
+		@DisplayName("a use case declared with a complete path is mounted under the prefix too")
+		void completePathIsMountedUnderThePrefix() throws Exception {
+			List<OperationDefinition> ops = List.of(useCaseOp("health",
+					com.garganttua.api.commons.operation.TechnicalOperation.read,
+					com.garganttua.api.commons.operation.Scope.allEntities, "/health"));
+			startPrefixed("/api", ops);
+
+			assertEquals(200, call("GET", "/api/health").statusCode(),
+					"\"complete\" is complete WITHIN the mounting — a connector exposing two namespaces "
+							+ "is exactly what the mount path removes");
+			assertEquals(404, call("GET", "/health").statusCode());
+		}
+
+		@Test
+		@DisplayName("a deeper prefix works the same")
+		void aDeeperPrefixWorks() throws Exception {
+			startPrefixed("api/v1/");
+
+			assertEquals("/api/v1", prefixed.mountPath());
+			assertEquals(200, call("GET", "/api/v1/users").statusCode());
+		}
+	}
+
+	@Nested
 	@DisplayName("Lifecycle")
 	class Lifecycle {
 		@Test

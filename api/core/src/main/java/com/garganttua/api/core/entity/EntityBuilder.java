@@ -20,6 +20,7 @@ import com.garganttua.api.commons.context.dsl.IEntityBuilder;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IObjectQuery;
 import com.garganttua.core.reflection.IReflectionProvider;
@@ -51,7 +52,7 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
     private boolean overwriteUuid = false;
     private com.garganttua.api.commons.entity.IUuidGenerator uuidGenerator;
     private ObjectAddress tenantId;
-    private List<ObjectAddress> mandatories = new ArrayList<>();
+    private List<Pair<ObjectAddress, MandatoryPolicy>> mandatories = new ArrayList<>();
     private List<Pair<ObjectAddress, UnicityScope>> unicities = new ArrayList<>();
     private List<Pair<ObjectAddress, String>> creates = new ArrayList<>();
     private List<EntityUpdateRule> updates = new ArrayList<>();
@@ -169,28 +170,46 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
 
     @Override
     public IEntityBuilder<E> mandatory(IField field) throws ApiException {
-        Objects.requireNonNull(field, "Field cannot be null");
-
-        this.mandatories.add(FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address());
-
-        return this;
+        return mandatory(field, MandatoryPolicy.anyValue);
     }
 
     @Override
     public IEntityBuilder<E> mandatory(String fieldName) throws ApiException {
-        Objects.requireNonNull(fieldName, "Field name cannot be null");
-
-        this.mandatories.add(FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address());
-
-        return this;
+        return mandatory(fieldName, MandatoryPolicy.anyValue);
     }
 
     @Override
     public IEntityBuilder<E> mandatory(ObjectAddress fieldAddress) throws ApiException {
+        return mandatory(fieldAddress, MandatoryPolicy.anyValue);
+    }
+
+    @Override
+    public IEntityBuilder<E> mandatory(IField field, MandatoryPolicy policy) throws ApiException {
+        Objects.requireNonNull(field, "Field cannot be null");
+
+        return addMandatory(
+                FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(), policy);
+    }
+
+    @Override
+    public IEntityBuilder<E> mandatory(String fieldName, MandatoryPolicy policy) throws ApiException {
+        Objects.requireNonNull(fieldName, "Field name cannot be null");
+
+        return addMandatory(
+                FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address(), policy);
+    }
+
+    @Override
+    public IEntityBuilder<E> mandatory(ObjectAddress fieldAddress, MandatoryPolicy policy) throws ApiException {
         Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
 
-        this.mandatories.add(FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address());
+        return addMandatory(
+                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(), policy);
+    }
 
+    /** Records one resolved mandatory field; a null policy reads as the historical {@code anyValue}. */
+    private IEntityBuilder<E> addMandatory(ObjectAddress address, MandatoryPolicy policy) {
+        this.mandatories.add(new Pair<>(address, policy == null ? MandatoryPolicy.anyValue : policy));
         return this;
     }
 

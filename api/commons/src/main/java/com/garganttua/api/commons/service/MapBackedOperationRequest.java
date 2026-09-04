@@ -50,9 +50,20 @@ final class MapBackedOperationRequest implements IOperationRequest {
 		return path != null ? path.domain() : null;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>
+	 * Prefers the caller reconciled by the verification stage ({@link #CALLER}); the args-backed
+	 * view is the fallback for an operation that never went through it. See
+	 * {@code IOperationRequest.CALLER} for why reading the protocol args directly is not the same
+	 * question.
+	 * </p>
+	 */
 	@Override
 	public ICaller caller() {
-		return new MapBackedCaller(this);
+		ICaller verified = arg(CALLER).orElse(null);
+		return verified != null ? verified : new MapBackedCaller(this);
 	}
 
 	@Override
