@@ -41,12 +41,12 @@ other JAR-aware consumer) only needs to know about an `IClassLoaderManager`
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-classloader</artifactId>
-    <version>3.0.0-ALPHA16</version>
+    <version>3.0.0-ALPHA17</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA16
+3.0.0-ALPHA17
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
