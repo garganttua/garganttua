@@ -5,6 +5,7 @@ import java.lang.constant.Constable;
 import java.lang.invoke.TypeDescriptor;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Type;
+import java.util.Optional;
 
 import com.garganttua.core.SuppressFBWarnings;
 
@@ -233,6 +234,37 @@ public interface IClass<T> extends IGenericDeclaration, Type,
 	IConstructor<?>[] getDeclaredConstructors();
 
 	IField getDeclaredField(String name) throws NoSuchFieldException, SecurityException;
+
+	/**
+	 * Looks up a field declared on this class by name, answering <em>absent</em> rather than
+	 * throwing when there is none.
+	 *
+	 * <p>
+	 * {@link #getDeclaredField(String)} mirrors {@link Class#getDeclaredField(String)} and so
+	 * signals "no such field" by throwing. On a resolution path that asks the question about every
+	 * element it walks — most of which are methods — that turns an ordinary negative answer into a
+	 * constructed exception, stack trace included, and {@code Throwable.fillInStackTrace} becomes
+	 * the dominant cost of resolving anything. Use this method wherever "is there a field by this
+	 * name?" is a question rather than an expectation.
+	 * </p>
+	 *
+	 * <p>
+	 * The default implementation is correct but keeps the throw, so that existing
+	 * {@code IClass} implementations remain valid; the providers shipped with the framework
+	 * override it to search without one.
+	 * </p>
+	 *
+	 * @param name the field name
+	 * @return the declared field, or empty when this class declares none by that name (or access
+	 *         to it is denied)
+	 */
+	default Optional<IField> findDeclaredField(String name) {
+		try {
+			return Optional.ofNullable(getDeclaredField(name));
+		} catch (NoSuchFieldException | SecurityException e) {
+			return Optional.empty();
+		}
+	}
 
 	IMethod getDeclaredMethod(String name, IClass<?>... parameterTypes)
 			throws NoSuchMethodException, SecurityException;

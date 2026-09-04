@@ -286,6 +286,25 @@ public class RuntimeClass<T> implements IClass<T> {
 		return RuntimeField.of(clazz.getDeclaredField(name));
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>
+	 * Scans the declared fields directly instead of calling {@link Class#getDeclaredField(String)},
+	 * which answers "no such field" by constructing a {@link NoSuchFieldException} — stack trace
+	 * included. That is the same search, minus the throw.
+	 * </p>
+	 */
+	@Override
+	public Optional<IField> findDeclaredField(String name) {
+		for (java.lang.reflect.Field field : clazz.getDeclaredFields()) {
+			if (field.getName().equals(name)) {
+				return Optional.of(RuntimeField.of(field));
+			}
+		}
+		return Optional.empty();
+	}
+
 	@Override
 	public IMethod getDeclaredMethod(String name, IClass<?>... parameterTypes)
 			throws NoSuchMethodException, SecurityException {

@@ -129,24 +129,38 @@ final class AOTLiveClassFallback {
         }
     }
 
+    /**
+     * The declared field named {@code fieldName}, or {@code null}.
+     *
+     * <p>
+     * Scans the declared fields rather than calling {@code getDeclaredField}, whose way of saying
+     * "there is none" is to construct a {@link NoSuchFieldException} with its stack trace. Absence
+     * is the ORDINARY answer here — this fallback runs when the AOT descriptor did not carry the
+     * name, which on a resolution path is most often because the element is a method — so the
+     * throw was paid on nearly every lookup.
+     * </p>
+     */
     AOTField declaredField(String fieldName) {
         Class<?> live = loadLiveClass();
         if (live == null) return null;
-        try {
-            return AOTField.synthesizeFrom(live.getDeclaredField(fieldName));
-        } catch (NoSuchFieldException ignored) {
-            return null;
+        for (java.lang.reflect.Field field : live.getDeclaredFields()) {
+            if (field.getName().equals(fieldName)) {
+                return AOTField.synthesizeFrom(field);
+            }
         }
+        return null;
     }
 
+    /** The public field named {@code fieldName}, or {@code null} — searched, not thrown for. */
     AOTField publicField(String fieldName) {
         Class<?> live = loadLiveClass();
         if (live == null) return null;
-        try {
-            return AOTField.synthesizeFrom(live.getField(fieldName));
-        } catch (NoSuchFieldException ignored) {
-            return null;
+        for (java.lang.reflect.Field field : live.getFields()) {
+            if (field.getName().equals(fieldName)) {
+                return AOTField.synthesizeFrom(field);
+            }
         }
+        return null;
     }
 
     AOTConstructor<?> declaredConstructor(IClass<?>... parameterTypes) {

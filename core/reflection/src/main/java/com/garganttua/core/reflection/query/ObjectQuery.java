@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import com.garganttua.core.observability.HotPathProbe;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
@@ -270,13 +271,26 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
     @Override
     public ObjectAddress address(String elementName) throws ReflectionException {
         log.debug("address(String) called for element='{}' in class={}", elementName, objectClass);
-        return address(this.objectClass, elementName, null);
+        // Attributed under "reflection.resolveAddress": element resolution sits on the innermost
+        // per-request path (a bound method's parameters are resolved through it), and until this
+        // bucket existed the only way to see its cost was to sample thread stacks from outside.
+        long probe = HotPathProbe.start();
+        try {
+            return address(this.objectClass, elementName, null);
+        } finally {
+            HotPathProbe.end("reflection.resolveAddress", probe);
+        }
     }
 
     @Override
     public List<ObjectAddress> addresses(String elementName) throws ReflectionException {
         log.debug("addresses(String) called for element='{}' in class={}", elementName, objectClass);
-        return addresses(this.objectClass, elementName, null);
+        long probe = HotPathProbe.start();
+        try {
+            return addresses(this.objectClass, elementName, null);
+        } finally {
+            HotPathProbe.end("reflection.resolveAddresses", probe);
+        }
     }
 
     private List<ObjectAddress> addresses(IClass<?> objectClass, String elementName, ObjectAddress baseAddress)
@@ -330,18 +344,14 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
             throws ReflectionException {
         log.trace("Resolving address element='{}', class={}, baseAddress={}", elementName, objectClass,
                 address);
-        IField field = null;
-        try {
-            field = objectClass.getDeclaredField(elementName);
-        } catch (NoSuchFieldException | SecurityException ignored) {
-        }
-
         IMethod method = MemberLookup.getMethod(objectClass, elementName);
         if (method != null) {
             log.debug("Found method '{}' in {}", elementName, objectClass.getName());
             return new ObjectAddress(address == null ? elementName : address + "." + elementName, true);
         }
-        if (field != null) {
+        // findDeclaredField, not getDeclaredField: "there is no such field" is the ordinary answer
+        // here, and the throwing form pays for a stack trace to say it.
+        if (objectClass.findDeclaredField(elementName).isPresent()) {
             log.debug("Found field '{}' in {}", elementName, objectClass.getName());
             return new ObjectAddress(address == null ? elementName : address + "." + elementName, true);
         }

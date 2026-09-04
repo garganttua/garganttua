@@ -39,6 +39,35 @@ public final class HotPathProbe {
 
 	private static final ConcurrentMap<String, Counter> COUNTERS = new ConcurrentHashMap<>();
 
+	private static final Logger log = Logger.getLogger(HotPathProbe.class);
+
+	static {
+		if (ENABLED) {
+			announce();
+		}
+	}
+
+	/**
+	 * Says, once, that the probe is on and that its report will come — so an operator who set the
+	 * flag can tell it took effect, and gets the attribution without writing a line of code or
+	 * sampling a single stack.
+	 */
+	private static void announce() {
+		log.info("HotPathProbe is ON (-Dgarganttua.perf.probe=true): per-stage timings are being "
+				+ "accumulated; the attribution report is logged on JVM shutdown. Call "
+				+ "HotPathProbe.report() to read it sooner, HotPathProbe.reset() to drop a warm-up.");
+		Thread reporter = new Thread(HotPathProbe::logReport, "garganttua-hot-path-probe-report");
+		Runtime.getRuntime().addShutdownHook(reporter);
+	}
+
+	private static void logReport() {
+		if (COUNTERS.isEmpty()) {
+			log.info("HotPathProbe: nothing measured (no instrumented stage ran).");
+			return;
+		}
+		log.info("HotPathProbe attribution:{}{}", System.lineSeparator(), report());
+	}
+
 	private HotPathProbe() {
 	}
 

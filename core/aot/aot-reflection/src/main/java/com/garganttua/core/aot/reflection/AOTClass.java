@@ -418,12 +418,25 @@ public class AOTClass<T> implements IAOTClassDescriptor<T> {
 
     @Override
     public IField getDeclaredField(String fieldName) throws NoSuchFieldException, SecurityException {
+        return findDeclaredField(fieldName)
+                .orElseThrow(() -> new NoSuchFieldException(fieldName));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The search is the same one {@link #getDeclaredField(String)} performs; only the failure
+     * shape differs. Absence is the common answer on a resolution path (most elements walked are
+     * methods), and building an exception to say so costs more than the search itself.
+     * </p>
+     */
+    @Override
+    public java.util.Optional<IField> findDeclaredField(String fieldName) {
         for (AOTField f : fields) {
-            if (f.getName().equals(fieldName)) return f;
+            if (f.getName().equals(fieldName)) return java.util.Optional.of(f);
         }
-        AOTField fallback = liveFallback.declaredField(fieldName);
-        if (fallback != null) return fallback;
-        throw new NoSuchFieldException(fieldName);
+        return java.util.Optional.ofNullable(liveFallback.declaredField(fieldName));
     }
 
     @Override
