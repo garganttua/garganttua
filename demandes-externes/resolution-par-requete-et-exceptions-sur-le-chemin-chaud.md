@@ -130,3 +130,85 @@ for k in 1 2 3 4 5 6; do ( for i in $(seq 1 250); do curl -s -o /dev/null \
   http://localhost:8080/<domaine> -H "Authorization: Bearer $JWT" -H 'X-Tenant-Id: 0'; done ) & done
 for s in $(seq 1 25); do jcmd <pid> Thread.print >> dumps.txt; sleep 0.2; done
 ```
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée, les trois pistes.** Corrigée sur `main`, à paraître dans `3.0.0-ALPHA17`.
+
+Les deux causes lues dans les sources étaient exactes. Mesuré sur le chemin de résolution isolé
+(fournisseur de réflexion JVM, meilleur de 3, JVM chaude, deux exécutions indépendantes) :
+
+| variante | ns par résolution |
+|---|---|
+| ALPHA16 | **1 395 – 1 670** |
+| sans l'exception de contrôle, sans mémo | 1 037 – 1 406 |
+| version corrigée (les deux) | **173 – 178** |
+
+Soit **8 à 9 fois moins**. Le retrait de l'exception vaut à lui seul un quart environ ; la
+mémoïsation fait le reste. La hiérarchie de la classe sondée est plus courte que la vôtre, donc ce
+partage vous sera probablement plus favorable encore sur le second levier.
+
+### 1. Ne plus lever pour dire « ce n'est pas un champ »
+
+Fait comme proposé — `IClass` porte désormais `Optional<IField> findDeclaredField(String)`, et les
+deux fournisseurs le résolvent par balayage, sans exception. La méthode a une implémentation par
+défaut qui conserve le `try/catch`, pour qu'une implémentation tierce d'`IClass` reste valide.
+
+**Une précision qui compte pour vous : il y avait DEUX sites qui levaient, pas un.** Le vôtre —
+`DirectAddresses.java:31-36` — et, en dessous, `AOTLiveClassFallback.declaredField`, où
+`AOTClass.getDeclaredField` se replie sur la classe vivante quand le descripteur AOT ne porte pas
+le nom. Sur un déploiement **AOT pur comme le vôtre**, un nom qui n'est pas un champ construisait
+donc **deux** `NoSuchFieldException` par résolution : celle du repli, puis celle qu'`AOTClass`
+relève. Corriger le seul fichier que la fiche cite aurait laissé la première en place — c'est-à-dire
+l'essentiel de vos 70 échantillons `fillInStackTrace`. Les deux sont retirés.
+
+### 2. Mémoriser la résolution
+
+Fait, avec une nuance sur la clé. Mémoriser `(IClass, elementName) → List<ObjectAddress>`, comme la
+fiche le propose, ne tient pas : l'adresse rendue dépend aussi de l'**adresse de base**, qui change
+à chaque descente dans un champ imbriqué — la mémo rendrait `owner.details.name` là où on attend
+`name`. Ce qui est mémorisé est donc la **forme** — combien de surcharges portent ce nom, et s'il
+existe un champ homonyme — la seule part qui dépende réellement de la classe ; les adresses se
+rebâtissent à chaque appel, ce qui ne coûte rien. Un test verrouille précisément ce point.
+
+`MemberLookup` mémorise en plus ses trois recherches (`getField`, `getMethod`, `getMethods`), et son
+parcours de hiérarchie a été aplati : il construisait une liste et un ensemble de signatures **à
+chaque niveau** avant de les fusionner vers le haut. Une `ConcurrentHashMap` suffit, comme vous
+l'écriviez.
+
+### 3. Dire où passe le temps
+
+Fait dans la forme la moins coûteuse que la fiche propose — pas de route de diagnostic, qui serait
+une surface exposée pour un besoin d'exploitation.
+
+- **Le chemin de résolution est instrumenté.** Il ne l'était pas : c'est exactement pourquoi il vous
+  a fallu échantillonner des piles. Deux compteurs, `reflection.resolveAddress` et
+  `reflection.resolveAddresses`, apparaissent maintenant dans le rapport.
+- **Le drapeau s'annonce.** Avec `-Dgarganttua.perf.probe=true`, une ligne au démarrage dit que la
+  sonde est active et ce qui suivra.
+- **Le rapport tombe tout seul.** À l'arrêt de la JVM, l'attribution complète part dans le journal :
+  libellé, temps total, nombre d'appels, moyenne par appel. Plus une ligne de code à écrire.
+
+Le coût quand la sonde est éteinte reste nul — mesuré : 178 ns avant instrumentation, 173 après,
+soit du bruit. Le drapeau est un `static final` résolu une fois, la branche est repliée à la
+compilation.
+
+### Ce que cela ne dit pas
+
+**Nous n'avons pas reproduit vos ~40 ms.** La mesure ci-dessus porte sur le chemin de résolution
+isolé, pas sur une requête HTTP complète, et pas sur votre application. Votre échantillonnage
+désigne ce chemin comme dominant, donc le gain devrait s'y voir largement — mais c'est à vous de le
+constater. **Si le plancher subsiste après ALPHA17, la fiche mérite d'être rouverte avec les
+nouveaux relevés** : la sonde vous donnera cette fois l'attribution directement, sans `jcmd`.
+
+### Ce qui n'a pas été touché
+
+Conformément à ce que la fiche ne demande pas : ni la vérification du jeton, ni sa relecture
+(`checkStoredOnVerify`), ni les autorités, ni le moindre cache de données métier. Seule la **forme
+des classes** est mémorisée, et elle ne change pas.
+
+**Couvert par :** `ResolutionMemoBehaviourTest` (10 tests, dont l'indépendance à l'adresse de base,
+l'immuabilité de la liste partagée et la résolution concurrente) et
+`FindDeclaredFieldBehaviourTest` (5 tests). Réacteur complet vert : 4 006 tests, 0 échec.

@@ -48,9 +48,12 @@ vérifier, et un dossier vide ne lui apprend rien.
 `3.0.0-ALPHA15`. La colonne « Émise par » compte : deux consommateurs qui butent sur la même chose
 ne disent pas la même chose qu'un seul.
 
+Les quatre restantes changent un comportement public — ce qu'une contrainte refuse, ce qu'un
+appelant peut lire, ce qu'une réponse annonce, où les routes se montent. Elles demandent donc un
+arbitrage avant d'être écrites, là où les six traitées étaient des défauts francs.
+
 | Fiche | Émise par | Date | Gravité | En une ligne |
 |---|---|---|---|---|
-| [resolution-par-requete-et-exceptions-sur-le-chemin-chaud](resolution-par-requete-et-exceptions-sur-le-chemin-chaud.md) | autonom | 2026-09-02 | élevée | ~40 ms sur CHAQUE requête authentifiée, passés à lever des exceptions pour dire « ce n'est pas un champ » et à re-résoudre par réflexion ce que l'AOT a déjà calculé. |
 | [mandatory-teste-la-nullite-et-seulement-a-la-creation](mandatory-teste-la-nullite-et-seulement-a-la-creation.md) | palliad | 2026-08-27 | moyenne | `mandatory` laisse passer la chaîne vide, et ne tient pas à la mise à jour. |
 | [operation-request-caller-reconstruit](operation-request-caller-reconstruit.md) | palliad | 2026-08-24 | moyenne | `OperationRequest.caller()` rebâtit l'appelant depuis `X-Tenant-Id` : un contrôle qui a l'air de protéger ne protège rien. |
 | [champs-ecartes-silencieusement](champs-ecartes-silencieusement.md) | palliad | 2026-08-26 | observabilité | Un champ refusé à l'écriture rend 200 sans le dire : l'écran affiche un succès qui n'a rien écrit. |
@@ -67,6 +70,7 @@ a écrites puisse vérifier.
 
 | Fiche | Émise par | Réponse |
 |---|---|---|
+| [resolution-par-requete-et-exceptions-sur-le-chemin-chaud](resolution-par-requete-et-exceptions-sur-le-chemin-chaud.md) | autonom | Corrigée, les trois pistes. 8 à 9 fois moins cher sur le chemin de résolution isolé (1 395–1 670 ns → 173–178 ns). Deux sites levaient, pas un : le second est dans le repli AOT, donc sur VOTRE déploiement. La mémo porte la FORME de la classe, pas les adresses — celles-ci dépendent de l'adresse de base. Le chemin est désormais instrumenté et le rapport tombe à l'arrêt de la JVM. Les ~40 ms n'ont pas été reproduites ici : à re-mesurer chez vous. |
 | [toute-exception-de-crochet-rend-500](toute-exception-de-crochet-rend-500.md) | palliad | Corrigée — mais pas là où la fiche le pensait : le `switch` vide était du code mort, le 500 venait du `-> 500` de l'étape. Un statut choisi par le consommateur (`ApiException.badRequest(...)`) l'emporte désormais sur celui de l'étape. |
 | [crochets-de-suppression-ne-tirent-jamais](crochets-de-suppression-ne-tirent-jamais.md) | palliad | Corrigée, les deux défauts. Le second était plus large que mesuré : les crochets liés à l'entité étaient cassés sur TOUTES les opérations, pas seulement la suppression. |
 | [afterget-ne-tire-que-sur-readone](afterget-ne-tire-que-sur-readone.md) | autonom | Corrigée dans le sens de la demande 1. Ce n'était pas un choix de contrat : `READ_ALL` exigeait un `?mode=full` qu'une lecture ordinaire n'envoie pas, ce qui sautait aussi l'injection. L'exemption des lectures internes, que la fiche signalait, est maintenant explicite — elle tenait par accident. |
