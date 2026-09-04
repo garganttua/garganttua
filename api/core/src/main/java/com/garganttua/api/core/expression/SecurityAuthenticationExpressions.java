@@ -299,7 +299,25 @@ public class SecurityAuthenticationExpressions {
 			}
 			return null;
 		} catch (RuntimeException e) {
+			// The cascade is the reason this catch exists: several .authentication(...) strategies may
+			// be declared on one authenticator, and one failing must not stop the next from being
+			// tried. But swallowing SILENTLY makes a mis-wired API (a mistyped field, a missing AOT
+			// descriptor, an uninjected dependency) answer exactly like a wrong password — a generic
+			// 401, with nothing in the log to tell the two apart. Say what broke, then keep going.
+			log.warn("Authentication strategy {} threw {} — treated as 'not authenticated' and the "
+					+ "cascade continues. If callers are getting an unexplained 401, this is why: {}",
+					strategyName(authDef), e.getClass().getSimpleName(), e.getMessage(), e);
 			return null;
+		}
+	}
+
+	/** {@return a human-readable name for an authentication strategy, for diagnostics} */
+	private static String strategyName(IAuthenticationDefinition authDef) {
+		try {
+			IMethodBinder<?> binder = authDef.authenticateMethodBinder();
+			return binder == null ? "<unbound>" : binder.getExecutableReference();
+		} catch (RuntimeException e) {
+			return "<unnameable: " + e.getClass().getSimpleName() + ">";
 		}
 	}
 

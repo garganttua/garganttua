@@ -16,6 +16,13 @@ pageable <- :arg(@0, "pageable")
 caller <- :arg(@0, "caller")
 filter <- :arg(@0, "filter")
 outputMode <- :arg(@0, "mode")
+// "full" is the DEFAULT shape, so an absent ?mode= must read as "full" — not as "no mode".
+// Without this, a plain GET /<domain> skipped BOTH doInjection and runAfterGet below, so entity
+// @Inject fields stayed null and an afterGet hook (the natural place to strip a secret before it
+// goes on the wire) ran on GET /<domain>/{uuid} and never on the collection.
+// The framework's OWN reads come through here too (SecurityExpressions.invokeReadAll resolves
+// signing keys and principals); they are exempted from both, inside the expressions themselves.
+outputMode <- if(notNull(@outputMode), @outputMode, "full")
 projection <- :arg(@0, "projection")
 domainName <- :arg(@0, "domainName")
 

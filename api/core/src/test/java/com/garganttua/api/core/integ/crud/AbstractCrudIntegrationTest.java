@@ -76,6 +76,19 @@ public abstract class AbstractCrudIntegrationTest {
         public void setAccountNonExpired(Boolean accountNonExpired) { this.accountNonExpired = accountNonExpired; }
         public Boolean getCredentialsNonExpired() { return credentialsNonExpired; }
         public void setCredentialsNonExpired(Boolean credentialsNonExpired) { this.credentialsNonExpired = credentialsNonExpired; }
+
+        // ── Entity-bound lifecycle-hook target ──
+        // Declared via entity().afterDelete("touch") & co. It returns Void (not void): the framework
+        // invokes lifecycle hooks with IClass.getClass(Void.class). Counting on the INSTANCE keeps
+        // concurrent test classes from racing on shared state.
+        private transient int hookCalls;
+
+        public Void touch() {
+            this.hookCalls++;
+            return null;
+        }
+
+        public int getHookCalls() { return hookCalls; }
     }
 
     public static class UserDto {

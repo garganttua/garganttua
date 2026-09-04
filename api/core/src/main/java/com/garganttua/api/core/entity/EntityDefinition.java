@@ -28,13 +28,21 @@ public record EntityDefinition<E>(
     List<EntityUpdateRule> updates,
     List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedFields,
     List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedMethods,
-    List<IMethodBinder<Void>> afterGetMethodBuilders,
-    List<IMethodBinder<Void>>  beforeCreateMethodBuilders,
-    List<IMethodBinder<Void>>  afterCreateMethodBuilders,
-    List<IMethodBinder<Void>>  beforeUpdateMethodBuilders,
-    List<IMethodBinder<Void>>  afterUpdateMethodBuilders,
-    List<IMethodBinder<Void>>  beforeDeleteMethodBuilders,
-    List<IMethodBinder<Void>>  afterDeleteMethodBuilders,
+    /*
+     * Entity-bound lifecycle hooks: the declared method NAME paired with the binder built for it.
+     * The name is what invokes the hook (an ObjectAddress resolved against each entity); the binder
+     * is what validated, at build time, that the method exists on the entity with the expected
+     * signature. The name is carried explicitly because a binder has none to give back:
+     * IExecutableBinder.getExecutableReference() is a human-readable, ANSI-COLORED rendering meant
+     * for logs and error messages, and an ObjectAddress built from it resolves to nothing.
+     */
+    List<Pair<String, IMethodBinder<Void>>> afterGetMethodBuilders,
+    List<Pair<String, IMethodBinder<Void>>>  beforeCreateMethodBuilders,
+    List<Pair<String, IMethodBinder<Void>>>  afterCreateMethodBuilders,
+    List<Pair<String, IMethodBinder<Void>>>  beforeUpdateMethodBuilders,
+    List<Pair<String, IMethodBinder<Void>>>  afterUpdateMethodBuilders,
+    List<Pair<String, IMethodBinder<Void>>>  beforeDeleteMethodBuilders,
+    List<Pair<String, IMethodBinder<Void>>>  afterDeleteMethodBuilders,
     boolean overwriteUuid,
     IUuidGenerator uuidGenerator,
     /**

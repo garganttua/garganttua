@@ -181,10 +181,15 @@ public class CrudExpressions {
 	private static boolean projectionPushdownAllowed(IDomain<?> dc) {
 		boolean injection = (dc instanceof Domain<?> d) && d.isDoInjection();
 		boolean hasAfterGet = dc.getEntityDefinition() instanceof EntityDefinition<?> ed
-				&& ed.afterGetMethodBuilders() != null && !ed.afterGetMethodBuilders().isEmpty();
+				&& (isNotEmpty(ed.afterGetMethodBuilders())
+						|| (ed.freeHookBinders() != null && isNotEmpty(ed.freeHookBinders().get("afterGet"))));
 		boolean hasCompositions = dc.getDomainDefinition().dtoDefinitions().stream()
 				.anyMatch(dto -> dto.compositions() != null && !dto.compositions().isEmpty());
 		return !injection && !hasAfterGet && !hasCompositions;
+	}
+
+	private static boolean isNotEmpty(java.util.List<?> list) {
+		return list != null && !list.isEmpty();
 	}
 
 	@Expression(name = "applyProjection",

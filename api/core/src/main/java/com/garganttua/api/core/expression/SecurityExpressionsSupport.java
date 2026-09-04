@@ -279,6 +279,44 @@ final class SecurityExpressionsSupport {
     }
 
     /**
+     * The authorities to stamp on the minted authorization.
+     *
+     * <p>
+     * The strategy's {@link IAuthentication#authorities()} is authoritative — including an EMPTY
+     * list, which deliberately grants nothing. Only a {@code null} means the strategy did not
+     * resolve them at all, and only then does the authenticator's declared authorities field
+     * ({@code .authenticator().authorities("field")}) come into play: the DSL says the framework
+     * takes the authorities from that field of the authenticator entity, so it does. Without this
+     * fallback the declaration was read by no one, and a consumer relying on it minted tokens with
+     * no authority at all, silently.
+     * </p>
+     *
+     * @return the authorities to stamp, or {@code null} when neither source provides any
+     */
+    @SuppressWarnings("unchecked")
+    static List<String> resolveAuthorities(IAuthenticatorDefinition authDef, IAuthentication authResult,
+            IReflection reflection) {
+        if (authResult.authorities() != null) {
+            return authResult.authorities();
+        }
+        ObjectAddress declared = authDef == null ? null : authDef.authorities();
+        Object principal = authResult.principal();
+        if (declared == null || principal == null) {
+            return null;
+        }
+        Object raw;
+        try {
+            raw = reflection.getFieldValue(principal, declared.toString());
+        } catch (RuntimeException e) {
+            throw new ApiException("The authenticator declares .authorities(\"" + declared
+                    + "\") but that field cannot be read on " + principal.getClass().getName()
+                    + " — check the field name, or have the authentication strategy return the"
+                    + " authorities itself.", e);
+        }
+        return (raw instanceof List<?> list) ? (List<String>) list : null;
+    }
+
+    /**
      * Populates the type / authorities / creation / expiration / revoked and refresh-token fields of a
      * freshly-instantiated authorization entity from the authentication result and the authenticator's
      * authorization definition. Identity / owner / tenant fields are stamped by the caller.
@@ -288,8 +326,11 @@ final class SecurityExpressionsSupport {
         if (authzDef.type() != null && authResult.authorization() != null) {
             reflection.setFieldValue(entity, authzDef.type(), authResult.authorization());
         }
-        if (authzDef.authorities() != null && authResult.authorities() != null) {
-            reflection.setFieldValue(entity, authzDef.authorities(), authResult.authorities());
+        if (authzDef.authorities() != null) {
+            List<String> authorities = resolveAuthorities(authDef, authResult, reflection);
+            if (authorities != null) {
+                reflection.setFieldValue(entity, authzDef.authorities(), authorities);
+            }
         }
         if (authzDef.creation() != null) {
             reflection.setFieldValue(entity, authzDef.creation(), Instant.now());

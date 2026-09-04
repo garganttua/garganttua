@@ -54,6 +54,7 @@ public class EntityLifecycleExpressions {
 		if (entityList.isEmpty()) return entityList;
 
 		IOperationRequest opRequest = (IOperationRequest) request;
+		if (isFrameworkInternalRead(opRequest)) return entityList;
 		Domain<?> dc = (Domain<?>) opRequest.arg(IOperationRequest.DOMAIN_CONTEXT).orElse(null);
 		if (dc == null || !dc.isDoInjection()) return entityList;
 
@@ -79,21 +80,14 @@ public class EntityLifecycleExpressions {
 		List<Object> entityList = (List<Object>) entities;
 		if (entityList.isEmpty()) return entityList;
 
+		if (isFrameworkInternalRead((IOperationRequest) request)) return entityList;
+
 		long probe = HotPathProbe.start();
 		try {
 			IOperationRequest opRequest = (IOperationRequest) request;
 			IDomain<?> dc = opRequest.arg(IOperationRequest.DOMAIN_CONTEXT).orElse(null);
 			EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
-			List<IMethodBinder<Void>> afterGetBinders = entityDef.afterGetMethodBuilders();
-
-			if (afterGetBinders != null) {
-				for (IMethodBinder<Void> binder : afterGetBinders) {
-					ObjectAddress methodRef = new ObjectAddress(binder.getExecutableReference());
-					for (Object entity : entityList) {
-						REFLECTION.invokeDeep(entity, methodRef, IClass.getClass(Void.class));
-					}
-				}
-			}
+			invokeEntityBoundHooks(entityDef.afterGetMethodBuilders(), entityList);
 			// Free afterGet hooks (bound to an exact, possibly external method) — executed with the
 			// current entity + injected context.
 			runFreeHooks(entityDef, "afterGet", entityList, dc, opRequest);
@@ -105,6 +99,27 @@ public class EntityLifecycleExpressions {
 			HotPathProbe.end("entity.runAfterGet", probe);
 		}
 		return entityList;
+	}
+
+	/**
+	 * Whether this read is the framework consulting its OWN store rather than answering a caller —
+	 * a signing key resolved by {@code KeySupplier}, a principal looked up by {@code
+	 * PrincipalSupplier}, a stored authorization re-read on verification. Those go through the same
+	 * READ pipeline as a client request (see {@code SecurityExpressions.invokeReadAll}), and must
+	 * NOT be shaped for a caller: the natural use of {@code afterGet} is to strip a secret before it
+	 * goes on the wire, and running it here would blank the very key the framework is about to sign
+	 * with. The marker is set server-side by {@code invokeInternal} and never read from the wire, so
+	 * a caller cannot claim it.
+	 *
+	 * <p>
+	 * This exemption used to hold by accident — the collection route skipped both the hooks and the
+	 * injection for EVERY read, internal or not, because it required an output mode that an ordinary
+	 * read does not send. Making the hooks fire for real callers is what makes stating it necessary.
+	 * </p>
+	 */
+	private static boolean isFrameworkInternalRead(IOperationRequest request) {
+		return request != null
+				&& Boolean.TRUE.equals(request.arg(SecurityExpressions.FRAMEWORK_INTERNAL_WRITE_ARG).orElse(null));
 	}
 
 	@Expression(name = "ensureUuid", description = "Assigns the entity's uuid at creation: generates one (a time-ordered UUID v7 by default, or the domain's custom uuidGenerator) when the client sent none, OR always when the domain declares overwriteUuid(true) — discarding any client-supplied value.")
@@ -333,7 +348,7 @@ public class EntityLifecycleExpressions {
 	}
 
 	private static List<Object> runListLifecycleHooks(Object entities, Object request, String hookName,
-			java.util.function.Function<IEntityDefinition<?>, List<IMethodBinder<Void>>> bindersExtractor) {
+			java.util.function.Function<IEntityDefinition<?>, List<Pair<String, IMethodBinder<Void>>>> bindersExtractor) {
 		if (entities == null) return List.of();
 		List<Object> entityList = (List<Object>) entities;
 		if (entityList.isEmpty()) return entityList;
@@ -342,36 +357,46 @@ public class EntityLifecycleExpressions {
 			IOperationRequest opRequest = (IOperationRequest) request;
 			IDomain<?> dc = opRequest.arg(IOperationRequest.DOMAIN_CONTEXT).orElse(null);
 			EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
-			List<IMethodBinder<Void>> binders = bindersExtractor.apply(entityDef);
 
-			if (binders == null || binders.isEmpty()) return entityList;
-
-			for (IMethodBinder<Void> binder : binders) {
-				ObjectAddress methodRef = new ObjectAddress(binder.getExecutableReference());
-				for (Object entity : entityList) {
-					REFLECTION.invokeDeep(entity, methodRef, IClass.getClass(Void.class));
-				}
-			}
+			invokeEntityBoundHooks(bindersExtractor.apply(entityDef), entityList);
+			// Free hooks — same treatment as the create/update path (runLifecycleHooks). Omitting
+			// this is what made a consumer's beforeDelete/afterDelete accepted by the DSL, built
+			// without complaint, and never called.
+			runFreeHooks(entityDef, hookName, entityList, dc, opRequest);
+		} catch (ApiException e) {
+			throw e;
 		} catch (Exception e) {
 			throw new ApiException("Failed to execute " + hookName + " lifecycle hooks", e);
 		}
 		return entityList;
 	}
 
+	/**
+	 * Invokes each entity-bound lifecycle hook on every entity, by NAME. The name comes from the
+	 * definition rather than from the binder: {@code getExecutableReference()} is an ANSI-colored
+	 * label for logs, and an {@link ObjectAddress} built from it resolves to nothing.
+	 */
+	private static void invokeEntityBoundHooks(List<Pair<String, IMethodBinder<Void>>> hooks,
+			List<Object> entityList) {
+		if (hooks == null || hooks.isEmpty()) {
+			return;
+		}
+		for (Pair<String, IMethodBinder<Void>> hook : hooks) {
+			ObjectAddress methodRef = new ObjectAddress(hook.getValue0());
+			for (Object entity : entityList) {
+				REFLECTION.invokeDeep(entity, methodRef, IClass.getClass(Void.class));
+			}
+		}
+	}
+
 	private static Object runLifecycleHooks(Object entity, Object request, String hookName,
-			java.util.function.Function<IEntityDefinition<?>, List<IMethodBinder<Void>>> bindersExtractor) {
+			java.util.function.Function<IEntityDefinition<?>, List<Pair<String, IMethodBinder<Void>>>> bindersExtractor) {
 		try {
 			IOperationRequest opRequest = (IOperationRequest) request;
 			IDomain<?> dc = opRequest.arg(IOperationRequest.DOMAIN_CONTEXT).orElse(null);
 			IEntityDefinition<?> entityDef = dc.getEntityDefinition();
-			List<IMethodBinder<Void>> binders = bindersExtractor.apply(entityDef);
-
-			if (binders != null) {
-				for (IMethodBinder<Void> binder : binders) {
-					ObjectAddress methodRef = new ObjectAddress(binder.getExecutableReference());
-					REFLECTION.invokeDeep(entity, methodRef, IClass.getClass(Void.class));
-				}
-			}
+			invokeEntityBoundHooks(bindersExtractor.apply(entityDef),
+					entity != null ? List.of(entity) : List.of());
 			// Free hooks (bound to an exact, possibly external method) — executed with the current
 			// entity + injected context. A thrown ApiException (validation) propagates as-is.
 			runFreeHooks(entityDef, hookName, entity != null ? List.of(entity) : List.of(), dc, opRequest);

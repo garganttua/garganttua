@@ -219,12 +219,16 @@ abstract class AbstractEntityHookBuilder<E>
                 this.afterDeleteMethodBuilders);
     }
 
-    /** Builds the ordered instance-method binders for one hook list. */
-    protected List<IMethodBinder<Void>> buildMethodBinders(
+    /**
+     * Builds the ordered instance-method binders for one hook list, each paired with the method
+     * name it was declared under. Building the binder is what validates the method against the
+     * entity; the name is what invokes it later — see {@code EntityDefinition}.
+     */
+    protected List<Pair<String, IMethodBinder<Void>>> buildMethodBinders(
             List<Pair<String, EntityMethodBinderBuilder<E>>> builders) throws ApiException {
-        List<IMethodBinder<Void>> binders = new ArrayList<>();
+        List<Pair<String, IMethodBinder<Void>>> binders = new ArrayList<>();
         for (Pair<String, EntityMethodBinderBuilder<E>> pair : builders) {
-            binders.add(pair.getValue1().build());
+            binders.add(new Pair<>(pair.getValue0(), pair.getValue1().build()));
         }
         return binders;
     }

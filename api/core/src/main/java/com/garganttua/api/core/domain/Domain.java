@@ -418,6 +418,13 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
                             DomainInvocationDiagnostics.nonBlank(result.exceptionMessage()).orElseGet(() ->
                                     "Operation '" + opLabel + "' on domain '" + domainName
                                             + "' aborted unexpectedly")));
+            // An abort carrying a deliberately-chosen status is a refusal, not an outage: report it
+            // as its thrower asked. Anything else stays a server error.
+            if (cause instanceof ApiException api && api.hasExplicitStatus()) {
+                log.warn("Workflow aborted for domain {} op {} with status {}: {}", domainName, opLabel,
+                        api.getCode(), cause.getMessage());
+                return mapWorkflowCode(api.getCode(), cause);
+            }
             log.error("Workflow aborted for domain {} op {}: {}", domainName, opLabel,
                     cause.getMessage(), cause);
             return OperationResponse.error(cause);
@@ -436,7 +443,24 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
                 : DomainInvocationDiagnostics.recoverFunctionalException(result, request, opLabel, domainName);
         log.warn("Workflow returned code {} for domain {} op {}: {}",
                 result.code(), domainName, opLabel, functional.getMessage());
-        return mapWorkflowCode(result.code(), functional);
+        return mapWorkflowCode(statusFor(result.code(), functional), functional);
+    }
+
+    /**
+     * The status to report for a failed stage. Each stage script declares a default (the
+     * {@code ! => recordCaughtException(@0, @exception) -> CODE} pattern), which describes how the
+     * FRAMEWORK's own check at that stage fails. A consumer's code running inside that stage — a
+     * lifecycle hook, a use case — may refuse for a reason of its own, and says so by throwing an
+     * {@link ApiException} built with an explicit status ({@link ApiException#badRequest(String)}
+     * and friends). That choice wins: a business rule declining a write is a client error wherever
+     * it is enforced, and reporting it as the stage's default (a 500, for the hook stages) makes a
+     * refused entry indistinguishable from an outage.
+     */
+    private static Integer statusFor(Integer stageCode, Throwable functional) {
+        if (functional instanceof ApiException api && api.hasExplicitStatus()) {
+            return api.getCode();
+        }
+        return stageCode;
     }
 
     // Invocation-diagnostics delegators (logic in DomainInvocationDiagnostics); kept here as the

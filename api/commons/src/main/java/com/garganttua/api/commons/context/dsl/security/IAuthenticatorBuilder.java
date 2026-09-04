@@ -19,6 +19,20 @@ public interface IAuthenticatorBuilder<E> extends IAutomaticLinkedBuilder<IAuthe
 
     IAuthenticatorBuilder<E> login(ObjectAddress fieldAddress) throws ApiException;
 
+    /**
+     * Names the authenticator entity's field holding the principal's authorities.
+     *
+     * <p>
+     * It is the <strong>fallback</strong> source: an authentication strategy that returns its own
+     * authorities wins, and an EMPTY list it returns is authoritative (it grants nothing). The
+     * declared field is read only when the strategy returns {@code null} — i.e. when it did not
+     * resolve authorities at all.
+     * </p>
+     *
+     * @param string the field name on the authenticator entity
+     * @return this builder
+     * @throws ApiException if the field cannot be resolved on the entity
+     */
     IAuthenticatorBuilder<E> authorities(String string) throws ApiException;
 
     IAuthenticatorBuilder<E> authorities(IField field) throws ApiException;
