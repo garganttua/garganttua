@@ -115,3 +115,65 @@ seulement la possibilité d'en sortir.
 Ce défaut est proche, mais distinct, de « une exception levée depuis un cas d'usage est avalée et
 rend 200 » (relevé palliad du 2026-07). Là, l'exception disparaît ; ici, elle arrive — avec le
 mauvais statut.
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée.** Corrigée sur `main`, à paraître dans `3.0.0-ALPHA17`.
+
+### Une rectification, qui compte pour la suite
+
+Le `lookupswitch` vide que la fiche désassemble est réel, et il est maintenant rempli. Mais **ce
+n'est pas lui qui rendait le 500** : `fromExceptionCode` n'était appelée de nulle part. Le grep est
+sans appel — la méthode était publique, morte, et son intention (« un aiguillage par code existe »)
+n'avait jamais été branchée.
+
+Le 500 venait d'ailleurs, et la fiche l'aurait manqué : le statut d'un échec est écrit **dans le
+script d'étape**, pas déduit de l'exception.
+
+```
+// CREATE_ONE.gs
+entity <- runBeforeCreate(@entity, @0)
+! => recordCaughtException(@0, @exception) -> 500     // ← le 500, il est là
+```
+
+`Domain.mapWorkflowResult` prenait ce code d'étape tel quel. Remplir le `switch` seul n'aurait donc
+**rien changé au comportement observé** — la fiche aurait été close sur un correctif inopérant. Le
+mérite du relevé est d'avoir nommé le bon symptôme ; la cause était une étage plus bas.
+
+### Ce qui a été fait
+
+1. **Le `switch` est rempli** (`OperationResponseCode.fromExceptionCode`) — c'était demandé, et la
+   méthode est désormais du code vivant.
+2. **La fabrique publique demandée existe**, et pas seulement pour le 400 :
+   `ApiException.badRequest / unauthorized / forbidden / notFound / notAcceptable / conflict`, plus
+   `ApiException.of(code, message)` pour le reste.
+3. **Le statut choisi l'emporte sur celui de l'étape.** `Domain` consulte
+   `ApiException.hasExplicitStatus()` : quand le refus vient du code d'un consommateur, c'est son
+   choix qui est rendu, à la place du `-> 500` de l'étape. C'est ce geste-là, et non le `switch`,
+   qui change ce que voit l'appelant.
+
+```java
+public static void refuser(Patient p) {
+    if (p.getNom() == null || p.getNom().isBlank()) {
+        throw ApiException.badRequest("Le champ « nom » est obligatoire.");
+    }
+}
+// POST /patients {} → 400, message inchangé
+```
+
+### Le défaut reste `SERVER_ERROR`
+
+Comme la fiche le propose : une `ApiException` nue continue de rendre 500, et un code hérité d'un
+échec de socle (réflexion, injection) n'est **pas** un statut — c'est un diagnostic, et il ne
+supplante pas l'étage. `hasExplicitStatus()` ne reconnaît que les constantes de statut déclarées.
+Autrement dit, aucun consommateur existant ne change de comportement sans l'avoir écrit.
+
+### Sur la remarque finale de la fiche
+
+Le défaut voisin cité — « une exception levée depuis un cas d'usage est avalée et rend 200 » — n'est
+pas traité ici et reste ouvert. Si vous le reproduisez sur ALPHA16, une fiche à part serait utile :
+celui-ci est un problème de propagation, pas de statut.
+
+**Couvert par :** `OperationResponseCodeTest` (7 tests, `api/commons`).

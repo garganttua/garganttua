@@ -46,3 +46,33 @@ rendre `null`. La cascade continue de fonctionner ; la panne cesse d'être muett
 ## Trace
 
 Constaté pendant l'introduction de `SharedSecretAuthentication` (palliad, 2026-08-24).
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée, telle que demandée.** Corrigée sur `main`, à paraître dans `3.0.0-ALPHA17`.
+
+Le diagnostic était exact, y compris sur la raison d'être du `catch` : la cascade doit survivre à
+l'échec d'une stratégie. C'est l'absence de trace qui était le défaut, pas le rattrapage.
+
+`attemptAuthentication` journalise maintenant en `warn`, avant de rendre `null` : le nom de la
+stratégie (sa méthode liée), le type de l'exception, et son message — avec la pile. La cascade
+continue de fonctionner à l'identique.
+
+```
+WARN  Authentication strategy Account.authenticate(AuthenticationRequest) threw
+      ReflectionException — treated as 'not authenticated' and the cascade continues.
+      If callers are getting an unexplained 401, this is why: No overload of method ...
+```
+
+La ligne dit explicitement pourquoi un 401 inexpliqué peut venir de là : c'est la phrase qui
+manquait le jour où vous avez monté `SharedSecretAuthentication`.
+
+Le niveau retenu est `warn` et non `debug` : en image native, comme la fiche le note, une faute de
+résolution par nom est le scénario le plus probable, et un `debug` ne serait pas activé le jour où
+il servirait.
+
+**Ce qui n'a pas été fait :** ni marqueur sur la réponse, ni distinction du 401 côté client. La
+fiche ne le demandait pas, et rendre un statut différent selon qu'une stratégie a planté renseigne
+un attaquant sur l'état interne du montage.

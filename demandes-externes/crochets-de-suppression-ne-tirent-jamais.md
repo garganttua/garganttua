@@ -66,3 +66,51 @@ Que `runListLifecycleHooks` appelle `runFreeHooks` comme le fait `runLifecycleHo
 1. Déclarer un domaine avec un crochet libre sur `afterDelete` qui écrit dans un journal.
 2. `DELETE` une entité de ce domaine.
 3. Le journal reste muet ; la réponse est 200.
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée.** Les deux défauts relevés étaient exacts et sont corrigés sur `main`, à paraître dans
+`3.0.0-ALPHA17`.
+
+### 1. `runListLifecycleHooks` appelle désormais `runFreeHooks`
+
+Rien à ajouter au diagnostic : la méthode n'exécutait que les crochets liés à un champ et laissait
+tomber les crochets libres, là où son homologue de création/mise à jour les exécute. Elle les
+exécute maintenant, et propage verbatim une `ApiException` levée par le crochet — comme le fait
+`runLifecycleHooks` — pour que le message du consommateur survive.
+
+La correction que la fiche apporte à sa propre lecture (« `afterGet` n'est PAS concerné,
+`runAfterGet` a son propre corps ») était juste.
+
+### 2. L'adresse construite sur un libellé ANSI — plus large que la suppression
+
+Confirmé, et **le défaut ne se limitait pas au chemin de suppression** : `runLifecycleHooks` faisait
+exactement la même chose. Autrement dit, les crochets **liés à l'entité** (`entity().beforeCreate("nom")`)
+étaient cassés eux aussi, sur toutes les opérations. Si la fiche a vu la création et la mise à jour
+fonctionner, c'est parce qu'elles étaient câblées en crochets **libres**, qui empruntent un autre
+chemin. Le trou était plus grand que ce qui a été mesuré.
+
+Le correctif n'est pas de changer `getExecutableReference()` : son contrat dit ce qu'il est — une
+représentation lisible pour les journaux et les messages d'erreur — et une quinzaine d'appelants s'en
+servent pour cela. C'est l'usage qui était fautif. Le **nom** de la méthode déclarée est maintenant
+porté jusqu'à l'invocation (`EntityDefinition` conserve `Pair<String, IMethodBinder<Void>>` : le nom
+invoque, le binder reste ce qui a validé la méthode contre l'entité au montage), et l'`ObjectAddress`
+se construit sur ce nom.
+
+### Un effet de bord, dans votre sens
+
+Une projection de champs (`?fields=`) n'était poussée à la base que si le domaine ne portait pas de
+crochet `afterGet` — mais ce test ne comptait que les crochets liés à l'entité, pas les crochets
+**libres**. Un crochet libre lisant un champ non demandé aurait lu `null`. Les deux formes sont
+maintenant comptées.
+
+### Sur le contournement en place
+
+Le raccommodage à l'écriture suivante n'a plus lieu d'être une fois la version passée. Il reste sans
+danger : rejouer un index déjà correct ne fait rien.
+
+**Couvert par :** `EntityHookDeleteIntegrationTest` (4 tests) — crochet libre `beforeDelete` et
+`afterDelete` sur `DELETE`, crochet lié à l'entité invoqué par son nom, et `deleteAll` qui tire une
+fois par entité supprimée.

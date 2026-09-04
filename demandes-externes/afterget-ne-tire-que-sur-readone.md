@@ -97,3 +97,74 @@ COLLECTION (qui, on le sait maintenant, ne déclenche pas le crochet) et deux le
 pas par le pipeline HTTP — un accès direct au dépôt et la résolution interne de la clé par le
 framework. Aucune lecture unitaire n'avait été exercée. La fiche a été refaite après avoir posé le
 même crochet sur un domaine ordinaire et exercé les quatre routes.
+
+---
+
+## Réponse de la plateforme — 2026-09-04
+
+**Traitée, dans le sens de la demande 1** — le crochet s'exécute sur toute lecture rendue au client,
+collection comprise. Corrigé sur `main`, à paraître dans `3.0.0-ALPHA17`.
+
+### Ce n'était pas un choix de contrat
+
+La fiche pose la question « bogue ou contrat ? » et laisse le choix à l'équipe. La lecture des
+sources tranche : **ni l'un ni l'autre n'avait été décidé**. `READ_ALL.gs` appelait bien
+`runAfterGet` — mais sous une garde :
+
+```
+outputMode <- :arg(@0, "mode")                       // absent d'un GET nu → vide
+entities <- if(equals(@outputMode, "full"), (
+    entities <- doInjection(@0, @entities)
+    entities <- runAfterGet(@entities, @0)
+), @entities)
+```
+
+`full` est le mode par DÉFAUT (`ReadAllOutputMode.full`), mais un `GET /<domaine>` sans `?mode=`
+n'envoie rien, la garde était fausse, et le bloc entier sautait. `READ_ONE.gs` appelle `runAfterGet`
+sans garde — d'où l'asymétrie que vous avez mesurée, exactement là où vous l'avez mesurée.
+
+**Le trou était plus large que ce que la fiche décrit** : la même garde emportait `doInjection`. Sur
+la route de collection, les champs `@Inject` d'une entité restaient donc `null` — silencieusement,
+et pour tout le monde, pas seulement pour qui pose un `afterGet`. Cela ne se voyait pas chez vous
+parce que la route échouait par ailleurs.
+
+Correctif : un `mode` absent se lit « full ».
+
+### Vos deux précisions — les deux réponses
+
+**1. Les lectures internes du cadre déclenchent-elles le crochet ? Non — et c'est maintenant écrit.**
+
+Votre avertissement était fondé, et il a changé le correctif. `KeySupplier` relit les clés de
+signature, `PrincipalSupplier` le principal, et la vérification relit l'autorisation stockée : tous
+passent par `SecurityExpressions.invokeReadAll`, c'est-à-dire par **le même `READ_ALL.gs`** qu'une
+requête cliente. Faire tirer le crochet sur la collection sans plus aurait donc fait tourner votre
+`afterGet` sur la clé que le cadre s'apprête à signer — précisément la panne que vous annoncez.
+
+L'exemption que vous constatiez existait, mais **par accident** : la garde sautait le bloc pour
+toutes les lectures, internes ou non. Elle est maintenant explicite. `runAfterGet` et `doInjection`
+sortent immédiatement quand la requête porte le marqueur d'invocation interne — posé côté serveur
+par `invokeInternal`, jamais lu depuis le réseau, donc non falsifiable par un appelant. Un test
+verrouille ce point.
+
+**2. L'entité rendue est-elle celle qui sera persistée ? Non.**
+
+`Repository.getEntities` remappe une instance neuve depuis le document à chaque lecture, et aucun
+chemin d'écriture ne réutilise l'instance d'une lecture : `UPDATE_ONE.gs` relit l'entité stockée
+pour son propre compte et n'appelle **pas** `runAfterGet`. Vider un champ pour le transport dans un
+`afterGet` ne l'efface donc pas en base. Vous n'avez pas besoin de travailler sur une copie.
+
+### Le piège annexe
+
+`Void` contre `void` : relevé, non corrigé. Le message d'erreur est exact mais ne dit pas la règle,
+et le changer proprement (accepter `void` en plus de `Void`) touche la résolution de surcharge dans
+`core`, pas `api`. Si cela vous coûte encore, une fiche dédiée le sortirait de cette page — il n'a
+pas de rapport avec la portée du crochet.
+
+### Sur votre projection dédiée
+
+Elle reste la bonne défense : c'est elle qui décide de ce qui sort, le crochet ne fait que fermer une
+porte. Rien à changer chez vous.
+
+**Couvert par :** `EntityHookAfterGetScopeIntegrationTest` (6 tests) — lecture de collection sans
+`?mode=`, champ effectivement absent du résultat, lecture unitaire, `mode=full` inchangé, modes
+réduits toujours exemptés, et lecture interne du cadre exemptée.
