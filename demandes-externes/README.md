@@ -42,6 +42,17 @@ Quand une demande est traitée, le geste utile est de le dire **dans la fiche** 
 corrige, ou refus motivé — plutôt que de l'effacer : le consommateur qui l'a écrite viendra
 vérifier, et un dossier vide ne lui apprend rien.
 
+## Demandes de la plateforme vers un consommateur
+
+Ce dossier est prévu pour l'autre sens, et il le reste. Mais quand la plateforme a besoin d'une
+mesure que seul un déploiement peut produire, la demande se pose là où vit la conversation — sinon
+elle n'est pas lue, ce qui est exactement l'argument que ce README fait pour les fiches des
+consommateurs. La direction est alors annoncée dans l'en-tête.
+
+| Fiche | Adressée à | En attente de |
+|---|---|---|
+| [mesure-demandee-compteur-de-resolutions](mesure-demandee-compteur-de-resolutions.md) | autonom | le compteur `reflection.resolveAddresses` d'une requête réelle sous ALPHA17 — le seul facteur qui manque pour expliquer, ou écarter, le plancher de ~40 ms |
+
 ## Fiches ouvertes
 
 Aucune. Les dix fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.

@@ -212,3 +212,27 @@ des classes** est mémorisée, et elle ne change pas.
 **Couvert par :** `ResolutionMemoBehaviourTest` (10 tests, dont l'indépendance à l'adresse de base,
 l'immuabilité de la liste partagée et la résolution concurrente) et
 `FindDeclaredFieldBehaviourTest` (5 tests). Réacteur complet vert : 4 006 tests, 0 échec.
+
+---
+
+## Suite — 2026-09-07 : ce que les bancs de mesure ont tranché
+
+`garganttua-api` et `garganttua-core` portent désormais des bancs de performance
+(`-Dgarganttua.perf=true`). Ils ont servi à reprendre vos hypothèses une par une, dépôt en mémoire,
+comparaisons entrelacées jugées sur le plancher.
+
+**Vos deux hypothèses écartées le sont pour de bon, et on sait maintenant pourquoi vous ne pouviez
+pas les voir** : `checkStoredOnVerify` coûte +11 µs, et 219 autorités contre 3 coûtent −0 µs — trois
+ordres de grandeur sous votre plancher. Votre méthode était bonne.
+
+**Une hypothèse de NOTRE côté est morte aussi** : nous pensions que vos entités, faute de
+`@Reflected` complet, retombaient sur la réflexion vivante à chaque résolution. Mesuré, le repli est
+mémoïsé : descripteur complet ou superficiel, facteur 1,00. Nous vous l'aurions suggéré comme
+correctif ; cela vous aurait fait perdre du temps.
+
+**Ce qui reste est le mécanisme que votre fiche désigne**, chiffré sur le chemin AOT : dire « ce
+n'est pas un champ » en levant coûte **19,6×** le dire en rendant vide (4,507 µs contre 0,230 µs), et
+l'absence est la réponse ordinaire. Il manque un seul facteur pour boucler l'arithmétique — le
+nombre de résolutions par requête, que seul votre déploiement peut compter.
+
+**C'est l'objet de [mesure-demandee-compteur-de-resolutions](mesure-demandee-compteur-de-resolutions.md).**
