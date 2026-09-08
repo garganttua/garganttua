@@ -19,6 +19,7 @@ final class DomainWorkflowCodeVars {
 			BusinessOperation.create.getLabel(), "scripts/business/CREATE_ONE.gs",
 			BusinessOperation.readAll.getLabel(), "scripts/business/READ_ALL.gs",
 			BusinessOperation.readOne.getLabel(), "scripts/business/READ_ONE.gs",
+			BusinessOperation.readSelf.getLabel(), "scripts/business/READ_SELF.gs",
 			BusinessOperation.update.getLabel(), "scripts/business/UPDATE_ONE.gs",
 			BusinessOperation.deleteOne.getLabel(), "scripts/business/DELETE_ONE.gs",
 			BusinessOperation.deleteAll.getLabel(), "scripts/business/DELETE_ALL.gs",

@@ -86,6 +86,21 @@ final class DomainWorkflowSupport {
         if (!workflows.containsKey(BusinessOperation.authenticate.getLabel())) {
             registrar.accept(BusinessOperation.authenticate.getLabel());
         }
+        // Same condition for readSelf: "self" designates the principal behind the token, so the
+        // route only means something on the domain that mints it.
+        //
+        // Registered CLOSED: an authority is required unless the domain says otherwise. The route
+        // appears the day a domain declares an authenticator, without anyone asking for it, and a
+        // version bump must not open a read of the caller's own record. A domain that already
+        // configured readSelf is not touched here — the map already holds its builder — so
+        // `.readSelfAuthority(false)` keeps its meaning.
+        if (!workflows.containsKey(BusinessOperation.readSelf.getLabel())) {
+            registrar.accept(BusinessOperation.readSelf.getLabel());
+            DomainWorkflowBuilder<E> readSelf = workflows.get(BusinessOperation.readSelf.getLabel());
+            if (readSelf != null) {
+                readSelf.security().authority(true);
+            }
+        }
         // Auto-register refreshAuthorization workflow when the authenticator has an authorization
         // config and the linked authorization is refreshable. The runtime guard inside
         // REFRESH_AUTHORIZATION.gs additionally checks isAuthorizationRefreshable so a

@@ -259,6 +259,12 @@ public class JavalinInterface implements IInterface {
 			}
 		}
 
+		// BEFORE the CRUD table, for the same reason the use cases are: /<domain>/self is a literal
+		// path that collides with readOne's /<domain>/{uuid}, and Javalin resolves a collision by
+		// registration order. Registered after, it would be swallowed as uuid = "self".
+		record(mounted, route(server, HttpVerb.GET, base + "/self", domain, configured,
+				BusinessOperation.readSelf, false));
+
 		record(mounted, route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false));
 		record(mounted, route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false));
 		record(mounted, route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true));

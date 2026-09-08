@@ -81,6 +81,7 @@ public record DomainDefinition<E>(
         addCrudIfPresent(ops, BusinessOperation.create, OperationDefinition::createOne, entityClass);
         addCrudIfPresent(ops, BusinessOperation.readAll, OperationDefinition::readAll, entityClass);
         addCrudIfPresent(ops, BusinessOperation.readOne, OperationDefinition::readOne, entityClass);
+        addCrudIfPresent(ops, BusinessOperation.readSelf, OperationDefinition::readSelf, entityClass);
         addCrudIfPresent(ops, BusinessOperation.update, OperationDefinition::updateOne, entityClass);
         addCrudIfPresent(ops, BusinessOperation.deleteOne, OperationDefinition::deleteOne, entityClass);
         addCrudIfPresent(ops, BusinessOperation.deleteAll, OperationDefinition::deleteAll, entityClass);

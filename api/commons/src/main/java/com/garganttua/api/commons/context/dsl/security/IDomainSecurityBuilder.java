@@ -37,6 +37,18 @@ public interface IDomainSecurityBuilder<E>
 
 	IDomainSecurityBuilder<E> readOneAccess(Access access);
 
+	/**
+	 * Access level of {@code GET /<domain>/self} — the caller reading its own entity.
+	 *
+	 * <p>
+	 * Only mounted on a domain declaring an {@code .authenticator()}: elsewhere "self" designates
+	 * nothing. Defaults to {@code authenticated} WITH an authority required, so the route answers
+	 * {@code 403} until one is granted — reading one's own profile is a deliberate grant, not
+	 * something a version bump should open.
+	 * </p>
+	 */
+	IDomainSecurityBuilder<E> readSelfAccess(Access access);
+
 	IDomainSecurityBuilder<E> updateAccess(Access access);
 
 	IDomainSecurityBuilder<E> deleteOneAccess(Access access);
@@ -51,6 +63,9 @@ public interface IDomainSecurityBuilder<E>
 
 	IDomainSecurityBuilder<E> readOneAuthority(boolean authority);
 
+	/** @see #readSelfAccess(Access) */
+	IDomainSecurityBuilder<E> readSelfAuthority(boolean authority);
+
 	IDomainSecurityBuilder<E> updateAuthority(boolean authority);
 
 	IDomainSecurityBuilder<E> deleteOneAuthority(boolean authority);
@@ -64,6 +79,9 @@ public interface IDomainSecurityBuilder<E>
 	IDomainSecurityBuilder<E> readAllAuthority(String authority);
 
 	IDomainSecurityBuilder<E> readOneAuthority(String authority);
+
+	/** @see #readSelfAccess(Access) */
+	IDomainSecurityBuilder<E> readSelfAuthority(String authority);
 
 	IDomainSecurityBuilder<E> updateAuthority(String authority);
 

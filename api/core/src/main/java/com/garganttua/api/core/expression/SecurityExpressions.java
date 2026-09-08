@@ -9,6 +9,7 @@ import com.garganttua.api.core.domain.DomainDefinition;
 import com.garganttua.api.core.mapper.DefaultMapper;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
+import com.garganttua.api.commons.caller.OwnerIds;
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.definition.IAuthenticationDefinition;
@@ -161,6 +162,38 @@ public class SecurityExpressions {
 			return (List<Object>) list;
 		}
 		return body == null ? List.of() : List.of(body);
+	}
+
+	@Expression(name = "callerSelfUuid",
+			description = "The uuid of the caller's OWN entity on this authenticator domain, read off its "
+					+ "qualified ownerId (domain:uuid) and checked against this domain. Used by READ_SELF.gs. "
+					+ "Throws (-> 403) when the caller carries no owner identity, or carries one minted by "
+					+ "ANOTHER domain's authenticator.")
+	public static String callerSelfUuid(@Nullable Object caller, @Nullable Object context) {
+		ICaller c = (unwrapOptional(caller) instanceof ICaller resolved) ? resolved : null;
+		if (c == null) {
+			throw ApiException.forbidden("No caller: '/self' is meaningless without a verified identity.");
+		}
+		IDomain<?> domain = toDomain(context);
+		String ownerId = c.ownerId();
+		if (ownerId == null || ownerId.isBlank()) {
+			throw ApiException.forbidden(
+					"The caller carries no owner identity, so it has no own entity on '"
+							+ domain.getDomainName() + "'. A token minted by this domain's "
+							+ "authenticator carries one; a caller built from headers does not.");
+		}
+		if (!OwnerIds.isQualified(ownerId)) {
+			throw ApiException.forbidden("The caller's owner identity '" + ownerId
+					+ "' is not qualified with a domain, so it cannot be attributed to one.");
+		}
+		// The check that makes this route safe: a token minted by another authenticator must not
+		// resolve here. Without it, '/admins/self' would answer to a token issued for 'users'.
+		String ownerDomain = OwnerIds.domainOf(ownerId);
+		if (!domain.getDomainName().equals(ownerDomain)) {
+			throw ApiException.forbidden("This caller's principal belongs to domain '" + ownerDomain
+					+ "', not '" + domain.getDomainName() + "'.");
+		}
+		return OwnerIds.idOf(ownerId);
 	}
 
 	@Expression(name = "operationAccess", description = "Returns the Access level string from an OperationDefinition")

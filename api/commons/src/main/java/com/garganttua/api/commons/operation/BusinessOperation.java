@@ -6,6 +6,7 @@ public enum BusinessOperation {
     update("update"),
     readOne("readOne"),
     readAll("readAll"),
+    readSelf("readSelf"),
     deleteOne("deleteOne"),
     deleteAll("deleteAll"),
     authenticate("authenticate"),

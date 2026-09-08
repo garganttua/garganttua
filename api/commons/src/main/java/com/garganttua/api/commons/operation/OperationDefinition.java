@@ -79,6 +79,30 @@ public record OperationDefinition(String domainName, TechnicalOperation technica
 		return new OperationDefinition(domainName, operation, entity, scope, OperationType.workflow, true, null, Access.authenticated);
 	}
 
+	/**
+	 * The {@code readSelf} operation: the caller reads ITS OWN entity on an authenticator domain,
+	 * without naming it.
+	 *
+	 * <p>
+	 * The identity comes from the verified caller, never from the path or a header, so the operation
+	 * is bounded by construction — there is no input by which a caller could ask for someone else.
+	 * That is also why it carries its own authority: granting "read your own profile" is a different
+	 * decision from granting {@code readOne} over the whole domain, and the two should not have to
+	 * be made together.
+	 * </p>
+	 */
+	public static OperationDefinition readSelf(String domainName, IClass<?> entity, boolean authority,
+			String authorityName, Access access) {
+		return new OperationDefinition(domainName, TechnicalOperation.read, entity, Scope.self,
+				OperationType.standard, authority, authorityName, access);
+	}
+
+	/** {@code readSelf} under the framework's standard security — authenticated, authority required. */
+	public static OperationDefinition readSelfWithStandardSecurity(String domainName, IClass<?> entity) {
+		return new OperationDefinition(domainName, TechnicalOperation.read, entity, Scope.self,
+				OperationType.standard, true, null, Access.authenticated);
+	}
+
 	public static OperationDefinition readOne(String domainName, IClass<?> entity, boolean authority, String authorityName, Access access) {
 		return new OperationDefinition(domainName, TechnicalOperation.read, entity, Scope.oneEntity, OperationType.standard, authority, authorityName, access);
 	}

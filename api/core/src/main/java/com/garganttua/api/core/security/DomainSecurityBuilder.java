@@ -166,6 +166,11 @@ public class DomainSecurityBuilder<E>
     }
 
     @Override
+    public IDomainSecurityBuilder<E> readSelfAccess(Access access) {
+        return setCrudAccess(BusinessOperation.readSelf.getLabel(), access);
+    }
+
+    @Override
     public IDomainSecurityBuilder<E> updateAccess(Access access) {
         return setCrudAccess(BusinessOperation.update.getLabel(), access);
     }
@@ -203,6 +208,11 @@ public class DomainSecurityBuilder<E>
     }
 
     @Override
+    public IDomainSecurityBuilder<E> readSelfAuthority(boolean authority) {
+        return setCrudAuthority(BusinessOperation.readSelf.getLabel(), authority);
+    }
+
+    @Override
     public IDomainSecurityBuilder<E> updateAuthority(boolean authority) {
         return setCrudAuthority(BusinessOperation.update.getLabel(), authority);
     }
@@ -237,6 +247,11 @@ public class DomainSecurityBuilder<E>
     @Override
     public IDomainSecurityBuilder<E> readOneAuthority(String authority) {
         return setCrudAuthority(BusinessOperation.readOne.getLabel(), authority);
+    }
+
+    @Override
+    public IDomainSecurityBuilder<E> readSelfAuthority(String authority) {
+        return setCrudAuthority(BusinessOperation.readSelf.getLabel(), authority);
     }
 
     @Override

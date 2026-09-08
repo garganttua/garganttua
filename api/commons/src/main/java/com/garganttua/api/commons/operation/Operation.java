@@ -39,7 +39,11 @@ public record Operation(
 		return switch (techOp) {
 			case create -> BusinessOperation.create;
 			case delete -> (scope == Scope.oneEntity) ? BusinessOperation.deleteOne : BusinessOperation.deleteAll;
-			case read -> (scope == Scope.oneEntity) ? BusinessOperation.readOne : BusinessOperation.readAll;
+			case read -> switch (scope) {
+				case self -> BusinessOperation.readSelf;
+				case oneEntity -> BusinessOperation.readOne;
+				default -> BusinessOperation.readAll;
+			};
 			case update -> BusinessOperation.update;
 		};
 	}
@@ -58,7 +62,7 @@ public record Operation(
 		if (scope == Scope.allEntities || scope == Scope.listOfEntities) {
 			return techOp + "-" + scope + "-" + Pluralizer.toPlural(entityName);
 		}
-		if (scope == Scope.oneEntity) {
+		if (scope == Scope.self || scope == Scope.oneEntity) {
 			return techOp + "-" + scope + "-" + Singularizer.toSingular(entityName);
 		}
 		return techOp + "-one-" + Singularizer.toSingular(entityName);
@@ -70,6 +74,10 @@ public record Operation(
 			return new OperationPath(base + "/authenticate");
 		if (type == OperationType.refreshAuthorization)
 			return new OperationPath(base + "/refresh");
+		// The caller's own entity has a LITERAL path: it takes no identifier, because taking one is
+		// exactly what it must not do. Without this it would fall through to the collection path.
+		if (scope == Scope.self)
+			return new OperationPath(base + "/self");
 		if (scope == Scope.oneEntity)
 			return new OperationPath(base + "/${uuid}");
 		return new OperationPath(base);
