@@ -55,7 +55,11 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 ## Fiches ouvertes
 
-Aucune. Les dix fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+| Fiche | Émise par | Attend |
+|---|---|---|
+| [apiexception-de-cas-dusage-rendue-en-200-corps-0](apiexception-de-cas-dusage-rendue-en-200-corps-0.md) | autonom | qu'une `ApiException` levée par un `contextualUseCase` sorte en `4xx` avec son message. Aujourd'hui elle rend `HTTP 200` + corps `0` : le client lit un SUCCÈS, l'écran annonce une réussite qui n'a pas eu lieu, et aucun message de refus n'atteint l'utilisateur. Mesuré sous ALPHA17 sur quatre gestes de trois domaines. |
+
+Les dix fiches déposées par palliad et autonom avant celle-ci ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
