@@ -112,3 +112,88 @@ Nous n'avons pas lu le code du socle : nous ne savons pas si l'exception est ava
 du cas d'usage, dans la liaison Jackson, ou dans la couche HTTP. Le `0` ressemble à une valeur de
 retour par défaut, mais c'est une supposition — la seule chose que nous ayons mesurée est ce que
 l'API rend.
+
+---
+
+## Réponse de la plateforme — 2026-09-09
+
+**Traitée.** Corrigée sur `main`, à paraître dans `3.0.0-ALPHA19`.
+
+### Votre supposition était juste
+
+Vous écriviez, en précisant que vous n'aviez pas lu le socle : *« Le `0` ressemble à une valeur de
+retour par défaut, mais c'est une supposition »*. C'est exactement ça, et voici le mécanisme.
+
+`MethodInvoker.invokeMethodSafely` **capture** ce que la méthode a levé au lieu de le relancer :
+
+```java
+} catch (InvocationTargetException e) {
+    Throwable cause = e.getCause() != null ? e.getCause() : e;
+    return new SingleMethodReturn<>(cause, returnType);   // ← stocké, pas levé
+}
+```
+
+`UseCaseExpressions.invokeUseCase` lisait ensuite le résultat avec `single()`, qui rend la
+*valeur* — donc `null`. L'exception ne remontait jamais, le
+`! => recordCaughtException(@0, @exception) -> 500` de `USE_CASE.gs` ne se déclenchait pas, et le
+workflow sortait avec son code de succès. **Le `0` que vous voyez est ce code de sortie servi comme
+charge utile.** Vos trois causes distinctes partageaient bien un seul symptôme, pour cette raison.
+
+### Ce qui a été fait
+
+Un point de lecture unique, `ExpressionUtils.singleOrThrow`, qui fait remonter l'exception capturée.
+Une `RuntimeException` passe **verbatim** — votre message arrive intact ; le reste est enveloppé.
+
+### Sur le statut : nous n'avons pas retenu votre demande 1, et voici pourquoi
+
+Vous demandiez un `4xx` par défaut. Une `ApiException` **nue** continue de rendre **500**, par
+cohérence avec la règle posée en ALPHA17 pour les crochets : une `ApiException` sans statut choisi
+est une panne, et c'est le bon défaut pour un échec imprévu.
+
+Ce qui change pour vous : **le message arrive**, et le `4xx` est à un mot :
+
+```java
+throw ApiException.badRequest("Cette facture est un brouillon : émettez-la d'abord.");
+// -> HTTP 400, corps {"error":"Cette facture est un brouillon : émettez-la d'abord."}
+```
+
+`badRequest`, `unauthorized`, `forbidden`, `notFound`, `notAcceptable`, `conflict`, et
+`ApiException.of(code, message)` pour le reste. Votre argument sur le rejeu du `5xx` est juste et
+nous le prenons au sérieux — c'est précisément pourquoi ces fabriques existent depuis ALPHA17.
+
+**Le geste chez vous** : remplacer `new ApiException(msg)` par `ApiException.badRequest(msg)` sur vos
+refus métier. Vous en comptez « plusieurs dizaines » ; c'est un remplacement mécanique, et le
+comportement intermédiaire (500 + message) est déjà meilleur que le silence actuel.
+
+Si ce compromis ne tient pas à l'usage, dites-le : router les cas d'usage vers 400 par défaut reste
+techniquement possible, c'est une ligne de `USE_CASE.gs`.
+
+### Ce que votre fiche a permis de trouver, et que personne n'avait signalé
+
+En cherchant la cause, nous avons compté les endroits où le socle invoque du code consommateur à
+travers un binder : **cinq, dont quatre lisaient le résultat sans tester l'exception**. Le vôtre
+était l'un d'eux. Les trois autres :
+
+| Site | Effet |
+|---|---|
+| émission d'autorisation personnalisée | message trompeur, cause perdue |
+| `reconcile` personnalisé | idem — et c'est ce qui décide de l'identité de l'appelant |
+| **`applySecurityOnEntity`** | **l'entité était persistée NON sécurisée** |
+
+Le dernier est grave et sans rapport avec votre fiche : le code lisait
+`secured != null ? secured : entity`, donc une méthode de sécurisation qui échouait rendait
+l'entité **intacte**, qui partait en base. Une méthode chargée de hacher un mot de passe et qui
+échoue faisait donc enregistrer ce mot de passe **en clair**, sans une ligne de journal. Un test
+verrouille désormais qu'une écriture dont la sécurisation échoue **ne persiste rien**.
+
+Les cinq sites passent maintenant par le même point de lecture.
+
+### Sur votre contournement
+
+L'intercepteur qui convertit en échec toute réponse dont le corps est un nombre n'a plus lieu
+d'être une fois la version passée, et il redevient sans danger : un cas d'usage qui refuse rend
+maintenant un statut d'échec. Nous vous suggérons de ne le retirer qu'après avoir vérifié un refus
+de bout en bout chez vous.
+
+**Couvert par :** `UseCaseRefusalIntegrationTest` (5 tests) et `ApplySecurityFailureIntegrationTest`
+(3 tests).

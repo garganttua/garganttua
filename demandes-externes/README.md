@@ -55,11 +55,9 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 ## Fiches ouvertes
 
-| Fiche | Émise par | Attend |
-|---|---|---|
-| [apiexception-de-cas-dusage-rendue-en-200-corps-0](apiexception-de-cas-dusage-rendue-en-200-corps-0.md) | autonom | qu'une `ApiException` levée par un `contextualUseCase` sorte en `4xx` avec son message. Aujourd'hui elle rend `HTTP 200` + corps `0` : le client lit un SUCCÈS, l'écran annonce une réussite qui n'a pas eu lieu, et aucun message de refus n'atteint l'utilisateur. Mesuré sous ALPHA17 sur quatre gestes de trois domaines. |
+Aucune.
 
-Les dix fiches déposées par palliad et autonom avant celle-ci ont été traitées — voir ci-dessous.
+Les onze fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -83,7 +81,8 @@ a écrites puisse vérifier.
 | [mandatory-teste-la-nullite-et-seulement-a-la-creation](mandatory-teste-la-nullite-et-seulement-a-la-creation.md) | palliad | Corrigée en option déclarative (`MandatoryPolicy.nonBlank`), défaut inchangé. Rectification : la contrainte tourne DÉJÀ à la mise à jour — sur l'entité fusionnée, où le champ n'est jamais nul. Le partage absent / null / vide du tableau de la fiche est implémenté ligne pour ligne. Rupture : `IEntityDefinition.mandatories()`. |
 | [operation-request-caller-reconstruit](operation-request-caller-reconstruit.md) | palliad | Corrigée telle que demandée, en trois lignes : la vérification publiait déjà l'appelant réconcilié, personne ne le lisait. Plus large que la fiche : cinq suppliers passent par `request.caller()`. |
 | [champs-ecartes-silencieusement](champs-ecartes-silencieusement.md) | palliad | Corrigée : les deux en-têtes, avec les noms de DTO, toujours présents, statut inchangé à 200. Exigence 1 tenue à la création, **partielle à la mise à jour** — le champ non déclaré n'est pas rapporté, et la fiche dit pourquoi. |
-| [attempt-authentication-avale-les-exceptions](attempt-authentication-avale-les-exceptions.md) | palliad | Corrigée telle que demandée : `warn` nommant la stratégie, la cascade inchangée. |
+| [attempt-authentication-avale-les-exceptions](attempt-authentication-avale-les-exceptions.md) | palliad | Corrigée — mais notre première réponse était trop affirmative, et la fiche porte la **rectification** : le `catch` ne voyait que les erreurs de fourniture, pas la stratégie qui lève elle-même, laquelle est pourtant ce que le titre désigne. Vraie depuis ALPHA19. |
+| [apiexception-de-cas-dusage-rendue-en-200-corps-0](apiexception-de-cas-dusage-rendue-en-200-corps-0.md) | autonom | Corrigée. Leur supposition était juste : le binder CAPTURE l'exception au lieu de la lever, `single()` rendait `null`, et le `0` était le code de sortie du workflow servi comme corps. Demande de `4xx` par défaut **non retenue** (500 reste le défaut d'une `ApiException` nue, `ApiException.badRequest(...)` donne le 400), avec la raison écrite dans la fiche. A permis de trouver le même défaut à trois autres endroits, dont un qui persistait des entités NON sécurisées. |
 | [authenticator-authorities-decoratif](authenticator-authorities-decoratif.md) | palliad | Corrigée par l'option 1 : la déclaration est honorée en retombée (la stratégie garde la main, une liste vide reste autoritative), et un champ illisible se signale au lieu de rendre un jeton vide. |
 | [prefixe-http-non-configurable](prefixe-http-non-configurable.md) | autonom | Corrigée, purement additive : `new JavalinInterface(app, "/api")`. Les cinq critères d'acceptation sont tenus, `completePath` tranché dans votre sens. Un angle mort à connaître : `.interfasse(IClass)` instancie sans argument, le préfixe passe par `.interfasse(ISupplierBuilder)`. |
 

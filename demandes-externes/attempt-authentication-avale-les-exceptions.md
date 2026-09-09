@@ -76,3 +76,55 @@ il servirait.
 **Ce qui n'a pas été fait :** ni marqueur sur la réponse, ni distinction du 401 côté client. La
 fiche ne le demandait pas, et rendre un statut différent selon qu'une stratégie a planté renseigne
 un attaquant sur l'état interne du montage.
+
+---
+
+## Rectification de notre réponse — 2026-09-09
+
+**Notre réponse du 2026-09-04 était trop affirmative.** Nous avons écrit « traitée, telle que
+demandée ». Elle ne l'était qu'à moitié, et nous ne l'avons découvert qu'en instruisant une autre
+fiche.
+
+### Ce qui n'allait pas
+
+Le correctif ajoutait un `log.warn` dans le `catch (RuntimeException)` d'`attemptAuthentication`.
+Mais ce `catch` ne peut voir que ce qui est **levé**, et le binder ne lève pas ce que la stratégie a
+levé : `MethodInvoker.invokeMethodSafely` **capture** la cause dans le résultat.
+
+```java
+} catch (InvocationTargetException e) {
+    Throwable cause = e.getCause() != null ? e.getCause() : e;
+    return new SingleMethodReturn<>(cause, returnType);   // ← stocké, pas levé
+}
+```
+
+`attemptAuthentication` lisait ensuite `result.get().single()`, qui rend la valeur — donc `null` —
+puis `returned instanceof IAuthentication` était faux, et la méthode rendait `null`. **En silence.**
+
+Le partage exact, que nous aurions dû faire dès la première réponse :
+
+| Ce qui échoue | Journalisé depuis ALPHA17 ? |
+|---|---|
+| binder AOT absent, dépendance non injectée, champ mal nommé (erreurs de **fourniture**) | **oui** — elles lèvent une `SupplyException`, le `catch` les voyait |
+| **la stratégie elle-même qui lève** (cast impossible, appel qui échoue) | **non** — capturée, jamais vue |
+
+Or votre fiche s'intitule « avale les exceptions des stratégies d'authentification », et la seconde
+ligne est celle que le titre désigne. Nous avons corrigé la moitié la moins centrale en annonçant le
+tout.
+
+### Ce qui est fait maintenant
+
+`attemptAuthentication` lit son résultat par `ExpressionUtils.singleOrThrow`, le point de lecture
+unique introduit pour ce défaut : l'exception capturée est relancée, donc le `catch` la voit, la
+journalise avec le nom de la stratégie, et la cascade continue comme avant. Le comportement que
+vous demandiez — « journaliser au niveau `warn` avec le nom de la stratégie, avant de rendre `null` »
+— vaut désormais pour les deux lignes du tableau.
+
+À paraître dans `3.0.0-ALPHA19`.
+
+### Pourquoi nous vous le disons
+
+Vous auriez pu monter en ALPHA17, remonter une authentification personnalisée, et constater le même
+silence qu'avant sur la moitié des cas — en concluant que la fiche avait été mal traitée, sans savoir
+laquelle des deux moitiés vous regardiez. C'est le genre de chose qui coûte plus cher à découvrir
+qu'à écrire.
