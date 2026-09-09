@@ -24,12 +24,12 @@ This module acts as a **bridge between Garganttua Core and Reflections**, enabli
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-reflections</artifactId>
-    <version>3.0.0-ALPHA18</version>
+    <version>3.0.0-ALPHA19</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA18
+3.0.0-ALPHA19
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`

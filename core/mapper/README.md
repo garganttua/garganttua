@@ -24,12 +24,12 @@ Garganttua Mapper is a powerful, **declarative object-to-object mapping engine**
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-mapper</artifactId>
-    <version>3.0.0-ALPHA18</version>
+    <version>3.0.0-ALPHA19</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA18
+3.0.0-ALPHA19
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

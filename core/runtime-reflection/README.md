@@ -14,12 +14,12 @@ This is the default reflection provider used throughout the framework. Alternati
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-runtime-reflection</artifactId>
-    <version>3.0.0-ALPHA18</version>
+    <version>3.0.0-ALPHA19</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA18
+3.0.0-ALPHA19
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
