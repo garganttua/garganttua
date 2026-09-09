@@ -289,11 +289,11 @@ public class SecurityAuthenticationExpressions {
 				result = binder.execute();
 			}
 
-			if (result.isEmpty()) {
-				return null;
-			}
-
-			Object returned = result.get().single();
+			// singleOrThrow, not single(): the binder CAPTURES what the strategy threw instead of
+			// throwing it, so the catch below could only ever see a supply failure (a missing AOT
+			// descriptor, an uninjected dependency) — never the strategy's own exception, which is
+			// half of what the reported defect was about.
+			Object returned = singleOrThrow(result, "Authentication strategy");
 			if (returned instanceof IAuthentication auth) {
 				if (auth.authenticated()) return auth;
 			}

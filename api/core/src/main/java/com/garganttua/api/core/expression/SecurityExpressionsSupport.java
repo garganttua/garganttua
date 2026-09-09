@@ -108,7 +108,7 @@ final class SecurityExpressionsSupport {
         } else {
             result = issuerBinder.execute();
         }
-        Object token = result.isPresent() ? result.get().single() : null;
+        Object token = ExpressionUtils.singleOrThrow(result, "The custom authorization issuer");
         if (token == null) {
             throw new ApiException("issueAuthorization: the custom issuer method returned no authorization");
         }
@@ -140,7 +140,7 @@ final class SecurityExpressionsSupport {
         } else {
             result = binder.execute();
         }
-        Object resolved = result.isPresent() ? result.get().single() : null;
+        Object resolved = ExpressionUtils.singleOrThrow(result, "The custom reconcile method");
         if (!(resolved instanceof ICaller resolvedCaller)) {
             throw new ApiException("reconcileCaller: the custom reconcile method must return an ICaller");
         }
@@ -179,7 +179,10 @@ final class SecurityExpressionsSupport {
         } else {
             result = binder.execute();
         }
-        Object secured = result.isPresent() ? result.get().single() : null;
+        // Critical: the previous form fell back to the UNSECURED entity when this returned null,
+        // and a method that threw returned null. A credential-hashing method failing therefore
+        // persisted the entity in clear, silently.
+        Object secured = ExpressionUtils.singleOrThrow(result, "The domain's applySecurityOnEntity method");
         return secured != null ? secured : entity;
     }
 

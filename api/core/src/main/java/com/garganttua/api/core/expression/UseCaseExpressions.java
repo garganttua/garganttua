@@ -82,6 +82,10 @@ public class UseCaseExpressions {
 		} else {
 			result = binder.execute();
 		}
-		return result.isPresent() ? result.get().single() : null;
+		// The exception a use case throws is CAPTURED by the binder, not thrown from execute(). Read
+		// through singleOrThrow or a deliberate business refusal disappears: the script's
+		// `! => ... -> 500` never fires, the workflow exits 0, and the client reads a SUCCESS for a
+		// gesture the server refused — with the refusal message reaching no one.
+		return ExpressionUtils.singleOrThrow(result, "Use case '" + useCase.name() + "'");
 	}
 }
