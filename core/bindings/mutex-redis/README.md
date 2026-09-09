@@ -12,12 +12,12 @@ Distributed mutex implementation over Redis for Garganttua Core. This binding mo
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-mutex-redis</artifactId>
-    <version>3.0.0-ALPHA17</version>
+    <version>3.0.0-ALPHA18</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA17
+3.0.0-ALPHA18
 
 ### Dependencies
  - `com.github.siahsang:red-utils`

@@ -19,12 +19,12 @@ For a real web app, switch to [`garganttua-api-starter-jvm-mongo-javalin`](../ga
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-starter-quickstart</artifactId>
-    <version>3.0.0-ALPHA17</version>
+    <version>3.0.0-ALPHA18</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA17
+3.0.0-ALPHA18
 
 ### Dependencies
  - `com.garganttua:garganttua-api-starter-bootstrap`
