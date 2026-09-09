@@ -46,6 +46,22 @@ public interface IDomainSecurityBuilder<E>
 	 * {@code 403} until one is granted — reading one's own profile is a deliberate grant, not
 	 * something a version bump should open.
 	 * </p>
+	 *
+	 * <p>
+	 * <strong>What it serves:</strong> the entity <em>as it is</em> — like every CRUD read, the
+	 * business stage hands the entity itself to the serializer; there is no outbound DTO projection
+	 * that would drop fields. On an authenticator domain that entity is precisely the one holding
+	 * the credential: the hashed password field, and any {@code @AuthenticatorRefreshToken} /
+	 * {@code @AuthenticatorAuthorities} field. Granting this authority therefore publishes them to
+	 * the account's own holder.
+	 * </p>
+	 *
+	 * <p>
+	 * That is a deliberate choice — "self" reads the entity, and the framework does not guess which
+	 * of its fields the application considers secret. Two ways to narrow it, both already there:
+	 * a {@code projection} on the request ({@code ?select=...}), or an {@code afterGet} hook that
+	 * blanks the fields before they leave. Decide before granting, not after.
+	 * </p>
 	 */
 	IDomainSecurityBuilder<E> readSelfAccess(Access access);
 
