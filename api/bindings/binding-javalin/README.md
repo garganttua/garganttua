@@ -25,12 +25,12 @@ The pinned version (`javalin.version` in the root POM) is currently **6.6.0**. U
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-binding-javalin</artifactId>
-    <version>3.0.0-ALPHA19</version>
+    <version>3.0.0-ALPHA20</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA19
+3.0.0-ALPHA20
 
 ### Dependencies
  - `io.javalin:javalin:${javalin.version}`

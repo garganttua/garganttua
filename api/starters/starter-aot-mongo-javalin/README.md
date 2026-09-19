@@ -14,12 +14,12 @@ The runner is unchanged: garganttua-core's `Bootstrap` ServiceLoader picks the A
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-starter-aot-mongo-javalin</artifactId>
-    <version>3.0.0-ALPHA19</version>
+    <version>3.0.0-ALPHA20</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA19
+3.0.0-ALPHA20
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

@@ -19,12 +19,12 @@ The **garganttua-api-bindings** module is the aggregator parent for all external
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-bindings</artifactId>
-    <version>3.0.0-ALPHA19</version>
+    <version>3.0.0-ALPHA20</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA19
+3.0.0-ALPHA20
 
 ### Dependencies
 

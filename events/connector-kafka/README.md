@@ -14,12 +14,12 @@ configurable poll intervals.
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-connector-kafka</artifactId>
-    <version>3.0.0-ALPHA19</version>
+    <version>3.0.0-ALPHA20</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA19
+3.0.0-ALPHA20
 
 ### Dependencies
  - `com.garganttua:garganttua-events-api`

@@ -20,12 +20,12 @@ A domain whose DTO declares an explicit `.db(...)` keeps it — the default DAO 
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-starter-mongodb</artifactId>
-    <version>3.0.0-ALPHA19</version>
+    <version>3.0.0-ALPHA20</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA19
+3.0.0-ALPHA20
 
 ### Dependencies
  - `com.garganttua:garganttua-api-starter-bootstrap`
