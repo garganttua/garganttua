@@ -71,6 +71,19 @@ public final class RedisMutexFunctions {
      * across all processes/JVMs using the same Redis server and mutex name.
      * </p>
      *
+     * <p>
+     * <b>Not usable as a workflow stage wrapper.</b> {@code IWorkflowStageBuilder.wrap("syncRedis(…, @0)")}
+     * substitutes {@code @0} with the stage content as a parenthesized group, and such a group
+     * reaches a function as a {@code StatementBlock} <em>still to run</em> — the shape
+     * {@code ControlFlowFunctions.if} executes explicitly. This function takes an {@link ISupplier}
+     * instead, so it would take the lock, supply the block object without running it, and return it:
+     * the stage would silently do no work. Executing the block here is not possible — {@code
+     * StatementBlock} lives in {@code garganttua-script}, which depends on this module, so reaching
+     * back for it would close a dependency cycle. To synchronize a workflow stage, use a wrapper
+     * declared above the script layer; {@code garganttua-api} ships {@code synchronizeWrite} for its
+     * own pipeline.
+     * </p>
+     *
      * @param mutexName the name of the distributed mutex to acquire
      * @param expression the expression (supplier) to execute while holding the mutex
      * @return the result of the expression evaluation
