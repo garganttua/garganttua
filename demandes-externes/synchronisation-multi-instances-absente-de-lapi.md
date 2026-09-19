@@ -288,3 +288,28 @@ La clé porte l'uuid **quand la requête désigne l'entité par uuid** — le ca
 recherche par un autre critère retombe sur la clé par tenant : plus grossier, jamais faux. Et
 l'option B (verrouillage optimiste) n'est pas implémentée : vous aviez raison qu'elle ne règle pas
 les invariants qui se calculent avant d'écrire, et A les règle.
+
+### Précision sur le bail, ajoutée après coup — lisez-la avant de câbler Redis
+
+Nous avons écrit plus haut que le bail est obligatoire. C'est vrai de la politique : une
+`SynchronizationPolicy` sans bail est refusée à la construction. Ce n'est **pas** vrai de la façon
+dont ce bail est appliqué, et la différence vous concerne directement puisque vous visez Redis.
+
+| Verrou | Le `leaseTime` de la `MutexStrategy` | Ce qui borne réellement la section critique |
+|---|---|---|
+| `InterruptibleLeaseMutex` (local) | **appliqué** — `future.get(leaseTime, unit)` | la stratégie |
+| `RedisMutex` | **ignoré** — seuls `waitTime` et les tentatives sont lus | le `RedUtilsConfig` passé à `RedisMutexFactory` |
+
+Autrement dit : en Redis, poser un bail sur la stratégie ne fait rien, et c'est silencieux. Le bail
+existe bien — red-utils le gère, avec son renouvellement — mais il se configure ailleurs :
+
+```java
+new RedUtilsConfig.RedUtilsConfigBuilder().leaseTimeMillis(40_000)…
+```
+
+La propriété que vous demandiez (« un nœud qui meurt en section critique ne doit pas figer les
+autres ») est donc tenue dans les deux cas, mais elle se règle à deux endroits différents. Nous ne
+l'avons pas uniformisée : faire lire le bail de la stratégie par `RedisMutex` suppose de savoir ce
+que l'API de red-utils accepte par acquisition, et nous ne l'avons pas vérifié. Nous préférons vous
+dire ce que le code fait plutôt que de deviner. `RedisMutex.acquire(function, strategy)` porte
+désormais l'avertissement dans son javadoc.

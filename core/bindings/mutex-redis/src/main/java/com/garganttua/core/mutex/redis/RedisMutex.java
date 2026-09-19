@@ -112,6 +112,15 @@ public class RedisMutex implements IMutex {
      * {@code null} strategy falls back to {@link #acquire(ThrowingFunction)}.
      * </p>
      *
+     * <p>
+     * <b>The strategy's {@code leaseTime} is NOT applied here.</b> Unlike
+     * {@code InterruptibleLeaseMutex}, which bounds the critical section with it, this lock takes
+     * its lease from the {@code RedUtilsConfig} given to {@link RedisMutexFactory} — red-utils owns
+     * the expiry and its renewal. A caller that sets a lease on the strategy and expects it to apply
+     * here gets the factory's instead, silently. Configure the lease where it is read:
+     * {@code new RedUtilsConfig.RedUtilsConfigBuilder().leaseTimeMillis(...)}.
+     * </p>
+     *
      * @param <R>      the result type produced by {@code function}
      * @param function the work to run while holding the lock
      * @param strategy the acquisition strategy, or {@code null} for blocking acquisition
