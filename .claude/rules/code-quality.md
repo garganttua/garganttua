@@ -65,6 +65,9 @@ Approved size exceptions (do not "fix" these by force):
 - `BuilderDependency` — `IBuilderDependency`: accessors + deep-internal validation, no clean extraction
 - `InjectionContext` — cohesive `IInjectionContext` facade, no long methods
 - `Bootstrap` — cohesive `IBootstrap` orchestrator (already decomposed into 4 collaborators)
+- `ApiBuilder` — `IApiBuilder` DSL facade: a wide contract of single-purpose declaration methods,
+  already decomposed into 8 collaborators (asset detection, build, validation, registration,
+  auto-configuration, super-registry bootstrap, factory, summary); longest method 19 lines
 
 ## Long-method rule (MethodLength > 20)
 

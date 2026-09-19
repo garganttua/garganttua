@@ -57,7 +57,7 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 Aucune.
 
-Les onze fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+Les douze fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -83,6 +83,7 @@ a écrites puisse vérifier.
 | [champs-ecartes-silencieusement](champs-ecartes-silencieusement.md) | palliad | Corrigée : les deux en-têtes, avec les noms de DTO, toujours présents, statut inchangé à 200. Exigence 1 tenue à la création, **partielle à la mise à jour** — le champ non déclaré n'est pas rapporté, et la fiche dit pourquoi. |
 | [attempt-authentication-avale-les-exceptions](attempt-authentication-avale-les-exceptions.md) | palliad | Corrigée — mais notre première réponse était trop affirmative, et la fiche porte la **rectification** : le `catch` ne voyait que les erreurs de fourniture, pas la stratégie qui lève elle-même, laquelle est pourtant ce que le titre désigne. Vraie depuis ALPHA19. |
 | [apiexception-de-cas-dusage-rendue-en-200-corps-0](apiexception-de-cas-dusage-rendue-en-200-corps-0.md) | autonom | Corrigée. Leur supposition était juste : le binder CAPTURE l'exception au lieu de la lever, `single()` rendait `null`, et le `0` était le code de sortie du workflow servi comme corps. Demande de `4xx` par défaut **non retenue** (500 reste le défaut d'une `ApiException` nue, `ApiException.badRequest(...)` donne le 400), avec la raison écrite dans la fiche. A permis de trouver le même défaut à trois autres endroits, dont un qui persistait des entités NON sécurisées. |
+| [synchronisation-multi-instances-absente-de-lapi](synchronisation-multi-instances-absente-de-lapi.md) | palliad | Traitée dans la forme A demandée : `apiBuilder.synchronization(...)` / `IDomainBuilder.synchronization(...)`, clé `<préfixe>:<tenant>:<uuid>`, bail obligatoire, aucune dépendance de `api` vers `mutex`, défaut strictement inchangé. Sur un point nous n'avons pas suivi : verrou non obtenu = **409**, pas de dégradation silencieuse. Leurs trois obstacles étaient inexacts — aucune modification de core n'a été nécessaire — et la fiche documente le piège qui les attendait : `sync` de core, branché en enveloppe d'étage, prend le verrou et n'exécute rien. |
 | [authenticator-authorities-decoratif](authenticator-authorities-decoratif.md) | palliad | Corrigée par l'option 1 : la déclaration est honorée en retombée (la stratégie garde la main, une liste vide reste autoritative), et un champ illisible se signale au lieu de rendre un jeton vide. |
 | [prefixe-http-non-configurable](prefixe-http-non-configurable.md) | autonom | Corrigée, purement additive : `new JavalinInterface(app, "/api")`. Les cinq critères d'acceptation sont tenus, `completePath` tranché dans votre sens. Un angle mort à connaître : `.interfasse(IClass)` instancie sans argument, le préfixe passe par `.interfasse(ISupplierBuilder)`. |
 
