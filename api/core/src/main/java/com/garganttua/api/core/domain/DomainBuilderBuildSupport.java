@@ -98,6 +98,9 @@ final class DomainBuilderBuildSupport {
                 buildInterfaceSuppliers(builder.interfaces),
                 buildEventSuppliers(builder.events));
         domainContext.setWorkflow(builtWorkflow);
+        // The running domain needs the policy too: the wrap expression reads it back from the
+        // domain context at request time, to key the lock and to know the acquisition strategy.
+        domainContext.setSynchronization(builder.effectiveSynchronization());
         domainContext.setEntityBeanDefinition(entityBeanDefinition);
         domainContext.setDoInjection(builder.doInjection);
         return domainContext;

@@ -8,6 +8,9 @@ import com.garganttua.api.commons.context.dsl.security.IDomainSecurityBuilder;
 import com.garganttua.api.commons.event.IEventPublisher;
 import com.garganttua.api.commons.endpoint.IInterface;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.context.SynchronizationPolicy;
+import com.garganttua.core.mutex.IMutex;
+import com.garganttua.core.mutex.IMutexManager;
 import com.garganttua.core.dsl.IAutomaticLinkedBuilder;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
@@ -27,6 +30,47 @@ public interface IDomainBuilder<E> extends IAutomaticLinkedBuilder<IDomainBuilde
     IDomainBuilder<E> events(IEventPublisher eventPublisher) throws ApiException;
 
     IDomainBuilder<E> tenant(boolean b) throws ApiException;
+
+    /**
+     * Serializes THIS domain's write operations under {@code policy}'s mutex, overriding whatever
+     * {@code IApiBuilder.synchronization(...)} declared for the api.
+     *
+     * <p>
+     * Only writes are wrapped — {@code create}, {@code update}, {@code deleteOne}, {@code deleteAll},
+     * plus the use cases the policy names. Reads are never serialized: they do not lose anything by
+     * interleaving, and locking them would cost on the hot path for nothing.
+     * </p>
+     *
+     * @param policy how to key and acquire the lock, and which mutex implementation to use
+     * @return this builder
+     * @throws ApiException if the policy is rejected
+     * @see SynchronizationPolicy
+     */
+    IDomainBuilder<E> synchronization(SynchronizationPolicy policy) throws ApiException;
+
+    /** @see #synchronization(SynchronizationPolicy) */
+    default IDomainBuilder<E> synchronization(IMutexManager manager, IClass<? extends IMutex> mutexType)
+            throws ApiException {
+        return synchronization(SynchronizationPolicy.of(manager, mutexType));
+    }
+
+    /**
+     * Same, from a qualified mutex name ({@code com.acme.RedisMutex::orders}).
+     *
+     * @param manager       resolves the name into a mutex
+     * @param qualifiedName {@code Type::name}; the type is loaded BY NAME, so register it for AOT
+     * @return this builder
+     * @throws ApiException if the name is malformed or its type cannot be loaded
+     */
+    default IDomainBuilder<E> synchronization(IMutexManager manager, String qualifiedName)
+            throws ApiException {
+        try {
+            return synchronization(SynchronizationPolicy.of(manager, qualifiedName));
+        } catch (RuntimeException e) {
+            throw new ApiException("Cannot read the synchronization mutex name '" + qualifiedName
+                    + "': " + e.getMessage(), e);
+        }
+    }
 
     IDomainBuilder<E> owner(String string) throws ApiException;
 

@@ -74,7 +74,9 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
 
     // Bean definition for runtime DI injection on entities
     private BeanDefinition<?> entityBeanDefinition;
-    private boolean doInjection;
+    // Written once at build time, read from every request thread: volatile or the flag a
+    // domain was built with may never become visible to the threads that serve it.
+    private volatile boolean doInjection;
 
     public BeanDefinition<?> getEntityBeanDefinition() { return this.entityBeanDefinition; }
     public boolean isDoInjection() { return this.doInjection; }
@@ -118,6 +120,23 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
 
     public void setDoInjection(boolean doInjection) {
         this.doInjection = doInjection;
+    }
+
+    private volatile com.garganttua.api.commons.context.SynchronizationPolicy synchronizationPolicy;
+
+    /**
+     * Declares how this domain serializes its writes. Set once at build time from the DSL, before
+     * the domain serves anything.
+     *
+     * @param policy the policy, or null to leave the domain unsynchronized
+     */
+    public void setSynchronization(com.garganttua.api.commons.context.SynchronizationPolicy policy) {
+        this.synchronizationPolicy = policy;
+    }
+
+    @Override
+    public java.util.Optional<com.garganttua.api.commons.context.SynchronizationPolicy> synchronization() {
+        return java.util.Optional.ofNullable(this.synchronizationPolicy);
     }
 
     public void setWorkflow(IWorkflow workflow) {

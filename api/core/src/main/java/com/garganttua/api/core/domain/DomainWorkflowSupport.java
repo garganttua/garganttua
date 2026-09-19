@@ -122,7 +122,8 @@ final class DomainWorkflowSupport {
             Set<String> useCaseNames, ObjectAddress owner, ObjectAddress owned,
             boolean multiTenancyEnabled,
             IInjectionContextBuilder injectionContextBuilder,
-            IWorkflowsBuilder workflowsBuilder, WorkflowTimingConfig workflowTimingConfig)
+            IWorkflowsBuilder workflowsBuilder, WorkflowTimingConfig workflowTimingConfig,
+            com.garganttua.api.commons.context.SynchronizationPolicy synchronization)
             throws ApiException {
         boolean securityEnabled = securityBuilder != null
                 && ((DomainSecurityBuilder<E>) securityBuilder).isSecurityEnabled();
@@ -135,6 +136,6 @@ final class DomainWorkflowSupport {
                 domainName, workflows, useCaseNames, securityEnabled, hasAuthorization,
                 multiTenancyEnabled, isOwnerOrOwned,
                 injectionContextBuilder,
-                workflowsBuilder, workflowTimingConfig).populateStages();
+                workflowsBuilder, workflowTimingConfig, synchronization).populateStages();
     }
 }

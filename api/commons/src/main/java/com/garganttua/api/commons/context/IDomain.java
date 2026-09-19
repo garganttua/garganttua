@@ -7,6 +7,8 @@ import java.util.stream.Collectors;
 
 import org.javatuples.Pair;
 
+import java.util.Optional;
+
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
@@ -52,6 +54,21 @@ public interface IDomain<E> extends ILifecycle, IObservable {
 
 	default IEntityDefinition<E> getEntityDefinition() {
 		return getDomainDefinition().entityDefinition();
+	}
+
+	/**
+	 * How this domain serializes its writes across instances, when it was told to.
+	 *
+	 * <p>
+	 * Empty by default, and empty is the normal case: without a declared policy the write stages are
+	 * generated exactly as before, with no lock and no dependency on a lock provider.
+	 * </p>
+	 *
+	 * @return the policy, or empty when this domain is not synchronized
+	 * @see SynchronizationPolicy
+	 */
+	default Optional<SynchronizationPolicy> synchronization() {
+		return Optional.empty();
 	}
 
 	default String getDomainName(){

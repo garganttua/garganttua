@@ -446,7 +446,7 @@ public class DomainBuilder<E> extends AbstractDomainCharacteristicsBuilder<E> {
 
         DomainWorkflowSupport.<E>assembleStages(this.domainName, this.securityBuilder, this.workflows,
                 this.useCases.keySet(), this.owner, this.owned, multiTenancyEnabled,
-                injectionContextBuilder, workflowsBuilder, workflowTimingConfig);
+                injectionContextBuilder, workflowsBuilder, workflowTimingConfig, effectiveSynchronization());
         this.workflowStagesPopulated = true;
     }
 

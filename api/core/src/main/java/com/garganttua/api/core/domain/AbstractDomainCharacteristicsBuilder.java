@@ -35,6 +35,9 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     protected volatile ObjectAddress superOwner;
     protected volatile ObjectAddress superTenant;
 
+    /** This domain's own policy; null means "whatever the api declared", which is usually nothing. */
+    protected volatile com.garganttua.api.commons.context.SynchronizationPolicy synchronizationPolicy;
+
     protected AbstractDomainCharacteristicsBuilder(IApiBuilder builder) throws ApiException {
         super(builder);
     }
@@ -42,6 +45,22 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     /** Reflection provider — whatever the user installed via {@code IClass.setReflection()}. */
     private static IReflectionProvider provider() {
         return IClass.getReflection();
+    }
+
+    @Override
+    public IDomainBuilder<E> synchronization(com.garganttua.api.commons.context.SynchronizationPolicy policy) {
+        this.synchronizationPolicy = policy;
+        return this;
+    }
+
+    /**
+     * The policy this domain actually runs under: its own when it declared one, the api's otherwise,
+     * and null when neither did — the default, where nothing is synchronized.
+     *
+     * @return the effective policy, or null
+     */
+    public com.garganttua.api.commons.context.SynchronizationPolicy effectiveSynchronization() {
+        return DomainSynchronization.effective(this.synchronizationPolicy, this.up());
     }
 
     /** @return the entity class, supplied by the concrete builder (mutable as entity() is called). */

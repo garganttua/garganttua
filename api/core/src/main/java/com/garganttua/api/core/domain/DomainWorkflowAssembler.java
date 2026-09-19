@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.garganttua.api.commons.operation.BusinessOperation;
+import com.garganttua.api.core.expression.SynchronizationExpressions;
 import com.garganttua.core.injection.context.dsl.IInjectionContextBuilder;
 import com.garganttua.core.workflow.IWorkflow;
 import com.garganttua.core.workflow.dsl.IWorkflowBuilder;
@@ -42,6 +43,8 @@ class DomainWorkflowAssembler<E> {
 	private final IInjectionContextBuilder injectionContextBuilder;
 	private final IWorkflowsBuilder workflowsBuilder;
 	private final com.garganttua.core.workflow.WorkflowTimingConfig workflowTimingConfig;
+	/** Null — the normal case — means no stage is wrapped and the generated script is unchanged. */
+	private final com.garganttua.api.commons.context.SynchronizationPolicy synchronization;
 
 	DomainWorkflowAssembler(String domainName,
 			Map<String, DomainWorkflowBuilder<E>> workflows,
@@ -52,7 +55,8 @@ class DomainWorkflowAssembler<E> {
 			boolean isOwnerOrOwned,
 			IInjectionContextBuilder injectionContextBuilder,
 			IWorkflowsBuilder workflowsBuilder,
-			com.garganttua.core.workflow.WorkflowTimingConfig workflowTimingConfig) {
+			com.garganttua.core.workflow.WorkflowTimingConfig workflowTimingConfig,
+			com.garganttua.api.commons.context.SynchronizationPolicy synchronization) {
 		this.domainName = domainName;
 		this.workflows = workflows;
 		this.useCaseNames = useCaseNames != null ? useCaseNames : java.util.Set.of();
@@ -63,6 +67,7 @@ class DomainWorkflowAssembler<E> {
 		this.injectionContextBuilder = injectionContextBuilder;
 		this.workflowsBuilder = workflowsBuilder;
 		this.workflowTimingConfig = workflowTimingConfig;
+		this.synchronization = synchronization;
 	}
 
 	/**
@@ -133,9 +138,11 @@ class DomainWorkflowAssembler<E> {
 
 		// Stage 8 — business operations (guarded by all security stages)
 		String fullGuard = buildCompoundGuard(securityCodeVars);
-		List<String> operationCodeVars = buildBusinessOperationStages(builder, fullGuard);
-		operationCodeVars.addAll(buildUseCaseStages(builder, fullGuard));
-		operationCodeVars.addAll(buildCreateAuthorizationStage(builder, fullGuard));
+		BusinessStageAssembler<E> business = new BusinessStageAssembler<>(
+				this.workflows, this.useCaseNames, this.hasAuthorization, this.synchronization);
+		List<String> operationCodeVars = business.buildOperationStages(builder, fullGuard);
+		operationCodeVars.addAll(business.buildUseCaseStages(builder, fullGuard));
+		operationCodeVars.addAll(business.buildCreateAuthorizationStage(builder, fullGuard));
 
 		// Stage 9 — serialize (Mode A only, gated on Accept presence).
 		// Kept out of operationCodeVars so its pass-through "0" does not signal success
@@ -175,6 +182,11 @@ class DomainWorkflowAssembler<E> {
 		for (String codeVar : allCodeVars) {
 			int initialValue = passThruVars.contains(codeVar) ? 0 : 405;
 			initCodeScript.append(codeVar).append(" <- ").append(initialValue).append("\n");
+		}
+		if (this.synchronization != null) {
+			// @0 is unusable inside a wrap expression — the generator substitutes it with the stage
+			// content — so the request gets a name here, once, for the wrappers to read.
+			initCodeScript.append(DomainSynchronization.REQUEST_VAR).append(" <- @0\n");
 		}
 		builder.stage("init-codes")
 				.script(initCodeScript.toString())
@@ -384,84 +396,6 @@ class DomainWorkflowAssembler<E> {
 		return guard;
 	}
 
-	private List<String> buildBusinessOperationStages(IWorkflowBuilder builder, String guard) {
-		List<String> operationCodeVars = new ArrayList<>();
-		for (Map.Entry<String, DomainWorkflowBuilder<E>> entry : this.workflows.entrySet()) {
-			String label = entry.getKey();
-			DomainWorkflowBuilder<E> wb = entry.getValue();
-			if (wb.isSecurityDisabled()) {
-				continue;
-			}
-
-			String scriptPath = CRUD_SCRIPT_PATHS.get(label);
-			if (scriptPath != null) {
-				var scriptBuilder = builder.stage(label)
-						.when("equals(businessOperation(@0), \"" + label + "\")")
-						.script("classpath:" + scriptPath)
-							.name(label)
-							.input("operationRequest", "@0")
-							.input("repository", "@1")
-							.input("domainContext", "@2");
-				if (guard != null) {
-					scriptBuilder.when(guard);
-				}
-				scriptBuilder.up().up();
-				String sanitized = label.replace("-", "_");
-				operationCodeVars.add("_" + sanitized + "_" + sanitized + "_code");
-			}
-		}
-		return operationCodeVars;
-	}
-
-	/**
-	 * One business stage per declared use case — the use-case counterpart of the CRUD stages. Each
-	 * runs {@code USE_CASE.gs} (→ {@code invokeUseCase}) and is guarded by the business operation AND
-	 * the use case's name, so a domain hosting several use cases routes each request to exactly one.
-	 */
-	private List<String> buildUseCaseStages(IWorkflowBuilder builder, String guard) {
-		List<String> codeVars = new ArrayList<>();
-		String useCaseLabel = com.garganttua.api.commons.operation.BusinessOperation.useCase.getLabel();
-		for (String name : this.useCaseNames) {
-			String stageName = "usecase-" + name;
-			var scriptBuilder = builder.stage(stageName)
-					.when("and(equals(businessOperation(@0), \"" + useCaseLabel + "\"), "
-							+ "equals(useCaseName(@0), \"" + name + "\"))")
-					.script("classpath:scripts/business/USE_CASE.gs")
-						.name(stageName)
-						.input("operationRequest", "@0")
-						.input("repository", "@1")
-						.input("domainContext", "@2");
-			if (guard != null) {
-				scriptBuilder.when(guard);
-			}
-			scriptBuilder.up().up();
-			String sanitized = stageName.replace("-", "_");
-			codeVars.add("_" + sanitized + "_" + sanitized + "_code");
-		}
-		return codeVars;
-	}
-
-	private List<String> buildCreateAuthorizationStage(IWorkflowBuilder builder, String guard) {
-		if (!hasAuthorization) return List.of();
-
-		String createAuthGuard = "equals(@_authenticate_authenticate_code, 0)";
-		if (guard != null) {
-			createAuthGuard = "and(" + createAuthGuard + ", " + guard + ")";
-		}
-		builder.stage("create-authorization")
-				.when("equals(businessOperation(@0), \"authenticate\")")
-				.script("classpath:scripts/business/CREATE_AUTHORIZATION.gs")
-					.name("create-authorization")
-					.input("operationRequest", "@0")
-					.input("repository", "@1")
-					.input("domainContext", "@2")
-					.input("authResult", "@output")
-					.output("output", "output")
-					.when(createAuthGuard)
-					.up()
-				.up();
-		return List.of("_create_authorization_create_authorization_code");
-	}
 
 	/**
 	 * Builds the exit-code stage. Error codes are checked across ALL code vars (infrastructure + operations).
