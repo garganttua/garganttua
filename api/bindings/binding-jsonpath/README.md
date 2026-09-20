@@ -18,12 +18,12 @@
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-binding-jsonpath</artifactId>
-    <version>3.0.0-ALPHA20</version>
+    <version>3.0.0-ALPHA21</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA20
+3.0.0-ALPHA21
 
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`

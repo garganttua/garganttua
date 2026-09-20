@@ -29,12 +29,12 @@ The **garganttua-script** module provides a scripting language engine for compos
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-script</artifactId>
-    <version>3.0.0-ALPHA20</version>
+    <version>3.0.0-ALPHA21</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA20
+3.0.0-ALPHA21
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
