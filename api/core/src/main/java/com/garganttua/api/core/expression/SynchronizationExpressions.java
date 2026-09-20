@@ -13,6 +13,10 @@ import com.garganttua.core.mutex.MutexException;
 import com.garganttua.core.mutex.MutexName;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.garganttua.core.runtime.IRuntimeContext;
+import com.garganttua.core.runtime.RuntimeExpressionContext;
+import com.garganttua.core.script.context.ScriptContext;
+import com.garganttua.core.script.context.ScriptExecutionContext;
 import com.garganttua.core.script.nodes.StatementBlock;
 
 import jakarta.annotation.Nullable;
@@ -122,12 +126,18 @@ public final class SynchronizationExpressions {
 					+ "instead of being reported as a failure to take the lock.")
 	private static Object runUnder(IMutex mutex, SynchronizationPolicy policy, MutexName key,
 			@Nullable Object block) {
+		// The mutex may run the block on ANOTHER thread — InterruptibleLeaseMutex does exactly that
+		// to enforce the lease, and the lease is mandatory here. The ambient contexts the block needs
+		// are ScopedValues, so they do NOT cross that boundary: without them the block refuses to run
+		// ("no runtime context available") and include()/execute_script() refuse too. Capture them on
+		// the calling thread and re-bind them around the block.
+		AmbientContexts caller = AmbientContexts.capture();
 		AtomicReference<RuntimeException> stageFailure = new AtomicReference<>();
 		Object result;
 		try {
 			result = mutex.acquire(() -> {
 				try {
-					return run(block);
+					return caller.bindAround(() -> run(block));
 				} catch (RuntimeException e) {
 					stageFailure.set(e);
 					return null;
@@ -174,6 +184,39 @@ public final class SynchronizationExpressions {
 
 	/** Separates the business operation label from the use-case name it serves. */
 	public static final String USE_CASE_MARK = "/";
+
+	/**
+	 * The ambient, thread-scoped contexts a stage needs, captured so they can be re-established on
+	 * whatever thread the mutex chooses to run the block on.
+	 *
+	 * <p>
+	 * Both are {@code ScopedValue}s, which are deliberately not inheritable: re-binding them is the
+	 * only way across a thread hop. If core grows a third such context, a stage running under a
+	 * lease-enforcing mutex will lose it — which is why a test exercises the real
+	 * {@code InterruptibleLeaseMutex} rather than a fake that stays on one thread.
+	 * </p>
+	 *
+	 * @param runtime the runtime context, or null when there is none to carry
+	 * @param script  the script execution context, or null when there is none to carry
+	 */
+	private record AmbientContexts(IRuntimeContext<?, ?> runtime, ScriptContext script) {
+
+		static AmbientContexts capture() {
+			return new AmbientContexts(RuntimeExpressionContext.get(), ScriptExecutionContext.get());
+		}
+
+		/** Runs {@code body} with whatever was captured re-bound, skipping what is already in scope. */
+		Object bindAround(java.util.function.Supplier<Object> body) {
+			java.util.function.Supplier<Object> withScript =
+					script == null || ScriptExecutionContext.get() != null
+							? body
+							: () -> ScriptExecutionContext.callIn(script, body::get);
+			if (runtime == null || RuntimeExpressionContext.get() != null) {
+				return withScript.get();
+			}
+			return RuntimeExpressionContext.callIn(runtime, withScript::get);
+		}
+	}
 
 	/** Runs the wrapped stage content. */
 	private static Object run(@Nullable Object block) {

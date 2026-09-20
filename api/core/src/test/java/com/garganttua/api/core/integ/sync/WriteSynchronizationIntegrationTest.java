@@ -479,4 +479,122 @@ class WriteSynchronizationIntegrationTest extends AbstractCrudScriptTest {
                             + "nothing, and only its author knows which it is");
         }
     }
+
+    @Nested
+    @DisplayName("the startup upsert")
+    class Startup {
+
+        /** A dao whose save() replaces the row with the same uuid, like a real upsert by _id. */
+        static class UpsertingDao extends CapturingDao {
+            @Override
+            public Object save(Object object) throws ApiException {
+                String uuid = uuidOf(object);
+                if (uuid != null) {
+                    getStorage().removeIf(row -> uuid.equals(uuidOf(row)));
+                }
+                return super.save(object);
+            }
+
+            private static String uuidOf(Object o) {
+                try {
+                    java.lang.reflect.Field f = o.getClass().getDeclaredField("uuid");
+                    f.setAccessible(true);
+                    Object v = f.get(o);
+                    return v != null ? v.toString() : null;
+                } catch (ReflectiveOperationException e) {
+                    return null;
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("still runs when the domain is synchronized")
+        void startupEntitiesSurviveTheWrapper() throws ApiException {
+            userDao = new UpsertingDao();
+            mutexes = new RecordingMutexManager();
+
+            User seeded = new User();
+            seeded.setUuid("uuid-bootstrap");
+            seeded.setName("Bootstrap admin");
+            seeded.setTenantId("SUPER_TENANT");
+
+            // The row is ALREADY there, as on every restart after the first: the upsert then takes
+            // the UPDATE path, not the create one. That is the shape an application actually runs.
+            UserDto existing = new UserDto();
+            existing.setId("1");
+            existing.setUuid("uuid-bootstrap");
+            existing.setTenantId("SUPER_TENANT");
+            existing.setName("Stale name");
+            userDao.getStorage().add(existing);
+
+            IApiBuilder builder = newBuilder();
+            builder.synchronization(mutexes, IClass.getClass(InterruptibleLeaseMutex.class));
+            builder.domain(IClass.getClass(User.class))
+                    .tenant(true)
+                    .superTenant("superTenant")
+                    .entity().id("id").uuid("uuid").tenantId("tenantId").mandatory("name")
+                        .update("name").up()
+                    .dto(IClass.getClass(UserDto.class))
+                        .id("id").uuid("uuid").tenantId("tenantId").db(userDao).up()
+                    .creation(true).readAll(true)
+                    .upsert(seeded)
+                    .security().disable(true).up()
+                .up();
+
+            // An application seeds its bootstrap administrator and its reference data this way. The
+            // startup path invokes the domain OUTSIDE any request, and the wrapper must cope: a
+            // domain that declares startup entities must not become unbootable by being synchronized.
+            IApi context = buildAndStart(builder);
+
+            users = context.getDomain("users").orElseThrow();
+            assertEquals("Bootstrap admin", storedName("uuid-bootstrap"),
+                    "the declared startup entity must have been persisted");
+        }
+    }
+
+    private String storedName(String uuid) {
+        return userDao.getStorage().stream()
+                .filter(d -> d instanceof UserDto dto && uuid.equals(dto.getUuid()))
+                .map(d -> ((UserDto) d).getName())
+                .findFirst().orElse(null);
+    }
+
+    @Nested
+    @DisplayName("under the REAL core mutex, not a fake")
+    class RealMutex {
+
+        /**
+         * The fakes above stay on one thread. {@code InterruptibleLeaseMutex} does not: to enforce
+         * the lease — which this api makes mandatory — it runs the protected block on a dedicated
+         * thread so it can interrupt it. Every ambient context a stage needs is a {@code ScopedValue},
+         * deliberately not inheritable, so it must be re-bound on the other side. This test is the
+         * guard: if core grows a third such context, it fails here rather than in a consumer's logs.
+         */
+        @Test
+        @DisplayName("a write completes, with the lease enforced on another thread")
+        void writeSurvivesTheRealLeaseEnforcingMutex() throws ApiException {
+            userDao = new CapturingDao();
+
+            IApiBuilder builder = newBuilder();
+            builder.synchronization(new com.garganttua.core.mutex.MutexManager(),
+                    IClass.getClass(InterruptibleLeaseMutex.class));
+            builder.domain(IClass.getClass(User.class))
+                    .tenant(true)
+                    .superTenant("superTenant")
+                    .entity().id("id").uuid("uuid").tenantId("tenantId").update("name").up()
+                    .dto(IClass.getClass(UserDto.class))
+                        .id("id").uuid("uuid").tenantId("tenantId").db(userDao).up()
+                    .security().disable(true).up()
+                .up();
+            users = buildAndStart(builder).getDomain("users").orElseThrow();
+            seedUser("1", "uuid-alice", "Alice", "alice@example.com");
+
+            WorkflowResult result = update("Alice Updated");
+
+            assertTrue(result.isSuccess(), () -> "the write failed under the real mutex: " + result
+                    + result.exception().map(e -> "\ncause: " + e.getCause()).orElse(""));
+            assertEquals("Alice Updated", storedName("uuid-alice"),
+                    "and it really wrote, rather than being swallowed on the other thread");
+        }
+    }
 }

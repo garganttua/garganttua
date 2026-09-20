@@ -17,6 +17,15 @@ import com.garganttua.core.mutex.MutexStrategy;
  * The point of the tests using it is not that a lock implementation works — core owns that — but
  * that the api asks for the RIGHT key, at the right moments, and nowhere else.
  * </p>
+ *
+ * <p>
+ * <strong>It runs the protected block on ANOTHER thread, deliberately.</strong>
+ * {@code InterruptibleLeaseMutex} does so to enforce the lease — and this api makes the lease
+ * mandatory — so a fake that ran the block inline would be kinder than every real implementation and
+ * would hide anything that does not survive the thread hop. It hid exactly that once: the runtime
+ * context is a {@code ScopedValue} and does not cross threads, so every synchronized write failed
+ * with "StatementBlock: no runtime context available" while fifteen tests stayed green.
+ * </p>
  */
 public class RecordingMutexManager implements IMutexManager {
 
@@ -98,10 +107,30 @@ public class RecordingMutexManager implements IMutexManager {
                 if (observer != null) {
                     observer.run();
                 }
-                return function.execute();
+                return onAnotherThread(function);
             } finally {
                 depth.decrementAndGet();
                 lock.unlock();
+            }
+        }
+
+        /** Runs the block off the calling thread, as a lease-enforcing mutex must. */
+        private <R> R onAnotherThread(ThrowingFunction<R> function) throws MutexException {
+            java.util.concurrent.FutureTask<R> task = new java.util.concurrent.FutureTask<>(function::execute);
+            Thread worker = new Thread(task, "recording-mutex");
+            worker.start();
+            try {
+                return task.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.ExecutionException e) {
+                if (e.getCause() instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+                throw new MutexException(String.valueOf(e.getCause()));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new MutexException("interrupted");
+            } catch (java.util.concurrent.TimeoutException e) {
+                throw new MutexException("the protected block did not finish");
             }
         }
     }
