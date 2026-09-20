@@ -65,23 +65,17 @@ public final class RedisMutexFunctions {
      * Synchronizes execution of an expression using a Redis-based distributed mutex.
      *
      * <p>
+     * The implementation behind the {@code syncRedis} expression. It is deliberately NOT annotated:
+     * one expression name must designate one method, and an {@code @Expression} on both this and the
+     * {@code Object} overload made resolution by exact signature find two and throw — which turned
+     * the mere presence of this jar on an application's classpath into a startup failure.
+     * </p>
+     *
+     * <p>
      * This function acquires a distributed mutex via Redis, executes
      * the provided expression, and releases the mutex. The expression
      * is guaranteed to be executed in a mutually exclusive manner
      * across all processes/JVMs using the same Redis server and mutex name.
-     * </p>
-     *
-     * <p>
-     * <b>Not usable as a workflow stage wrapper.</b> {@code IWorkflowStageBuilder.wrap("syncRedis(…, @0)")}
-     * substitutes {@code @0} with the stage content as a parenthesized group, and such a group
-     * reaches a function as a {@code StatementBlock} <em>still to run</em> — the shape
-     * {@code ControlFlowFunctions.if} executes explicitly. This function takes an {@link ISupplier}
-     * instead, so it would take the lock, supply the block object without running it, and return it:
-     * the stage would silently do no work. Executing the block here is not possible — {@code
-     * StatementBlock} lives in {@code garganttua-script}, which depends on this module, so reaching
-     * back for it would close a dependency cycle. To synchronize a workflow stage, use a wrapper
-     * declared above the script layer; {@code garganttua-api} ships {@code synchronizeWrite} for its
-     * own pipeline.
      * </p>
      *
      * @param mutexName the name of the distributed mutex to acquire
@@ -91,8 +85,7 @@ public final class RedisMutexFunctions {
      *         RedisMutex factory not registered, mutex acquisition fails,
      *         or expression evaluation fails
      */
-    @Expression(name = "syncRedis", description = "Synchronizes execution using a distributed Redis mutex")
-    public static Object syncRedis(@Nullable String mutexName, @Nullable ISupplier<?> expression) {
+    private static Object syncRedisNamed(@Nullable String mutexName, @Nullable ISupplier<?> expression) {
         log.trace("Entering syncRedis(mutexName={}, expression={})", mutexName, expression);
 
         if (mutexName == null || mutexName.isBlank()) {
@@ -150,8 +143,26 @@ public final class RedisMutexFunctions {
     }
 
     /**
-     * Synchronizes execution using a Redis mutex with Object parameter.
-     * This overload handles dynamic types from variable references.
+     * Synchronizes execution using a Redis mutex — the {@code syncRedis} expression.
+     *
+     * <p>
+     * Takes {@code Object} so a variable reference of any type resolves here; the name is read with
+     * {@code toString()}. This is the ONLY method carrying the {@code syncRedis} expression name.
+     * </p>
+     *
+     * <p>
+     * <b>Not usable as a workflow stage wrapper.</b> {@code IWorkflowStageBuilder.wrap("syncRedis(…, @0)")}
+     * substitutes {@code @0} with the stage content as a parenthesized group, and such a group
+     * reaches a function as a {@code StatementBlock} <em>still to run</em> — the shape
+     * {@code ControlFlowFunctions.if} executes explicitly. This function takes an {@link ISupplier}
+     * instead, so it would take the lock, supply the block object without running it, and return it:
+     * the stage would silently do no work. Executing the block here is not possible — {@code
+     * StatementBlock} lives in {@code garganttua-script}, which depends on this module, so reaching
+     * back for it would close a dependency cycle. To synchronize a workflow stage, use a wrapper
+     * declared above the script layer; {@code garganttua-api} ships {@code synchronizeWrite} for its
+     * own pipeline.
+     * </p>
+     *
      *
      * @param mutexName the name of the mutex (will be converted to String)
      * @param expression the expression (supplier) to execute while holding the mutex
@@ -161,6 +172,6 @@ public final class RedisMutexFunctions {
     @Expression(name = "syncRedis", description = "Synchronizes execution using a distributed Redis mutex")
     public static Object syncRedis(@Nullable Object mutexName, @Nullable ISupplier<?> expression) {
         String nameStr = mutexName == null ? null : mutexName.toString();
-        return syncRedis(nameStr, expression);
+        return syncRedisNamed(nameStr, expression);
     }
 }

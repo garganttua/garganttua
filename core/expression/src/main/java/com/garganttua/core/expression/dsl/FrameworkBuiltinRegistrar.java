@@ -103,6 +103,8 @@ final class FrameworkBuiltinRegistrar {
             return;
         }
         IClass<?> ownerCls = IClass.getClass(cls);
+        ExpressionNames.refuseAmbiguous(ownerCls.getCanonicalName(),
+                java.util.Arrays.asList(ownerCls.getDeclaredMethods()));
         for (IMethod m : ownerCls.getDeclaredMethods()) {
             if (!Modifier.isStatic(m.getModifiers()) || m.getAnnotation(exprAnnoCls) == null) {
                 continue;

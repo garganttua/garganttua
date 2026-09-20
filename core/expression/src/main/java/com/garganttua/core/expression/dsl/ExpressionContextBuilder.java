@@ -369,6 +369,11 @@ public class ExpressionContextBuilder
                     this.packages);
         }
 
+        // One name, one method — checked before building factories, so a package carrying two
+        // same-arity @Expression methods under one name says so here instead of throwing an opaque
+        // reflection ambiguity the first time the function is used.
+        ExpressionNames.refuseAmbiguous("the scanned packages " + this.packages, uniqueMethods.values());
+
         // Create factories for unique methods only — add to auto-detected source
         // Static methods use NullSupplierBuilder (no bean instance needed),
         // non-static methods use BeanSupplierBuilder (requires bean registration)

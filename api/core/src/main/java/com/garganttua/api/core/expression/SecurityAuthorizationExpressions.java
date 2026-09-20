@@ -299,14 +299,6 @@ public class SecurityAuthorizationExpressions {
 		return null;
 	}
 
-	@Expression(name = "setRequestArg", description = "Sets a named argument on the operation request")
-	public static boolean setRequestArg(@Nullable Object request, @Nullable Object key, @Nullable Object value) {
-		if (request == null || key == null) return false;
-		IOperationRequest opRequest = (IOperationRequest) request;
-		opRequest.arg(key.toString(), value);
-		return true;
-	}
-
 	/**
 	 * Well-known request arg under which {@link #recordCaughtException} stashes
 	 * the exception object. Domain.doInvoke reads it back to surface the exact
