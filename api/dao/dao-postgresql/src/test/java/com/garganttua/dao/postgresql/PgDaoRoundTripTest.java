@@ -173,7 +173,7 @@ class PgDaoRoundTripTest {
             assertEquals(12_345_678_901L, o.total);
             assertEquals(0.25, o.ratio);
             assertTrue(o.paid);
-            assertEquals(Instant.parse("2026-09-21T10:15:30.123456Z"), o.createdAt);
+            assertEquals(Instant.parse("2026-09-21T10:15:30.123Z"), o.createdAt, "truncated to the millisecond");
             assertEquals(4, o.signature.length);
             assertEquals((byte) 0xFF, o.signature[3]);
             assertEquals("Paris", o.address.city);
