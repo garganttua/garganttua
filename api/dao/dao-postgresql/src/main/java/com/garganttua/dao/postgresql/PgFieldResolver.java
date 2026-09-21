@@ -132,7 +132,7 @@ final class PgFieldResolver {
      */
     static Optional<PgOperand> inColumns(List<PgColumn> columns, String alias, String field) {
         for (PgColumn column : columns) {
-            if (column.dottedPath().equals(field)) {
+            if (column.kind() != PgColumnKind.PRESENCE && column.dottedPath().equals(field)) {
                 return Optional.of(PgOperand.of(alias, column));
             }
         }
