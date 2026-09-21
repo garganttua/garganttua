@@ -34,12 +34,21 @@ The shape of a domain's tables is derived once from its DTO by `PgSchemaModel`, 
 | an embedded POJO | its fields, flattened with a prefix (`address__city`) |
 | a list / set of scalars or of POJOs | a child table `<table>__<field>`, one row per element |
 | a map with scalar keys | a child table keyed by `_key` |
+| a list / set / map inside a collection element (`List<Order>` whose `Order` holds `List<Line>`, `List<List<String>>`, `Map<String, List<Book>>`) | a nested child table of the element's table, at any depth |
 | a `@Composed` reference | a `TEXT` column holding the referenced uuid (a child table for a collection) |
 | `IKey` | a `JSONB` key descriptor |
 | a GeoJSON geometry | a PostGIS `geometry(Geometry, 4326)` column |
 | anything with no finite relational shape | a `JSONB` column |
 
 The `JSONB` fallback covers what relational storage cannot express: a POJO that contains itself (`Node next`) would flatten into infinitely many columns, and an untyped `List<Object>` has no column type.
+
+**Nested tables.** A collection inside a collection element is not a `JSONB` value: it is a child table of the element's table, and so on down, with no depth limit (`shops` → `shops__orders` → `shops__orders__lines`). Every child table carries `_owner`, the root entity's uuid (`ON DELETE CASCADE`), and is keyed by `_ord` (lists) or `_key` (maps). A table whose elements have children of their own also gets `_id BIGINT GENERATED ALWAYS AS IDENTITY`, and the rows beneath point at their element through `_parent` (`ON DELETE CASCADE`), so replacing or deleting an entity only touches its top-level rows. An element that is itself a collection (`List<List<String>>`, `Map<String, List<Book>>`) gets a table of its own, suffixed `___e`.
+
+- **Writes** go one table at a time, one batch per table; the generated `_id`s of a level become the `_parent`s of the next, all in the caller's transaction.
+- **Reads** run one query per table of the tree, for the whole page at once (`_owner = ANY(...)`), and rebuild each element bottom-up before it enters its parent collection.
+- **Filters** cross every array level MongoDB's way: `orders.lines.sku $eq "K"` matches when *any* order has *any* line whose sku matches (one `EXISTS` per level), `$ne` / `$nin` when none does; a map is crossed by its key (`stock.paris.origin.labels`).
+- **Sort** takes the smallest (asc) or largest (desc) value reachable across all levels, a map entry included (`stock.paris.qty`); sorting on a whole structure that holds a nested collection (`orders.lines`) is refused. `$text` searches every table of the tree.
+- **Not yet reproduced** inside a child element: whether an embedded POJO of the element exists (`lines.product $eq null`, `lines.product.brand $ne null`) is not tracked, so such a filter treats it as absent; and a null element of a nested list (`orders.lines = [null]`) is not told apart from an absent value.
 
 **Presence columns.** Flattening loses a fact MongoDB keeps: whether a structure *existed*. A null list and an empty one would both be zero child rows. Every flattened POJO, collection, map and reference collection therefore carries a `BOOLEAN` presence column on its owner, and every POJO element a `_present` column — so `null`, `[]` and `{}` stay distinct in filters and on the way back.
 

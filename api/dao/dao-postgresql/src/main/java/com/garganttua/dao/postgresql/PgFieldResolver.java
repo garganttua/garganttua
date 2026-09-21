@@ -1,18 +1,15 @@
 package com.garganttua.dao.postgresql;
 
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-import com.garganttua.api.commons.ApiException;
 import com.garganttua.dao.postgresql.schema.PgChildKind;
 import com.garganttua.dao.postgresql.schema.PgChildTable;
 import com.garganttua.dao.postgresql.schema.PgColumn;
 import com.garganttua.dao.postgresql.schema.PgColumnKind;
 import com.garganttua.dao.postgresql.schema.PgNaming;
 import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
 
 /**
  * Resolves a filter's field name (a dotted DTO path, used as is, like MongoDB does) to where it lives
@@ -30,22 +27,25 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  *
  * <p>
  * Resolution order, most specific first: a reference ({@code customer}, or {@code customer.$id}, the
- * path of MongoDB's DBRef id), a main-table column or a path inside a JSONB one, a collection, a path
- * inside a collection's elements, an embedded POJO.
+ * path of MongoDB's DBRef id), a main-table column or a path inside a JSONB one, a path through the
+ * child tables — a collection, a path inside its elements, a map entry, at any depth
+ * ({@link PgPathLocator}) — and last an embedded POJO.
  * </p>
  */
 final class PgFieldResolver {
 
-    /** The alias of the child table inside an {@code EXISTS} subquery. */
+    /** The alias of the first-level child table inside an {@code EXISTS}; deeper levels append their depth. */
     static final String CHILD_ALIAS = "c";
 
     /** The DBRef field MongoDB stores a reference's id under. */
     static final String DBREF_ID = "$id";
 
     private final PgTable table;
+    private final PgPathLocator locator;
 
     PgFieldResolver(PgTable table) {
         this.table = table;
+        this.locator = new PgPathLocator(table, CHILD_ALIAS, false);
     }
 
     /**
@@ -63,28 +63,12 @@ final class PgFieldResolver {
         if (main.isPresent()) {
             return new PgField.Scalar(main.get());
         }
-        Optional<PgChildTable> exact = table.child(field);
-        if (exact.isPresent()) {
-            return whole(exact.get());
-        }
-        Optional<PgChildTable> container = containingChild(field);
-        if (container.isPresent()) {
-            PgChildTable child = container.get();
-            return inElement(child, field.substring(child.dottedPath().length() + 1));
+        Optional<PgPathLocator.Located> located = locator.locate(field);
+        if (located.isPresent()) {
+            return located.get().rest() == null ? whole(located.get()) : inElement(located.get());
         }
         return table.presence(field).<PgField>map(p -> PgField.Opaque.of(isNull(PgQuery.ALIAS, p)))
                 .orElse(PgField.Opaque.MISSING);
-    }
-
-    /** {@return the {@code _owner} condition tying child rows to the current main row} */
-    PgSql ownerScope() {
-        return PgSql.of(CHILD_ALIAS + "." + PgNaming.quote(PgChildTable.OWNER) + " = " + PgQuery.ALIAS + "."
-                + PgNaming.quote(table.id().name()));
-    }
-
-    /** {@return {@code SELECT 1 FROM <child> c WHERE <scope>}} */
-    static PgSql rows(PgChildTable child, PgSql scope) {
-        return PgSql.of("SELECT 1 FROM " + PgNaming.quote(child.name()) + " " + CHILD_ALIAS + " WHERE ").then(scope);
     }
 
     /**
@@ -106,93 +90,78 @@ final class PgFieldResolver {
         return Optional.empty();
     }
 
-    /** The collection itself: its value column for scalars, otherwise an object tested for presence. */
-    private PgField whole(PgChildTable child) {
-        PgSql absent = absent(child);
-        return switch (child.kind()) {
-            case SCALAR_COLLECTION -> new PgField.Element(child, ownerScope(),
-                    PgOperand.of(CHILD_ALIAS, child.valueColumns().get(0)), true, absent);
-            case POJO_COLLECTION -> new PgField.Opaque(absent, PgSql.any(List.of(absent, rows(child,
-                    ownerScope().then(" AND " + present() + " IS NULL")).wrap("EXISTS (", ")"))));
-            case MAP, COMPOSITION_COLLECTION -> PgField.Opaque.of(absent);
-        };
-    }
-
-    /** A path inside the elements of a collection ({@code lines.sku}) or an entry of a map ({@code stock.apple}). */
-    private PgField inElement(PgChildTable child, String rest) {
-        if (child.kind() == PgChildKind.MAP) {
-            return inMapEntry(child, rest);
-        }
-        Optional<PgOperand> operand = switch (child.kind()) {
-            case COMPOSITION_COLLECTION -> DBREF_ID.equals(rest)
-                    ? Optional.of(PgOperand.of(CHILD_ALIAS, child.valueColumns().get(0)))
-                    : Optional.empty();
-            case POJO_COLLECTION -> inColumns(child.valueColumns(), CHILD_ALIAS, rest);
-            default -> Optional.empty();
-        };
-        return operand.<PgField>map(o -> new PgField.Element(child, ownerScope(), o, false, absent(child)))
-                .orElse(PgField.Opaque.MISSING);
-    }
-
-    /** {@code stock.apple} (a scalar value), {@code stock.apple} (an object value) or {@code stock.apple.qty}. */
-    private PgField inMapEntry(PgChildTable child, String rest) {
-        boolean scalarValues = child.valueColumns().size() == 1
-                && child.valueColumns().get(0).fieldPath().isEmpty();
-        int dot = rest.indexOf('.');
-        String key = scalarValues || dot < 0 ? rest : rest.substring(0, dot);
-        Optional<PgSql> scope = keyScope(child, key);
-        if (scope.isEmpty()) {
-            return PgField.Opaque.MISSING;
-        }
-        PgSql keyAbsent = rows(child, scope.get()).wrap("NOT EXISTS (", ")");
-        if (scalarValues) {
-            return new PgField.Element(child, scope.get(), PgOperand.of(CHILD_ALIAS, child.valueColumns().get(0)),
-                    false, keyAbsent);
-        }
-        if (dot < 0) {
-            PgSql noValue = rows(child, scope.get().then(" AND " + present() + " IS NOT NULL"))
+    /**
+     * The collection itself, or the value of a map entry. Scalars (a scalar collection, a scalar entry)
+     * are compared element by element; anything else is an object, of which only presence can be
+     * asked — absent on EVERY branch for {@code $exists: false}, on SOME branch for {@code $eq null}.
+     */
+    private PgField whole(PgPathLocator.Located at) {
+        List<PgHop> hops = at.hops();
+        PgHop last = at.last();
+        PgChildTable child = last.child();
+        if (last.keyed()) {
+            if (scalarValues(child)) {
+                return new PgField.Element(hops, value(last), false, null);
+            }
+            PgSql noValue = last.rows(PgSql.of(last.ref(PgChildTable.PRESENT) + " IS NOT NULL"))
                     .wrap("NOT EXISTS (", ")");
-            return new PgField.Opaque(keyAbsent, noValue);
+            return new PgField.Opaque(PgHop.noneHolds(hops), PgHop.someMisses(hops, noValue));
         }
-        return inColumns(child.valueColumns(), CHILD_ALIAS, rest.substring(dot + 1))
-                .<PgField>map(o -> new PgField.Element(child, scope.get(), o, false, keyAbsent))
-                .orElse(PgField.Opaque.MISSING);
+        return switch (child.kind()) {
+            case SCALAR_COLLECTION -> new PgField.Element(hops, value(last), true, null);
+            case NESTED_COLLECTION -> nestedArrays(hops);
+            case POJO_COLLECTION -> objects(hops);
+            case MAP, COMPOSITION_COLLECTION -> new PgField.Opaque(PgHop.noneHolds(hops),
+                    PgHop.someMisses(hops, last.absent()));
+        };
+    }
+
+    /** A collection whose elements are collections: compared as arrays when they hold scalars. */
+    private PgField nestedArrays(List<PgHop> hops) {
+        Optional<PgHop> items = locator.items(hops)
+                .filter(i -> i.child().kind() == PgChildKind.SCALAR_COLLECTION);
+        return items.<PgField>map(i -> new PgField.Element(hops, value(i), true, i))
+                .orElseGet(() -> objects(hops));
+    }
+
+    /** A collection of objects: absent, or holding a null element, is what {@code $eq null} matches. */
+    private static PgField objects(List<PgHop> hops) {
+        PgHop last = hops.get(hops.size() - 1);
+        PgSql nullElement = last.rows(PgSql.of(last.ref(PgChildTable.PRESENT) + " IS NULL"))
+                .wrap("EXISTS (", ")");
+        return new PgField.Opaque(PgHop.noneHolds(hops),
+                PgHop.someMisses(hops, PgSql.any(List.of(last.absent(), nullElement))));
     }
 
     /**
-     * The owner condition narrowed to one map key — the key is filter text, so it is bound. A key
-     * that cannot be a key of the map (text against an Integer-keyed map) is in no document.
+     * A path inside the elements of a collection ({@code lines.sku}, {@code orders.lines.sku}) or inside
+     * the value of a map entry ({@code stock.apple.qty}).
      */
-    private Optional<PgSql> keyScope(PgChildTable child, String key) {
-        PgColumn keyColumn = new PgColumn(PgChildTable.KEY, PgTypes.sqlTypeOf(child.keyType()).orElse(PgTypes.TEXT),
-                PgColumnKind.SCALAR, List.of(), child.keyType());
-        try {
-            return Optional.of(ownerScope().then(PgSql.of(" AND " + CHILD_ALIAS + "." + PgNaming.quote(PgChildTable.KEY)
-                    + " = " + PgValues.placeholder(keyColumn), PgValues.toJdbc(keyColumn, key))));
-        } catch (ApiException e) {
-            return Optional.empty();
-        }
+    private static PgField inElement(PgPathLocator.Located at) {
+        PgHop last = at.last();
+        PgChildTable child = last.child();
+        Optional<PgOperand> operand = switch (child.kind()) {
+            case COMPOSITION_COLLECTION -> DBREF_ID.equals(at.rest()) ? Optional.of(value(last)) : Optional.empty();
+            case POJO_COLLECTION, MAP -> inColumns(child.valueColumns(), last.alias(), at.rest());
+            default -> Optional.empty();
+        };
+        return operand.<PgField>map(o -> new PgField.Element(at.hops(), o, false, null))
+                .orElse(PgField.Opaque.MISSING);
     }
 
-    /** "The collection is absent": its presence bit on the owner row is NULL. */
-    private PgSql absent(PgChildTable child) {
-        return table.presence(child.dottedPath()).map(p -> isNull(PgQuery.ALIAS, p))
-                .orElseGet(() -> rows(child, ownerScope()).wrap("NOT EXISTS (", ")"));
+    /** {@return the single value column of a scalar collection, under the hop's alias} */
+    private static PgOperand value(PgHop hop) {
+        return PgOperand.of(hop.alias(), hop.child().valueColumns().get(0));
     }
 
-    private static String present() {
-        return CHILD_ALIAS + "." + PgNaming.quote(PgChildTable.PRESENT);
+    /** {@return whether a map's values are scalars: one value column, the value itself} */
+    static boolean scalarValues(PgChildTable child) {
+        return child.elementTable().isEmpty() && child.valueColumns().size() == 1
+                && child.valueColumns().get(0).fieldPath().isEmpty();
     }
 
     private static PgSql isNull(String alias, PgColumn column) {
         return PgSql.of(alias + "." + PgNaming.quote(column.name()) + " IS NULL");
-    }
-
-    /** The deepest collection whose path is a proper prefix of the field. */
-    private Optional<PgChildTable> containingChild(String field) {
-        return table.children().stream()
-                .filter(c -> field.startsWith(c.dottedPath() + "."))
-                .max(Comparator.comparingInt(c -> c.dottedPath().length()));
     }
 
     /**

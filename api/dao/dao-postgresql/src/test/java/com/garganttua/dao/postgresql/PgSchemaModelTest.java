@@ -87,6 +87,27 @@ class PgSchemaModelTest {
         private transient String scratch;
     }
 
+    public static class Shop {
+        private String uuid;
+        private List<ShopOrder> orders;
+    }
+
+    public static class ShopOrder {
+        private String ref;
+        private List<ShopLine> lines;
+    }
+
+    public static class ShopLine {
+        private String sku;
+        private List<String> tags;
+    }
+
+    public static class Grid {
+        private String uuid;
+        private List<List<Integer>> rows;
+        private Map<String, List<Line>> byGenre;
+    }
+
     private static PgTable model() {
         return PgSchemaModel.of("orders", IClass.getClass(Order.class), "uuid",
                 Map.of("customer", "customers", "relatedOrders", "orders"));
@@ -132,6 +153,39 @@ class PgSchemaModelTest {
             assertEquals("INTEGER", column(table, "address.zip").sqlType());
             assertEquals(PgChildKind.SCALAR_COLLECTION, child(table, "address.tags").kind());
             assertEquals("orders__address__tags", child(table, "address.tags").name());
+        }
+
+        @Test
+        @DisplayName("a collection inside a collection element to a NESTED child table, at any depth")
+        void nestedCollectionsGetNestedTables() {
+            PgTable table = PgSchemaModel.of("shops", IClass.getClass(Shop.class), "uuid", Map.of());
+            PgChildTable orders = child(table, "orders");
+            PgChildTable lines = child(table, "orders.lines");
+            PgChildTable tags = child(table, "orders.lines.tags");
+            assertTrue(orders.hasChildren() && !orders.nested(), "orders is top-level and has children");
+            assertEquals(orders.name(), lines.parent(), "lines hangs under orders");
+            assertEquals(List.of("lines"), lines.fieldPath(), "a nested table's field path is relative to its parent element");
+            assertEquals("shops__orders__lines__tags", tags.name());
+            assertEquals(lines.name(), tags.parent());
+            assertTrue(lines.valueColumns().stream().anyMatch(c -> c.name().equals("tags")
+                    && c.kind() == PgColumnKind.PRESENCE), "a nested collection has a presence bit on its parent element");
+            assertEquals(List.of("shops__orders", "shops__orders__lines", "shops__orders__lines__tags"),
+                    table.allChildren().stream().map(PgChildTable::name).toList(), "parents before children");
+        }
+
+        @Test
+        @DisplayName("an element that IS a collection to a table holding the element itself")
+        void collectionOfCollections() {
+            PgTable table = PgSchemaModel.of("grids", IClass.getClass(Grid.class), "uuid", Map.of());
+            PgChildTable rows = child(table, "rows");
+            assertEquals(PgChildKind.NESTED_COLLECTION, rows.kind());
+            PgChildTable cells = rows.elementTable().orElseThrow(() -> new AssertionError("no element table"));
+            assertTrue(cells.fieldPath().isEmpty(), "the element table holds the element itself");
+            assertEquals(PgChildKind.SCALAR_COLLECTION, cells.kind());
+            PgChildTable byGenre = child(table, "byGenre");
+            assertEquals(PgChildKind.MAP, byGenre.kind());
+            assertEquals(PgChildKind.POJO_COLLECTION, byGenre.elementTable().orElseThrow().kind(),
+                    "Map<String, List<Line>>: each map value is a table of Lines");
         }
 
         @Test

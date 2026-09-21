@@ -56,9 +56,17 @@ import com.garganttua.core.reflection.IField;
  * </p>
  *
  * <p>
- * Two more bounds keep the mapping finite: a child table never has children of its own (a collection
- * inside a collection element becomes a {@code JSONB} value column), and an abstract class or an
- * interface is never flattened (the reader could not instantiate it).
+ * <b>Nested tables.</b> A collection or map inside a collection element (a {@code List<String>} in a
+ * POJO element, a {@code List<List<String>>}, a {@code Map<String, List<Book>>}) is a child table of the
+ * element's table, at any depth: its rows point at their element through {@code _parent} (the element
+ * row's {@code _id}) and at the root entity through {@code _owner}. An element that is itself a
+ * collection gets a table of its own, with an empty field path ({@link PgChildTable#elementTable()}).
+ * </p>
+ *
+ * <p>
+ * Bounds that keep the mapping finite: an element type that recurses, an untyped element or a map with
+ * non-scalar keys stays {@code JSONB}, and an abstract class or an interface is never flattened (the
+ * reader could not instantiate it).
  * </p>
  */
 public final class PgSchemaModel {
@@ -96,7 +104,7 @@ public final class PgSchemaModel {
                 addComposition(table, field, path, target, columns, children);
                 continue;
             }
-            new Walker(table, true).add(path, field.getType(), field.getGenericType(), Set.of(),
+            new Walker(table, null, List.of()).add(path, field.getType(), field.getGenericType(), Set.of(),
                     columns, children);
         }
         if (id == null) {
@@ -141,12 +149,19 @@ public final class PgSchemaModel {
     }
 
     /**
-     * Classifies values and emits their columns and child tables.
+     * Classifies values and emits their columns and child tables — at any depth.
      *
-     * @param table         the owning table, for child-table names
-     * @param allowChildren false inside a child table's element: collections there become JSONB
+     * <p>
+     * A Walker walks the fields of ONE owning object: the root entity, or the element of a child table.
+     * Paths it emits are relative to that owner; child-table NAMES use the absolute path, so they stay
+     * unique across the whole tree ({@code shops__orders__lines}).
+     * </p>
+     *
+     * @param table      the root table, for child-table names
+     * @param ownerChild the child table whose element is being walked, or null for the root entity
+     * @param prefix     the absolute path of the owner (empty for the root entity)
      */
-    private record Walker(String table, boolean allowChildren) {
+    private record Walker(String table, String ownerChild, List<String> prefix) {
 
         void add(List<String> path, IClass<?> type, Type generic, Set<IClass<?>> visiting,
                 List<PgColumn> columns, List<PgChildTable> children) {
@@ -157,10 +172,14 @@ public final class PgSchemaModel {
                 columns.add(column(path, PgTypes.JSONB, PgColumnKind.IKEY, type));
             } else if (IClass.getClass(GeoJsonObject.class).isAssignableFrom(type)) {
                 columns.add(column(path, PgTypes.GEOMETRY, PgColumnKind.GEOMETRY, type));
-            } else if (isCollection(type)) {
-                addCollection(path, type, generic, visiting, columns, children);
-            } else if (isMap(type)) {
-                addMap(path, type, generic, visiting, columns, children);
+            } else if (isCollection(type) || isMap(type)) {
+                PgChildTable child = containerTable(path, type, generic, visiting);
+                if (child == null) {
+                    columns.add(column(path, PgTypes.JSONB, PgColumnKind.JSONB, type));
+                } else {
+                    columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
+                    children.add(child);
+                }
             } else if (isFlattenable(type, visiting)) {
                 // Flattening loses whether the POJO existed: null and "present with every field null"
                 // both become all-NULL columns. MongoDB keeps them apart ({} vs absent), so the fact is
@@ -178,68 +197,113 @@ public final class PgSchemaModel {
             }
         }
 
-        private void addCollection(List<String> path, IClass<?> type, Type generic,
-                Set<IClass<?>> visiting, List<PgColumn> columns, List<PgChildTable> children) {
-            IClass<?> element = type.isArray() ? type.getComponentType() : elementType(generic, 0);
-            if (!allowChildren || element == null) {
-                columns.add(column(path, PgTypes.JSONB, PgColumnKind.JSONB, type));
-                return;
+        /**
+         * The child table of a collection or map field at {@code path}, or null when it has no relational
+         * form (an untyped element, a map with non-scalar keys, an element type that recurses).
+         */
+        private PgChildTable containerTable(List<String> path, IClass<?> type, Type generic,
+                Set<IClass<?>> visiting) {
+            List<String> absolute = concat(prefix, path);
+            return build(PgNaming.childTable(table, absolute), path, absolute, type, generic, visiting);
+        }
+
+        private PgChildTable build(String name, List<String> path, List<String> absolute, IClass<?> type,
+                Type generic, Set<IClass<?>> visiting) {
+            boolean map = isMap(type);
+            Type elementGeneric = type.isArray() ? null : typeArgument(generic, map ? 1 : 0);
+            IClass<?> element = type.isArray() ? type.getComponentType() : rawOf(elementGeneric);
+            IClass<?> key = map ? rawOf(typeArgument(generic, 0)) : null;
+            if (element == null || (map && (key == null || !PgTypes.isScalar(key)))) {
+                return null;
             }
             String scalar = PgTypes.sqlTypeOf(element).orElse(null);
             if (scalar != null) {
                 PgColumn value = new PgColumn(PgChildTable.VALUE, scalar, PgColumnKind.SCALAR, List.of(), element);
-                columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
-                children.add(new PgChildTable(PgNaming.childTable(table, path), PgChildKind.SCALAR_COLLECTION,
-                        path, type, element, null, List.of(value), null));
-            } else if (isFlattenable(element, visiting)) {
-                columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
-                children.add(new PgChildTable(PgNaming.childTable(table, path), PgChildKind.POJO_COLLECTION,
-                        path, type, element, null, elementColumns(element, visiting), null));
-            } else {
-                columns.add(column(path, PgTypes.JSONB, PgColumnKind.JSONB, type));
+                return new PgChildTable(name, map ? PgChildKind.MAP : PgChildKind.SCALAR_COLLECTION, path, type,
+                        element, key, List.of(value), null, absolute, ownerChild, List.of());
             }
+            if (isFlattenable(element, visiting)) {
+                return pojoTable(name, path, absolute, type, element, key, visiting);
+            }
+            if (isCollection(element) || isMap(element)) {
+                PgChildTable itself = elementTable(name, absolute, element, elementGeneric, visiting);
+                return itself == null ? null
+                        : new PgChildTable(name, map ? PgChildKind.MAP : PgChildKind.NESTED_COLLECTION, path, type,
+                                element, key, List.of(present(element)), null, absolute, ownerChild, List.of(itself));
+            }
+            return null;
         }
 
-        private void addMap(List<String> path, IClass<?> type, Type generic, Set<IClass<?>> visiting,
-                List<PgColumn> columns, List<PgChildTable> children) {
-            IClass<?> key = elementType(generic, 0);
-            IClass<?> value = elementType(generic, 1);
-            if (!allowChildren || key == null || value == null || !PgTypes.isScalar(key)) {
-                columns.add(column(path, PgTypes.JSONB, PgColumnKind.JSONB, type));
-                return;
-            }
-            String scalar = PgTypes.sqlTypeOf(value).orElse(null);
-            List<PgColumn> valueColumns;
-            if (scalar != null) {
-                valueColumns = List.of(new PgColumn(PgChildTable.VALUE, scalar, PgColumnKind.SCALAR, List.of(), value));
-            } else if (isFlattenable(value, visiting)) {
-                valueColumns = elementColumns(value, visiting);
-            } else {
-                columns.add(column(path, PgTypes.JSONB, PgColumnKind.JSONB, type));
-                return;
-            }
-            columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
-            children.add(new PgChildTable(PgNaming.childTable(table, path), PgChildKind.MAP, path, type,
-                    value, key, valueColumns, null));
-        }
-
-        /** The flattened columns of a collection element, paths relative to the element. */
-        private List<PgColumn> elementColumns(IClass<?> element, Set<IClass<?>> visiting) {
-            List<PgColumn> out = new ArrayList<>();
+        /** A table of POJO elements (or map values): their fields, walked one level down. */
+        private PgChildTable pojoTable(String name, List<String> path, List<String> absolute, IClass<?> type,
+                IClass<?> element, IClass<?> key, Set<IClass<?>> visiting) {
+            List<PgColumn> columns = new ArrayList<>();
+            List<PgChildTable> children = new ArrayList<>();
             // A null element and an element whose fields are all null would both be an all-NULL row.
-            out.add(new PgColumn(PgChildTable.PRESENT, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, List.of(), element));
-            Walker inner = new Walker(table, false);
+            columns.add(present(element));
+            Walker inner = new Walker(table, name, absolute);
             Set<IClass<?>> deeper = new HashSet<>(visiting);
             deeper.add(element);
             for (IField sub : persistedFields(element)) {
-                inner.add(List.of(sub.getName()), sub.getType(), sub.getGenericType(), deeper, out, new ArrayList<>());
+                inner.add(List.of(sub.getName()), sub.getType(), sub.getGenericType(), deeper, columns, children);
             }
-            return out;
+            return new PgChildTable(name, isMap(type) ? PgChildKind.MAP : PgChildKind.POJO_COLLECTION, path, type,
+                    element, key, columns, null, absolute, ownerChild, children);
+        }
+
+        /**
+         * The table of an element that IS a collection ({@code List<List<String>>},
+         * {@code Map<String, List<Book>>}): a table of its own, under the table {@code name}, with an empty
+         * field path — "the element itself". Null when that inner collection has no relational form.
+         */
+        private PgChildTable elementTable(String name, List<String> absolute, IClass<?> element,
+                Type elementGeneric, Set<IClass<?>> visiting) {
+            return new Walker(table, name, absolute).build(name + PgNaming.PATH_SEPARATOR + ELEMENT_SUFFIX,
+                    List.of(), absolute, element, elementGeneric, visiting);
+        }
+
+        /** The {@code _present} column of an element: a null element and an all-null one differ. */
+        private static PgColumn present(IClass<?> element) {
+            return new PgColumn(PgChildTable.PRESENT, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, List.of(), element);
         }
 
         private static PgColumn column(List<String> path, String sqlType, PgColumnKind kind, IClass<?> type) {
             return new PgColumn(PgNaming.column(path), sqlType, kind, path, type);
         }
+    }
+
+    private static void collectTree(PgChildTable child, List<PgChildTable> out) {
+        out.add(child);
+        child.children().forEach(c -> collectTree(c, out));
+    }
+
+    /** Suffix of the table holding an element that is itself a collection. */
+    static final String ELEMENT_SUFFIX = "_e";
+
+    private static List<String> concat(List<String> a, List<String> b) {
+        List<String> out = new ArrayList<>(a);
+        out.addAll(b);
+        return out;
+    }
+
+    /** The type argument at {@code index} of a parameterized type — possibly parameterized itself. */
+    static Type typeArgument(Type generic, int index) {
+        if (generic instanceof ParameterizedType parameterized
+                && parameterized.getActualTypeArguments().length > index) {
+            return parameterized.getActualTypeArguments()[index];
+        }
+        return null;
+    }
+
+    /** The class of a type argument: the class itself, or the raw class of a parameterized type. */
+    static IClass<?> rawOf(Type type) {
+        if (type instanceof Class<?> c) {
+            return IClass.getClass(c);
+        }
+        if (type instanceof ParameterizedType parameterized && parameterized.getRawType() instanceof Class<?> c) {
+            return IClass.getClass(c);
+        }
+        return null;
     }
 
     /**
@@ -327,7 +391,9 @@ public final class PgSchemaModel {
         }
         Set<String> tables = new HashSet<>();
         tables.add(table);
-        for (PgChildTable child : children) {
+        List<PgChildTable> all = new ArrayList<>();
+        children.forEach(c -> collectTree(c, all));
+        for (PgChildTable child : all) {
             if (!tables.add(child.name())) {
                 throw new IllegalArgumentException("Two collections of table '" + table
                         + "' map to child table '" + child.name() + "'.");

@@ -36,7 +36,7 @@ public final class PgDdl {
     public static List<String> create(PgTable table) {
         List<String> statements = new ArrayList<>();
         statements.add(createMain(table));
-        for (PgChildTable child : table.children()) {
+        for (PgChildTable child : table.allChildren()) {
             statements.add(createChild(table, child));
         }
         return statements;
@@ -55,11 +55,31 @@ public final class PgDdl {
         return "CREATE TABLE IF NOT EXISTS " + PgNaming.quote(table.name()) + " (" + columns + ")";
     }
 
-    /** {@return the CREATE TABLE of one child table} */
+    /**
+     * The CREATE TABLE of one child table, at any depth.
+     *
+     * <p>
+     * A table with children gets an identity {@code _id} — the key its children's {@code _parent}
+     * references. Every table keeps {@code _owner}, the ROOT's id, so one query per table loads a whole
+     * page's descendants; a nested table adds {@code _parent}. Both cascade on delete: rewriting or
+     * deleting an entity takes its entire tree with it, in one statement.
+     * </p>
+     *
+     * @param table the root table
+     * @param child the child table
+     * @return the statement
+     */
     public static String createChild(PgTable table, PgChildTable child) {
         StringJoiner columns = new StringJoiner(", ");
+        if (child.hasChildren()) {
+            columns.add(PgNaming.quote(PgChildTable.ID) + " BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE");
+        }
         columns.add(PgNaming.quote(PgChildTable.OWNER) + " TEXT NOT NULL REFERENCES "
                 + PgNaming.quote(table.name()) + " (" + PgNaming.quote(table.id().name()) + ") ON DELETE CASCADE");
+        if (child.nested()) {
+            columns.add(PgNaming.quote(PgChildTable.PARENT) + " BIGINT NOT NULL REFERENCES "
+                    + PgNaming.quote(child.parent()) + " (" + PgNaming.quote(PgChildTable.ID) + ") ON DELETE CASCADE");
+        }
         String position;
         if (child.ordered()) {
             position = PgChildTable.ORD;
@@ -72,7 +92,8 @@ public final class PgDdl {
         for (PgColumn column : child.valueColumns()) {
             columns.add(PgNaming.quote(column.name()) + " " + column.sqlType());
         }
-        columns.add("PRIMARY KEY (" + PgNaming.quote(PgChildTable.OWNER) + ", " + PgNaming.quote(position) + ")");
+        String scope = child.nested() ? PgChildTable.PARENT : PgChildTable.OWNER;
+        columns.add("PRIMARY KEY (" + PgNaming.quote(scope) + ", " + PgNaming.quote(position) + ")");
         return "CREATE TABLE IF NOT EXISTS " + PgNaming.quote(child.name()) + " (" + columns + ")";
     }
 }

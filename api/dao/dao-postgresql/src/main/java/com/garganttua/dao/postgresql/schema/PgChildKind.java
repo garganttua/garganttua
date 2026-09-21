@@ -9,6 +9,13 @@ public enum PgChildKind {
     /** A list/set of flattenable POJOs: {@code (_owner, _ord, <flattened element columns>)}. */
     POJO_COLLECTION,
 
+    /**
+     * A list/set whose elements are THEMSELVES collections or maps ({@code List<List<String>>}):
+     * {@code (_id, _owner, _ord, _present)}, the element's content living in the one child table whose
+     * field path is empty.
+     */
+    NESTED_COLLECTION,
+
     /** A map with scalar keys: {@code (_owner, _key, value)} or {@code (_owner, _key, <flattened>)}. */
     MAP,
 

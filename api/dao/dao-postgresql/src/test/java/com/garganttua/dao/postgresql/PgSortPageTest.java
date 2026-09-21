@@ -86,9 +86,9 @@ class PgSortPageTest {
         }
 
         @Test
-        @DisplayName("a JSONB value, a path inside one, a map entry or a missing name is refused")
+        @DisplayName("a JSONB value, a path inside one or a missing name is refused")
         void refused() {
-            for (String name : List.of("node", "node.label", "stock.apple", " ")) {
+            for (String name : List.of("node", "node.label", " ")) {
                 assertThrows(ApiException.class, () -> query(null, name, SortDirection.asc),
                         () -> "sorting on '" + name + "' must be refused");
             }
@@ -107,6 +107,17 @@ class PgSortPageTest {
             // a [red, blue], b [blue], c none, d [green], e [null]
             assertEquals(List.of("c", "e", "a", "b", "d"), all("tags", SortDirection.asc));
             assertEquals(List.of("a", "d", "b", "c", "e"), all("tags", SortDirection.desc));
+        }
+
+        @Test
+        @DisplayName("a map entry is a plain path for MongoDB: its value, missing where the key is absent")
+        void mapEntry() throws Exception {
+            // stock.apple: a 3, b 7, c / d / e without the key (missing: first ascending, last descending)
+            assertEquals(List.of("c", "d", "e", "a", "b"), all("stock.apple", SortDirection.asc));
+            assertEquals(List.of("b", "a", "c", "d", "e"), all("stock.apple", SortDirection.desc));
+            assertEquals(List.of("b", "a", "c", "d", "e"), all("stock.pear", SortDirection.desc));
+            assertFalse(query(null, "stock.apple", SortDirection.asc).orderBy().contains("apple"),
+                    "the key is filter text: it reaches the SQL hex-encoded, never as written");
         }
 
         @Test

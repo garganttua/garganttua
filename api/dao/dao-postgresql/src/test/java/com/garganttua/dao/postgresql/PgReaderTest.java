@@ -159,6 +159,26 @@ class PgReaderTest {
         private Point location;
     }
 
+    public static class ShopLine {
+        private String sku;
+    }
+
+    public static class ShopOrder {
+        private String ref;
+        private List<String> tags;
+        private List<ShopLine> lines;
+    }
+
+    public static class Shop {
+        private String uuid;
+        private List<ShopOrder> orders;
+    }
+
+    public static class Grid {
+        private String uuid;
+        private List<List<Integer>> rows;
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private Connection connection;
@@ -607,6 +627,68 @@ class PgReaderTest {
             PgTable table = ranked();
             assertThrows(ApiException.class, () -> reader(table, Ranked.class)
                     .find(connection, new PgQuery("TRUE", List.of(), "", -1, null, null)));
+        }
+    }
+
+    @Nested
+    @DisplayName("nested child tables")
+    class NestedChildren {
+
+        @Test
+        @DisplayName("rebuild each element's collections from the rows whose _parent is its _id, in _ord order")
+        void grandchildrenByParent() throws Exception {
+            PgTable table = model("shops", Shop.class, Map.of());
+            db(table);
+            // Ids chosen so that the two shops' rows interleave: grouping must follow _parent, not row order.
+            exec("INSERT INTO shops (uuid, orders) VALUES ('s1', TRUE), ('s2', TRUE)",
+                    "INSERT INTO shops__orders (_id, _owner, _ord, _present, ref, tags, lines) OVERRIDING SYSTEM VALUE "
+                            + "VALUES (10, 's1', 1, TRUE, 'R2', NULL, TRUE), (11, 's2', 0, TRUE, 'R3', TRUE, NULL), "
+                            + "(12, 's1', 0, TRUE, 'R1', TRUE, TRUE), (13, 's1', 2, NULL, NULL, NULL, NULL)",
+                    "INSERT INTO shops__orders__tags (_owner, _parent, _ord, value) "
+                            + "VALUES ('s1', 12, 1, 'y'), ('s1', 12, 0, 'x')",
+                    "INSERT INTO shops__orders__lines (_owner, _parent, _ord, _present, sku) "
+                            + "VALUES ('s1', 12, 1, TRUE, 'K2'), ('s1', 10, 0, TRUE, 'K3'), ('s1', 12, 0, TRUE, 'K1')");
+            PgQuery byUuid = new PgQuery("TRUE", List.of(), "ORDER BY t.\"uuid\"", null, null, null);
+            List<Object> found = reader(table, Shop.class).find(connection, byUuid);
+
+            Shop s1 = (Shop) found.get(0);
+            assertEquals(3, s1.orders.size());
+            ShopOrder r1 = s1.orders.get(0);
+            assertEquals("R1", r1.ref);
+            assertEquals(List.of("x", "y"), r1.tags, "a grandchild list is ordered by its own _ord");
+            assertEquals(List.of("K1", "K2"), r1.lines.stream().map(l -> l.sku).toList());
+            ShopOrder r2 = s1.orders.get(1);
+            assertNull(r2.tags, "presence NULL on the parent element: the nested list was null");
+            assertEquals(List.of("K3"), r2.lines.stream().map(l -> l.sku).toList());
+            assertNull(s1.orders.get(2), "a null element holds nothing");
+            ShopOrder r3 = ((Shop) found.get(1)).orders.get(0);
+            assertEquals(List.of(), r3.tags, "presence TRUE and no rows: the nested list was empty");
+            assertNull(r3.lines);
+        }
+
+        @Test
+        @DisplayName("rebuild a list of lists from the table holding the element itself")
+        void listOfLists() throws Exception {
+            PgTable table = model("grids", Grid.class, Map.of());
+            db(table);
+            exec("INSERT INTO grids (uuid, rows) VALUES ('g1', TRUE)",
+                    "INSERT INTO grids__rows (_id, _owner, _ord, _present) OVERRIDING SYSTEM VALUE "
+                            + "VALUES (1, 'g1', 0, TRUE), (2, 'g1', 1, TRUE), (3, 'g1', 2, NULL)",
+                    "INSERT INTO grids__rows___e (_owner, _parent, _ord, value) VALUES ('g1', 1, 1, 2), ('g1', 1, 0, 1)");
+            Grid g = only(reader(table, Grid.class).find(connection, PgQuery.all()), Grid.class);
+            assertEquals(java.util.Arrays.asList(List.of(1, 2), List.of(), null), g.rows,
+                    "inner lists in order; present without rows is empty; absent is null");
+        }
+
+        @Test
+        @DisplayName("read every table of the tree with the page's ROOT ids, one statement per table")
+        void selectByRootIds() {
+            PgTable table = model("shops", Shop.class, Map.of());
+            assertEquals("SELECT \"_parent\", \"_ord\", \"_present\", \"sku\" FROM \"shops__orders__lines\" "
+                    + "WHERE \"_owner\" = ANY(?) ORDER BY \"_parent\", \"_ord\"",
+                    PgChildLoader.selectSql(table.child("orders.lines").orElseThrow()));
+            assertTrue(PgChildLoader.selectSql(table.child("orders").orElseThrow()).startsWith("SELECT \"_id\", \"_owner\""),
+                    "a table with children selects the id its children reference");
         }
     }
 

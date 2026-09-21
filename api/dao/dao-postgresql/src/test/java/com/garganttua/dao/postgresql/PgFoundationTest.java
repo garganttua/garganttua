@@ -11,6 +11,7 @@ import java.sql.Statement;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -104,6 +105,64 @@ class PgFoundationTest {
                 try (ResultSet r = s.executeQuery("SELECT count(*) FROM \"orders__labels\"")) {
                     r.next();
                     assertEquals(0, r.getInt(1), "a delete must not leave orphan collection rows");
+                }
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("nested DDL")
+    class NestedDdl {
+
+        @Test
+        @DisplayName("creates tables three levels deep, and a root delete cascades through all of them")
+        void nestedTablesCascade() throws Exception {
+            PgTable shops = PgSchemaModel.of("shops", IClass.getClass(PgSchemaModelTest.Shop.class), "uuid", Map.of());
+            DataSource db = PgTestDatabase.freshDatabase();
+            try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
+                for (String ddl : PgDdl.create(shops)) {
+                    s.execute(ddl);
+                }
+                s.execute("INSERT INTO \"shops\" (\"uuid\") VALUES ('s1')");
+                long order;
+                try (ResultSet r = s.executeQuery("INSERT INTO \"shops__orders\" (\"_owner\", \"_ord\") "
+                        + "VALUES ('s1', 0) RETURNING \"_id\"")) {
+                    r.next();
+                    order = r.getLong(1);
+                }
+                long line;
+                try (ResultSet r = s.executeQuery("INSERT INTO \"shops__orders__lines\" (\"_owner\", \"_parent\", \"_ord\", \"sku\") "
+                        + "VALUES ('s1', " + order + ", 0, 'K1') RETURNING \"_id\"")) {
+                    r.next();
+                    line = r.getLong(1);
+                }
+                s.execute("INSERT INTO \"shops__orders__lines__tags\" (\"_owner\", \"_parent\", \"_ord\", \"value\") "
+                        + "VALUES ('s1', " + line + ", 0, 'red')");
+
+                s.execute("DELETE FROM \"shops\" WHERE \"uuid\" = 's1'");
+
+                for (String table : List.of("shops__orders", "shops__orders__lines", "shops__orders__lines__tags")) {
+                    try (ResultSet r = s.executeQuery("SELECT count(*) FROM \"" + table + "\"")) {
+                        r.next();
+                        assertEquals(0, r.getInt(1), () -> "a root delete must leave nothing in " + table);
+                    }
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("creates the table of an element that is itself a collection")
+        void collectionOfCollections() throws Exception {
+            PgTable grids = PgSchemaModel.of("grids", IClass.getClass(PgSchemaModelTest.Grid.class), "uuid", Map.of());
+            DataSource db = PgTestDatabase.freshDatabase();
+            try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
+                for (String ddl : PgDdl.create(grids)) {
+                    s.execute(ddl);
+                }
+                for (var child : grids.allChildren()) {
+                    try (ResultSet r = s.executeQuery("SELECT count(*) FROM " + PgNaming.quote(child.name()))) {
+                        assertTrue(r.next(), () -> "missing " + child.name());
+                    }
                 }
             }
         }
