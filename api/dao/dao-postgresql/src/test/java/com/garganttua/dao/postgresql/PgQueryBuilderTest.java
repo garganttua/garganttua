@@ -116,16 +116,33 @@ class PgQueryBuilderTest {
         }
 
         @Test
-        @DisplayName("\"42\" against an INTEGER column binds 42 — transports send numbers as strings")
+        @DisplayName("\"42\" against an INTEGER column matches nothing, as on MongoDB: a string is not a number")
         void stringAgainstNumber() throws Exception {
-            assertMatches(field("total", "$eq", "42"), "b");
-            assertMatches(field("total", "$gt", "9"), "a", "b");
+            assertMatches(field("total", "$eq", "42"));
+            assertMatches(field("total", "$gt", "9"));
+            assertMatches(field("total", "$ne", "42"), "a", "b", "c", "d", "e");
+            assertMatches(listed("total", "$in", "42", 5), "d");
         }
 
         @Test
-        @DisplayName("a value that is not a number, against a numeric column, is an error — not an empty result")
-        void notANumber() {
-            assertThrows(ApiException.class, () -> match(field("total", "$eq", "many")));
+        @DisplayName("a value that is not a number, against a numeric column, matches nothing and does not fail")
+        void notANumber() throws Exception {
+            assertMatches(field("total", "$eq", "many"));
+            assertMatches(field("total", "$eq", true));
+        }
+
+        @Test
+        @DisplayName("numbers compare exactly, never narrowed to the column: 7.5 is not 7")
+        void exactNumbers() throws Exception {
+            assertMatches(field("total", "$eq", 7.5));
+            assertMatches(field("total", "$gte", 6.5), "a", "b", "e");
+            assertMatches(field("total", "$lt", 4_294_967_312L), "a", "b", "d", "e");
+        }
+
+        @Test
+        @DisplayName("text orders by code point (COLLATE \"C\"): uppercase before lowercase")
+        void codePointOrder() throws Exception {
+            assertMatches(field("name", "$gt", "B"), "b", "c", "e");
         }
 
         @Test
@@ -235,7 +252,7 @@ class PgQueryBuilderTest {
             assertMatches(field("lines.sku", "$eq", "A1"), "a", "b");
             assertMatches(field("lines.sku", "$ne", "A1"), "c", "d", "e");
             assertMatches(field("lines.qty", "$gt", 3), "a");
-            assertMatches(field("lines.qty", "$gt", "3"), "a");
+            assertMatches(field("lines.qty", "$gt", "3"));
         }
 
         @Test
@@ -249,8 +266,26 @@ class PgQueryBuilderTest {
         void objectCollection() throws Exception {
             assertMatches(field("lines", "$empty", null), "c", "e");
             assertMatches(field("lines", "$ne", null), "a", "b", "d");
-            ApiException e = assertThrows(ApiException.class, () -> match(field("lines", "$eq", "A1")));
-            assertTrue(e.getMessage().contains("lines.<field>"), () -> "should point to a field: " + e.getMessage());
+            // An element that is an object never equals a scalar: nothing matches, everything differs.
+            assertMatches(field("lines", "$eq", "A1"));
+            assertMatches(field("lines", "$ne", "A1"), "a", "b", "c", "d", "e");
+        }
+
+        @Test
+        @DisplayName("a LIST value is an exact, ordered array match; an absent collection matches none")
+        void wholeArray() throws Exception {
+            assertMatches(field("tags", "$eq", List.of("red", "blue")), "a");
+            assertMatches(field("tags", "$eq", List.of("blue", "red")));
+            assertMatches(field("tags", "$eq", List.of("blue")), "b");
+            assertMatches(field("tags", "$eq", List.of()));
+            assertMatches(field("tags", "$ne", List.of("blue")), "a", "c", "d", "e");
+        }
+
+        @Test
+        @DisplayName("a value of another type than the elements never matches an element")
+        void mistypedElement() throws Exception {
+            assertMatches(field("lines.qty", "$eq", "2"));
+            assertMatches(field("tags", "$ne", 5), "a", "b", "c", "d", "e");
         }
 
         @Test
@@ -275,9 +310,10 @@ class PgQueryBuilderTest {
         }
 
         @Test
-        @DisplayName("comparing an embedded POJO to a value is refused")
-        void pojoValue() {
-            assertThrows(ApiException.class, () -> match(field("address", "$eq", "Paris")));
+        @DisplayName("an embedded POJO never equals a scalar value")
+        void pojoValue() throws Exception {
+            assertMatches(field("address", "$eq", "Paris"));
+            assertMatches(field("address", "$ne", "Paris"), "a", "b", "c", "d", "e");
         }
 
         @Test
@@ -379,19 +415,20 @@ class PgQueryBuilderTest {
     class Safety {
 
         @Test
-        @DisplayName("an unknown field is refused, naming the field and the domain")
-        void unknownField() {
-            ApiException e = assertThrows(ApiException.class, () -> match(field("nope", "$eq", "x")));
-            assertTrue(e.getMessage().contains("'nope'") && e.getMessage().contains("'items'"),
-                    () -> "message should name the field and the domain: " + e.getMessage());
+        @DisplayName("an unknown field is absent from every row, as on MongoDB: $eq x none, $eq null all")
+        void unknownField() throws Exception {
+            assertMatches(field("nope", "$eq", "x"));
+            assertMatches(field("nope", "$eq", null), "a", "b", "c", "d", "e");
+            assertMatches(field("address.street", "$ne", "x"), "a", "b", "c", "d", "e");
         }
 
         @Test
-        @DisplayName("SQL in a FIELD NAME never reaches SQL: it is an unknown field")
-        void injectionAsFieldName() {
-            assertThrows(ApiException.class,
-                    () -> match(field("name\" = \"name\" OR 1=1 --", "$eq", "x")));
-            assertThrows(ApiException.class, () -> match(field("node') OR 1=1 --", "$eq", "x")));
+        @DisplayName("SQL in a FIELD NAME never reaches SQL: it is an unknown field, hence absent")
+        void injectionAsFieldName() throws Exception {
+            String hostile = "name\" = \"name\" OR 1=1 --";
+            assertMatches(field(hostile, "$eq", "x"));
+            assertFalse(where(field(hostile, "$eq", "x")).contains("OR 1=1"), "the field name leaked into SQL");
+            assertMatches(field("node') OR 1=1 --", "$eq", "x"));
         }
 
         @Test

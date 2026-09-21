@@ -51,6 +51,13 @@ class ParityComparisonTest {
         int rank;
     }
 
+    /** Special doubles live in their own domain: see {@link SpecialDoubles}. */
+    public static class Floating {
+        String uuid;
+        Double score;
+        Integer age;
+    }
+
     /** BigDecimal lives in its own domain: see {@link Decimals}. */
     public static class Priced {
         String uuid;
@@ -60,6 +67,7 @@ class ParityComparisonTest {
     private static final String ITEMS = "items";
     private static final String EMPTIES = "empties";
     private static final String PRICED = "priced";
+    private static final String FLOATS = "floats";
 
     private static final String REF_A = "0b8f1c9e-0000-4000-8000-00000000000a";
     private static final String REF_B = "0b8f1c9e-0000-4000-8000-00000000000b";
@@ -71,7 +79,7 @@ class ParityComparisonTest {
     static void seed() {
         com.garganttua.core.bootstrap.dsl.Bootstrap.builder();
         h = ParityHarness.of(Domain.of(ITEMS, Item.class), Domain.of(EMPTIES, Item.class),
-                Domain.of(PRICED, Priced.class));
+                Domain.of(PRICED, Priced.class), Domain.of(FLOATS, Floating.class));
         h.save(ITEMS,
                 item("i1", "alice", 18, 18L, 18.0, true, Color.RED, "2024-01-01T00:00:00Z", REF_A, 18),
                 item("i2", "Bob", 30, 5_000_000_000L, 18.5, false, Color.GREEN, "2024-06-01T12:00:00Z", REF_B, 30),
@@ -81,6 +89,17 @@ class ParityComparisonTest {
                 item("i6", "Zed", 18, 20L, 30.25, true, Color.GREEN, "2024-01-01T00:00:00.001Z", REF_B, 18));
         h.save(PRICED, priced("p1", "10.50"), priced("p2", "10.5"), priced("p3", "9.99"), priced("p4", "100"),
                 priced("p5", null));
+        h.save(FLOATS, floating("f1", Double.NaN, 1), floating("f2", Double.POSITIVE_INFINITY, 2),
+                floating("f3", Double.NEGATIVE_INFINITY, 3), floating("f4", 1.5, null),
+                floating("f5", null, 5), floating("f6", 9_007_199_254_740_992.0, 6), floating("f7", -0.0, 7));
+    }
+
+    private static Floating floating(String uuid, Double score, Integer age) {
+        Floating f = new Floating();
+        f.uuid = uuid;
+        f.score = score;
+        f.age = age;
+        return f;
     }
 
     private static Item item(String uuid, String name, Integer age, Long big, Double score, Boolean active,
@@ -641,6 +660,67 @@ class ParityComparisonTest {
         @DisplayName("a non-numeric String against a number field on an empty collection")
         void emptyCollectionGarbage() {
             ParityHarness.assertSame("empty age $eq 'abc'", h.find(EMPTIES, field("age", "$eq", "abc")), false);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("NaN, infinities and doubles no long fits")
+    class SpecialDoubles {
+
+        private void floats(String what, IFilter filter) {
+            ParityHarness.assertSame(what, h.find(FLOATS, filter), false);
+        }
+
+        @Test
+        @DisplayName("NaN as the value: equal to NaN only, and no bound")
+        void nanValue() {
+            floats("score $eq NaN", field("score", "$eq", Double.NaN));
+            floats("score $ne NaN", field("score", "$ne", Double.NaN));
+            floats("score $gt NaN", field("score", "$gt", Double.NaN));
+            floats("score $gte NaN", field("score", "$gte", Double.NaN));
+            floats("score $lt NaN", field("score", "$lt", Double.NaN));
+            floats("score $lte NaN", field("score", "$lte", Double.NaN));
+            floats("score $in [NaN, 1.5]", listed("score", "$in", Double.NaN, 1.5));
+        }
+
+        @Test
+        @DisplayName("a stored NaN against ordinary bounds")
+        void storedNan() {
+            floats("score $gt 0", field("score", "$gt", 0));
+            floats("score $gte -Infinity", field("score", "$gte", Double.NEGATIVE_INFINITY));
+            floats("score $lt 2", field("score", "$lt", 2));
+            floats("score $lte +Infinity", field("score", "$lte", Double.POSITIVE_INFINITY));
+            floats("score $nin [1.5]", listed("score", "$nin", 1.5));
+        }
+
+        @Test
+        @DisplayName("-0.0 equals 0, infinities compare as numbers")
+        void zeroAndInfinities() {
+            floats("score $eq 0", field("score", "$eq", 0));
+            floats("score $eq +Infinity", field("score", "$eq", Double.POSITIVE_INFINITY));
+            floats("score $gt 1e308", field("score", "$gt", 1e308));
+        }
+
+        @Test
+        @DisplayName("NaN and infinities against an integer field")
+        void specialsOnInteger() {
+            floats("age $eq NaN", field("age", "$eq", Double.NaN));
+            floats("age $ne NaN", field("age", "$ne", Double.NaN));
+            floats("age $lt +Infinity", field("age", "$lt", Double.POSITIVE_INFINITY));
+            floats("age $gt -Infinity", field("age", "$gt", Double.NEGATIVE_INFINITY));
+            floats("age $gte NaN", field("age", "$gte", Double.NaN));
+        }
+
+        @Test
+        @DisplayName("a long no double represents (2^53 + 1) against a double field")
+        void longBeyondDoubles() {
+            floats("score $eq 2^53+1", field("score", "$eq", 9_007_199_254_740_993L));
+            floats("score $gt 2^53+1", field("score", "$gt", 9_007_199_254_740_993L));
+            floats("score $lt 2^53+1", field("score", "$lt", 9_007_199_254_740_993L));
+            floats("score $lte 2^53-1", field("score", "$lte", 9_007_199_254_740_991L));
+            floats("score $gte 2^53", field("score", "$gte", 9_007_199_254_740_992L));
         }
     }
 }

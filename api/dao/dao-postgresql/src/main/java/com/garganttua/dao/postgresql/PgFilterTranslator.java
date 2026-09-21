@@ -20,7 +20,9 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * validation, the same error messages — so a filter that works on one store works on the other and
  * a filter one store refuses, the other refuses too. What it adds is the relational part: a field
  * may live in a child table (compared through {@code EXISTS}), in a flattened POJO or inside a JSONB
- * document; see {@link PgFieldResolver}.
+ * document; see {@link PgFieldResolver}. A field the model does not know is ABSENT, as a field no
+ * document holds is on MongoDB — under every operator and inside every logical operator — and never
+ * reaches the SQL text.
  * </p>
  *
  * <p>
@@ -53,7 +55,7 @@ final class PgFilterTranslator {
         this.table = table;
         this.resolver = new PgFieldResolver(table);
         this.scalars = new PgScalarPredicates(table.name());
-        this.elements = new PgElementPredicates(table.name(), scalars);
+        this.elements = new PgElementPredicates(scalars);
     }
 
     /**
@@ -61,7 +63,7 @@ final class PgFilterTranslator {
      *
      * @param filter the filter, possibly null (every row matches)
      * @return the {@code WHERE} expression and its values
-     * @throws ApiException when the filter is malformed or names an unknown field
+     * @throws ApiException when the filter is malformed (an unknown FIELD is not an error: it is absent)
      */
     PgSql translate(IFilter filter) throws ApiException {
         return translate(filter, false);
@@ -130,30 +132,36 @@ final class PgFilterTranslator {
         return switch (field) {
             case PgField.Scalar s -> scalars.on(s.operand(), condition);
             case PgField.Element e -> elements.on(e, condition);
-            case PgField.Pojo p -> pojo(p, condition);
+            case PgField.Opaque o -> opaque(o, condition);
         };
     }
 
     /**
-     * An embedded POJO has no single value to compare. It is absent — read back as null — exactly
-     * when every one of its flattened columns is NULL, so presence is all a filter can ask of it.
+     * Something without a comparable value: an embedded object, a whole collection of objects, a map,
+     * a reference (a DBRef sub-document on MongoDB), or a path no document holds. A scalar never
+     * equals an object, so MongoDB answers from presence alone: the "missing value" answer where it
+     * is absent (or null), the "different value" answer where it is there.
      */
-    private PgSql pojo(PgField.Pojo pojo, PgCondition c) throws ApiException {
-        List<PgSql> nulls = new ArrayList<>();
-        for (PgColumn column : pojo.columns()) {
-            nulls.add(scalars.isNull(PgOperand.of(PgQuery.ALIAS, column)));
+    private static PgSql opaque(PgField.Opaque o, PgCondition c) throws ApiException {
+        return switch (c.op()) {
+            case "$empty" -> o.absent();
+            case "$eq", "$gte", "$lte" -> c.value() == null ? o.nullish() : PgSql.FALSE;
+            case "$ne" -> c.value() == null ? PgSql.not(o.nullish()) : PgSql.TRUE;
+            case "$in" -> c.listsNull() ? o.nullish() : PgSql.FALSE;
+            case "$nin" -> c.listsNull() ? PgSql.not(o.nullish()) : PgSql.TRUE;
+            case "$regex" -> requireValue(c, "$regex filter on field '" + c.field() + "' requires a pattern");
+            case "$geoWithin", "$geoWithinSphere" -> requireValue(c, "$geoWithin filter on field '" + c.field()
+                    + "' requires a GeoJSON geometry value");
+            default -> PgSql.FALSE;
+        };
+    }
+
+    /** MongoFilterConverter fails on a missing operand whatever the field: so must this. */
+    private static PgSql requireValue(PgCondition c, String message) throws ApiException {
+        if (c.value() == null) {
+            throw new ApiException(message);
         }
-        PgSql absent = PgSql.join(" AND ", nulls).wrap("(", ")");
-        boolean askAbsent = "$empty".equals(c.op()) || "$eq".equals(c.op()) && c.value() == null;
-        if (askAbsent) {
-            return absent;
-        }
-        if ("$ne".equals(c.op()) && c.value() == null) {
-            return absent.wrap("NOT ", "");
-        }
-        throw new ApiException("Field '" + c.field() + "' of domain '" + table.name() + "' is an embedded object:"
-                + " only $empty, $eq null and $ne null apply to it; compare one of its fields ('"
-                + c.field() + ".<field>') instead");
+        return PgSql.FALSE;
     }
 
     private PgSql text(PgCondition c) throws ApiException {

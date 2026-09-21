@@ -37,7 +37,8 @@ record PgCondition(String op, Object value, List<Object> values, String field) {
     /**
      * Whether this comparison is satisfied by a MISSING value — Mongo's {@code {f: null}},
      * {@code {f: {$in: [null, …]}}}, {@code {f: {$gte: null}}} all match documents without {@code f}.
-     * On a collection, that means an owner with no matching element at all also matches.
+     * On a collection, the path must really be missing — the collection absent, or the map key
+     * absent — or an element null: an EMPTY array is present, and does not match.
      *
      * @return whether a missing value matches
      */
