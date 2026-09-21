@@ -27,10 +27,8 @@ import com.garganttua.dao.postgresql.schema.PgColumnKind;
  * </p>
  *
  * <p>
- * {@code $regex} uses PostgreSQL's POSIX {@code ~}, not PCRE: the common syntax (anchors, classes,
- * quantifiers, alternation, {@code \d}, {@code \w}, {@code \s}) behaves the same, but possessive
- * quantifiers, named groups and recursion do not exist, and embedded options such as {@code (?i)}
- * are only accepted at the very start of the pattern. {@code $geoWithin}/{@code $geoWithinSphere} use PostGIS
+ * {@code $regex} is delegated to {@link PgRegex}: the PCRE pattern is translated to an equivalent
+ * PostgreSQL pattern, and matches strings only, as in MongoDB. {@code $geoWithin}/{@code $geoWithinSphere} use PostGIS
  * {@code ST_Within} in SRID 4326 — a planar test in degrees, where MongoDB's 2dsphere index tests
  * on the sphere; results differ only for shapes large enough for the curvature to matter.
  * </p>
@@ -101,14 +99,7 @@ final class PgScalarPredicates {
     }
 
     private PgSql regex(PgOperand o, PgCondition c) throws ApiException {
-        if (c.value() == null) {
-            throw new ApiException("$regex filter on field '" + c.field() + "' requires a pattern");
-        }
-        if (!o.isText()) {
-            throw new ApiException("$regex filter on field '" + c.field() + "' of domain '" + domain
-                    + "': the field is " + o.column().sqlType() + ", and a regular expression only matches text");
-        }
-        return o.expr(false).then(" ~ ").then(bind(o, false, c.value().toString(), c.field()));
+        return PgRegex.on(o, c, domain);
     }
 
     /**

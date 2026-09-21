@@ -7,10 +7,7 @@ import java.util.Set;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
 import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
 
 /**
  * Translates an {@link IFilter} tree into a {@code WHERE} expression over the main table {@code t}.
@@ -34,11 +31,9 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * </p>
  *
  * <p>
- * <b>{@code $text}</b> has no text index to consult: it matches
- * {@code to_tsvector('simple', <every TEXT column of the main table>)} against
- * {@code plainto_tsquery('simple', value)} — every word of the search must occur (MongoDB matches ANY
- * word), with no stemming and no stop words (MongoDB stems per language), and child tables and JSONB
- * documents are not searched. Like MongoDB, it ignores the field the filter names.
+ * <b>{@code $text}</b> is delegated to {@link PgTextSearch}: MongoDB's search over every string of
+ * the entity, with its restrictions (one {@code $text}, never under {@code $or} or {@code $nor}).
+ * Like MongoDB, it ignores the field the filter names.
  * </p>
  */
 final class PgFilterTranslator {
@@ -66,6 +61,7 @@ final class PgFilterTranslator {
      * @throws ApiException when the filter is malformed (an unknown FIELD is not an error: it is absent)
      */
     PgSql translate(IFilter filter) throws ApiException {
+        PgTextSearch.validate(filter);
         return translate(filter, false);
     }
 
@@ -165,17 +161,6 @@ final class PgFilterTranslator {
     }
 
     private PgSql text(PgCondition c) throws ApiException {
-        if (c.value() == null) {
-            throw new ApiException("$text filter requires a search string");
-        }
-        List<PgColumn> texts = table.columns().stream()
-                .filter(col -> col.kind() == PgColumnKind.SCALAR && PgTypes.TEXT.equals(col.sqlType())).toList();
-        if (texts.isEmpty()) {
-            throw new ApiException("$text filter on domain '" + table.name()
-                    + "': the domain has no text field to search");
-        }
-        List<String> columns = texts.stream().map(col -> PgQuery.ALIAS + "." + PgNaming.quote(col.name())).toList();
-        return PgSql.of("to_tsvector('simple', concat_ws(' ', " + String.join(", ", columns)
-                + ")) @@ plainto_tsquery('simple', ?)", PgValues.toJdbc(texts.get(0), c.value().toString()));
+        return PgTextSearch.predicate(table, c.value());
     }
 }
