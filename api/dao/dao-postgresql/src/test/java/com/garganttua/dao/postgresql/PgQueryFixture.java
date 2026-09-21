@@ -108,10 +108,16 @@ final class PgQueryFixture {
             row(c, "c", "Carol", null, null, null, null, null, "{\"label\":\"x\",\"weight\":\"heavy\"}");
             row(c, "d", null, 5, "ACTIVE", day(4), "Paris", null, null);
             row(c, "e", INJECTED_NAME, 7, "ACTIVE", day(5), "Nice", 6000, null);
+            // Presence bits: a and b hold every structure, c none, d all but stock, e an address and
+            // tags only (its tags are [null]: present, holding one null element).
+            present(c, "address", "a", "b", "d", "e");
+            present(c, "tags", "a", "b", "d", "e");
+            present(c, "lines", "a", "b", "d");
+            present(c, "stock", "a", "b");
             child(c, "INSERT INTO \"items__tags\" VALUES (?, ?, ?)", "a", 0, "red", "a", 1, "blue", "b", 0, "blue",
                     "d", 0, "green", "e", 0, null);
-            child(c, "INSERT INTO \"items__lines\" VALUES (?, ?, ?, ?)", "a", 0, "A1", 2, "a", 1, "B2", 5,
-                    "b", 0, "A1", 1, "d", 0, "C3", null);
+            child(c, "INSERT INTO \"items__lines\" VALUES (?, ?, ?, ?, ?)", "a", 0, true, "A1", 2, "a", 1, true, "B2", 5,
+                    "b", 0, true, "A1", 1, "d", 0, true, "C3", null);
             child(c, "INSERT INTO \"items__stock\" VALUES (?, ?, ?)", "a", "apple", 3, "b", "apple", 7,
                     "b", "pear", 1);
         }
@@ -132,6 +138,15 @@ final class PgQueryFixture {
             for (int i = 0; i < values.length; i++) {
                 p.setObject(i + 1, values[i]);
             }
+            p.executeUpdate();
+        }
+    }
+
+    /** Sets the presence bit of a structure (a POJO, a collection, a map) on the listed rows. */
+    private static void present(Connection c, String column, String... ids) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement("UPDATE \"items\" SET \"" + column + "\" = TRUE"
+                + " WHERE \"uuid\" = ANY (?)")) {
+            p.setArray(1, c.createArrayOf("text", ids));
             p.executeUpdate();
         }
     }
