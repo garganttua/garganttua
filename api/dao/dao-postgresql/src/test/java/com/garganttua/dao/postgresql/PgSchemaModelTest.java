@@ -56,7 +56,7 @@ class PgSchemaModelTest {
 
     /** A POJO that contains itself: no finite set of columns can hold it. */
     public static class Node {
-        private String label;
+        private String label = "root";
         private Node self;
     }
 
