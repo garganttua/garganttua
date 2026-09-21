@@ -13,5 +13,6 @@
 
 	<modules>
 		<module>dao-mongodb</module>
+		<module>dao-postgresql</module>
 	</modules>
 </project>

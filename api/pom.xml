@@ -59,6 +59,10 @@
 		<slf4j.version>2.0.13</slf4j.version>
 		<json-path.version>2.9.0</json-path.version>
 		<mongodb-driver.version>5.1.1</mongodb-driver.version>
+		<postgresql-driver.version>42.7.4</postgresql-driver.version>
+		<hikaricp.version>5.1.0</hikaricp.version>
+		<embedded-postgres.version>2.1.0</embedded-postgres.version>
+		<embedded-postgres-binaries.version>17.2.0</embedded-postgres-binaries.version>
 		<javalin.version>6.6.0</javalin.version>
 
 		<!-- Standalone deps reintroduced directly (no binding wrapper). -->
@@ -115,12 +119,22 @@
 			</dependency>
 			<dependency>
 				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-dao-postgresql</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
 				<artifactId>garganttua-api-starter-bootstrap</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.garganttua</groupId>
 				<artifactId>garganttua-api-starter-mongodb</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-starter-postgresql</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
@@ -254,6 +268,27 @@
 				<groupId>com.garganttua</groupId>
 				<artifactId>garganttua-api-binding-mongodb</artifactId>
 				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-binding-postgresql</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<!-- A REAL PostgreSQL for the DAO tests, run as a child process from Maven-fetched
+			     binaries: no Docker, no local install. Tests prove against the engine, not a fake. -->
+			<dependency>
+				<groupId>io.zonky.test</groupId>
+				<artifactId>embedded-postgres</artifactId>
+				<version>${embedded-postgres.version}</version>
+			</dependency>
+			<!-- Pins the PostgreSQL binaries embedded-postgres pulls for EVERY platform (Linux,
+			     macOS, Windows, Alpine) to one version — without it they default to 14.x. -->
+			<dependency>
+				<groupId>io.zonky.test.postgres</groupId>
+				<artifactId>embedded-postgres-binaries-bom</artifactId>
+				<version>${embedded-postgres-binaries.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
 			</dependency>
 			<dependency>
 				<groupId>com.garganttua</groupId>

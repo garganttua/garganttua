@@ -31,6 +31,7 @@
 		<!-- Code-bearing starters: the bootstrap runner + auto-config add-ons. -->
 		<module>starter-bootstrap</module>
 		<module>starter-mongodb</module>
+		<module>starter-postgresql</module>
 		<module>starter-javalin</module>
 		<!-- Aggregators: compose the above into ready-to-use stacks. -->
 		<module>starter-quickstart</module>

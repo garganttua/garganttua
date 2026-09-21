@@ -17,6 +17,7 @@
 		<module>binding-slf4j</module>
 		<module>binding-jsonpath</module>
 		<module>binding-mongodb</module>
+		<module>binding-postgresql</module>
 		<module>binding-javalin</module>
 	</modules>
 </project>
