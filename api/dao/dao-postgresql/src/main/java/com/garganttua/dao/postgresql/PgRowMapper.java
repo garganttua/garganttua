@@ -61,7 +61,19 @@ final class PgRowMapper {
     }
 
     /**
-     * A new element built from consecutive cells, or null when the element itself was null.
+     * An element read from a child row, with the presence bits of the structures it holds.
+     *
+     * @param value    the element, or null when the element itself was null
+     * @param presence the presence cells of the row by field path relative to the element — the
+     *                 element's own bit under the empty path — so the collections it holds, read from
+     *                 the tables below, can tell "empty" from "absent"
+     */
+    record Element(Object value, Map<List<String>, Boolean> presence) {
+    }
+
+    /**
+     * A new element built from consecutive cells — null when the element itself was null — with the
+     * row's presence bits.
      *
      * <p>
      * The element's own presence cell ({@code _present}, empty path) tells a null element from one
@@ -73,21 +85,46 @@ final class PgRowMapper {
      * @param rs         the result set, positioned on the row
      * @param cells      the element's value columns
      * @param firstIndex the 1-based index of the first cell
-     * @return the element, or null
+     * @return the element and its presence bits
      * @throws ApiException when a cell cannot be read or set
      */
-    Object element(IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex) throws ApiException {
+    Element readElement(IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex) throws ApiException {
         Cells read = read(type, rs, cells, firstIndex, new LinkedHashMap<>());
         List<String> self = List.of();
         boolean exists = read.presence().containsKey(self)
                 ? read.presence().get(self) != null
                 : read.values().values().stream().anyMatch(v -> v != null);
         if (!exists) {
-            return null;
+            return new Element(null, read.presence());
         }
         Object element = beans.instantiate(type);
         assign(element, type, read);
-        return element;
+        return new Element(element, read.presence());
+    }
+
+    /**
+     * The presence cells alone of a row — for an element that IS a collection or a map, whose only value
+     * column is its presence bit and whose content lives in the table below.
+     *
+     * @param rs         the result set, positioned on the row
+     * @param cells      the value columns
+     * @param firstIndex the 1-based index of the first cell
+     * @return the presence bits by field path
+     * @throws ApiException when a cell cannot be read
+     */
+    Map<List<String>, Boolean> presence(ResultSet rs, List<PgSelected> cells, int firstIndex) throws ApiException {
+        Map<List<String>, Boolean> presence = new LinkedHashMap<>();
+        for (int i = 0; i < cells.size(); i++) {
+            PgSelected cell = cells.get(i);
+            if (cell.column().kind() == PgColumnKind.PRESENCE) {
+                presence.put(cell.column().fieldPath(), bit(rs, firstIndex + i, cell));
+            }
+        }
+        return presence;
+    }
+
+    private static Boolean bit(ResultSet rs, int index, PgSelected cell) throws ApiException {
+        return (Boolean) PgJdbcDecoder.decode(rs, index, cell.column(), IClass.getClass(Boolean.class), Boolean.class);
     }
 
     /** The decoded cells of one row: values and presence bits, by field path. */
@@ -104,9 +141,7 @@ final class PgRowMapper {
             if (kind == PgColumnKind.COMPOSITION) {
                 references.put(cell.column().dottedPath(), text(rs, firstIndex + i));
             } else if (kind == PgColumnKind.PRESENCE) {
-                presence.put(cell.column().fieldPath(),
-                        (Boolean) PgJdbcDecoder.decode(rs, firstIndex + i, cell.column(),
-                                IClass.getClass(Boolean.class), Boolean.class));
+                presence.put(cell.column().fieldPath(), bit(rs, firstIndex + i, cell));
             } else {
                 values.put(cell.column().fieldPath(), decode(type, rs, firstIndex + i, cell));
             }

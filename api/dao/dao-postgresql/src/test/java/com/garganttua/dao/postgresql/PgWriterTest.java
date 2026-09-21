@@ -162,6 +162,43 @@ class PgWriterTest {
         private org.geojson.Point where;
     }
 
+    public static class ShopLine {
+        private String sku;
+
+        ShopLine() {
+        }
+
+        ShopLine(String sku) {
+            this.sku = sku;
+        }
+    }
+
+    public static class ShopOrder {
+        private String ref;
+        private List<String> tags;
+        private List<ShopLine> lines;
+
+        ShopOrder() {
+        }
+
+        ShopOrder(String ref, List<String> tags, List<ShopLine> lines) {
+            this.ref = ref;
+            this.tags = tags;
+            this.lines = lines;
+        }
+    }
+
+    public static class Shop {
+        private String uuid;
+        private List<ShopOrder> orders;
+    }
+
+    public static class Grid {
+        private String uuid;
+        private List<List<String>> rows;
+        private Map<String, List<ShopLine>> byGenre;
+    }
+
     // --------------------------------------------------------------- helpers
 
     private static PgTable model(String domain, IClass<?> dto, Map<String, String> compositions) {
@@ -645,6 +682,93 @@ class PgWriterTest {
             for (String t : List.of("riches", "riches__tags", "riches__lines", "riches__stock", "riches__scores")) {
                 assertEquals(0, count(db, t), () -> "rollback left rows in " + t);
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("nested collections")
+    class NestedCollections {
+
+        private final PgTable table = model("shops", IClass.getClass(Shop.class), Map.of());
+
+        private Shop shop(String uuid, ShopOrder... orders) {
+            Shop s = new Shop();
+            s.uuid = uuid;
+            s.orders = new ArrayList<>(Arrays.asList(orders));
+            return s;
+        }
+
+        @Test
+        @DisplayName("link each grandchild row to its parent row's _id, with the ROOT id as _owner at every level")
+        void grandchildrenLinked() throws Exception {
+            DataSource db = create(table);
+            save(db, new PgWriter(table, new PgSchemaRegistry()), shop("s1",
+                    new ShopOrder("R1", List.of("x", "y"), List.of(new ShopLine("K1"), new ShopLine("K2"))),
+                    new ShopOrder("R2", null, List.of()),
+                    null));
+
+            assertEquals(List.of(List.of(0, "R1", true, true, true), Arrays.asList(1, "R2", true, null, true),
+                    Arrays.asList(2, null, null, null, null)),
+                    rows(db, "SELECT \"_ord\", \"ref\", \"_present\", \"tags\", \"lines\" FROM \"shops__orders\" "
+                            + "ORDER BY \"_ord\""),
+                    "presence of the element AND of each collection it holds");
+            assertEquals(List.of(List.of("s1", "R1", 0, "K1"), List.of("s1", "R1", 1, "K2")),
+                    rows(db, "SELECT l.\"_owner\", o.\"ref\", l.\"_ord\", l.\"sku\" FROM \"shops__orders__lines\" l "
+                            + "JOIN \"shops__orders\" o ON o.\"_id\" = l.\"_parent\" ORDER BY l.\"_ord\""));
+            assertEquals(List.of(List.of("R1", 0, "x"), List.of("R1", 1, "y")),
+                    rows(db, "SELECT o.\"ref\", t.\"_ord\", t.\"value\" FROM \"shops__orders__tags\" t "
+                            + "JOIN \"shops__orders\" o ON o.\"_id\" = t.\"_parent\" ORDER BY t.\"_ord\""));
+        }
+
+        @Test
+        @DisplayName("replace the whole tree on a second upsert, leaving no orphan at any depth")
+        void upsertReplacesTree() throws Exception {
+            DataSource db = create(table);
+            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            save(db, writer, shop("s1", new ShopOrder("R1", List.of("x"), List.of(new ShopLine("K1")))));
+            save(db, writer, shop("s2", new ShopOrder("R9", List.of("z"), List.of(new ShopLine("K9")))));
+            save(db, writer, shop("s1", new ShopOrder("R2", List.of(), List.of(new ShopLine("K2"), new ShopLine("K3")))));
+
+            assertEquals(List.of(List.of("s1", "R2"), List.of("s2", "R9")),
+                    rows(db, "SELECT \"_owner\", \"ref\" FROM \"shops__orders\" ORDER BY \"_owner\""));
+            assertEquals(List.of(List.of("s1", "K2"), List.of("s1", "K3"), List.of("s2", "K9")),
+                    rows(db, "SELECT \"_owner\", \"sku\" FROM \"shops__orders__lines\" ORDER BY \"_owner\", \"sku\""),
+                    "the first tree's grandchildren are gone, the other entity's are kept");
+            assertEquals(List.of(List.of("s2", "z")), rows(db, "SELECT \"_owner\", \"value\" FROM \"shops__orders__tags\""));
+        }
+
+        @Test
+        @DisplayName("delete the whole tree with the root")
+        void deleteCascadesToGrandchildren() throws Exception {
+            DataSource db = create(table);
+            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            save(db, writer, shop("s1", new ShopOrder("R1", List.of("x"), List.of(new ShopLine("K1")))));
+            remove(db, writer, shop("s1"));
+            for (String t : List.of("shops__orders", "shops__orders__lines", "shops__orders__tags")) {
+                assertEquals(0, count(db, t), () -> "orphan rows left in " + t);
+            }
+        }
+
+        @Test
+        @DisplayName("write an element that IS a collection into the table holding the element itself")
+        void collectionOfCollections() throws Exception {
+            PgTable grids = model("grids", IClass.getClass(Grid.class), Map.of());
+            DataSource db = create(grids);
+            Grid g = new Grid();
+            g.uuid = "g1";
+            g.rows = new ArrayList<>(Arrays.asList(List.of("a", "b"), List.of(), null));
+            g.byGenre = new LinkedHashMap<>();
+            g.byGenre.put("sf", List.of(new ShopLine("Dune")));
+            save(db, new PgWriter(grids, new PgSchemaRegistry()), g);
+
+            assertEquals(List.of(List.of(0, true), List.of(1, true), Arrays.asList(2, null)),
+                    rows(db, "SELECT \"_ord\", \"_present\" FROM \"grids__rows\" ORDER BY \"_ord\""));
+            assertEquals(List.of(List.of(0, 0, "a"), List.of(0, 1, "b")),
+                    rows(db, "SELECT r.\"_ord\", e.\"_ord\", e.\"value\" FROM \"grids__rows___e\" e "
+                            + "JOIN \"grids__rows\" r ON r.\"_id\" = e.\"_parent\" ORDER BY e.\"_ord\""));
+            assertEquals(List.of(List.of("sf", 0, "Dune")),
+                    rows(db, "SELECT m.\"_key\", e.\"_ord\", e.\"sku\" FROM \"grids__byGenre___e\" e "
+                            + "JOIN \"grids__byGenre\" m ON m.\"_id\" = e.\"_parent\""));
         }
     }
 
