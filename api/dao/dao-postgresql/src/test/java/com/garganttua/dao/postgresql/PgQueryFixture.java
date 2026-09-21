@@ -110,7 +110,7 @@ final class PgQueryFixture {
             row(c, "e", INJECTED_NAME, 7, "ACTIVE", day(5), "Nice", 6000, null);
             child(c, "INSERT INTO \"items__tags\" VALUES (?, ?, ?)", "a", 0, "red", "a", 1, "blue", "b", 0, "blue",
                     "d", 0, "green", "e", 0, null);
-            child(c, "INSERT INTO \"items__lines\" VALUES (?, ?, ?, ?)", "a", 0, "A1", 2, "a", 1, "B2", 5,
+            child(c, "INSERT INTO \"items__lines\" VALUES (?, ?, TRUE, ?, ?)", "a", 0, "A1", 2, "a", 1, "B2", 5,
                     "b", 0, "A1", 1, "d", 0, "C3", null);
             child(c, "INSERT INTO \"items__stock\" VALUES (?, ?, ?)", "a", "apple", 3, "b", "apple", 7,
                     "b", "pear", 1);

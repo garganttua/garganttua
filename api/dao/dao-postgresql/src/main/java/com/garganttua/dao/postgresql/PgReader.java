@@ -237,14 +237,14 @@ public final class PgReader {
             throws SQLException, ApiException {
         int index = next;
         if (query.limit() != null) {
-            statement.setInt(index++, nonNegative("limit", query.limit()));
+            statement.setInt(index++, (int) nonNegative("limit", query.limit()));
         }
         if (query.offset() != null) {
-            statement.setInt(index, nonNegative("offset", query.offset()));
+            statement.setLong(index, nonNegative("offset", query.offset()));
         }
     }
 
-    private static int nonNegative(String what, int value) throws ApiException {
+    private static long nonNegative(String what, long value) throws ApiException {
         if (value < 0) {
             throw new ApiException("A page " + what + " cannot be negative (got " + value + ")");
         }

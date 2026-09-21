@@ -520,7 +520,7 @@ class PgReaderTest {
         @DisplayName("apply where, params, order by, limit and offset")
         void paging() throws Exception {
             PgTable table = ranked();
-            PgQuery query = new PgQuery("t.\"rank\" >= ?", List.of(2), "ORDER BY t.\"rank\" DESC", 2, 1, null);
+            PgQuery query = new PgQuery("t.\"rank\" >= ?", List.of(2), "ORDER BY t.\"rank\" DESC", 2, 1L, null);
             List<Object> found = reader(table, Ranked.class).find(connection, query);
             assertEquals(List.of(4, 3), found.stream().map(r -> ((Ranked) r).rank).toList(),
                     "ranks >= 2, descending, skip 1, take 2");
@@ -531,7 +531,7 @@ class PgReaderTest {
         void count() throws Exception {
             PgTable table = ranked();
             PgReader reader = reader(table, Ranked.class);
-            assertEquals(4, reader.count(connection, new PgQuery("t.\"rank\" >= ?", List.of(2), "", 1, 0, null)),
+            assertEquals(4, reader.count(connection, new PgQuery("t.\"rank\" >= ?", List.of(2), "", 1, 0L, null)),
                     "count ignores the page");
             assertEquals(5, reader.count(connection, PgQuery.all()));
         }
