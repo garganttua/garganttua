@@ -10,14 +10,10 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.sort.ISort;
-import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.core.mapper.annotations.FieldMappingRule;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
 import com.garganttua.dao.postgresql.schema.PgTable;
 
 /**
@@ -29,18 +25,14 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * </p>
  * <ul>
  * <li>the filter is translated with MongoDB's null and array semantics ({@link PgFilterTranslator});</li>
- * <li>MongoDB orders missing values FIRST ascending (and last descending); PostgreSQL does the
- * opposite by default, hence the explicit {@code NULLS FIRST} / {@code NULLS LAST};</li>
- * <li>when a page is requested, the id is appended as a last sort key. {@code OFFSET} over an order
- * with ties is not deterministic in PostgreSQL — two requests for consecutive pages could return the
- * same row twice and skip another — while the id is unique, so pages stay disjoint.</li>
+ * <li>the sort follows BSON order — missing first, binary text, NaN below numbers, arrays by their
+ * extreme element, sub-documents field by field, unknown fields as no key ({@link PgSortClause});</li>
+ * <li>when a page is requested, the uuid is appended as a last sort key, so pages over a non-unique
+ * key are stable and complementary; a negative index or size is refused, and the offset is computed
+ * in {@code long} — a page far beyond the data is simply empty;</li>
+ * <li>a projected dotted path ({@code address.city}) projects its HEAD field, as the MongoDB DAO
+ * does: MongoDB then returns the whole sub-document.</li>
  * </ul>
- *
- * <p>
- * Sorting is limited to single-valued main-table columns: a collection has no single value to order
- * by, and a JSONB or geometry column has no order a caller could mean. Text is ordered by the
- * database collation, where MongoDB compares binary code points.
- * </p>
  */
 public final class PgQueryBuilder {
 
@@ -49,6 +41,7 @@ public final class PgQueryBuilder {
     private final PgTable table;
     private final IClass<?> dtoClass;
     private final PgFilterTranslator translator;
+    private final PgSortClause sorts;
 
     /**
      * @param table    the domain's relational shape
@@ -58,6 +51,7 @@ public final class PgQueryBuilder {
         this.table = table;
         this.dtoClass = dtoClass;
         this.translator = new PgFilterTranslator(table);
+        this.sorts = new PgSortClause(table);
     }
 
     /**
@@ -76,8 +70,8 @@ public final class PgQueryBuilder {
         PgSql where = translator.translate(present(filter));
         IPageable page = present(pageable);
         Integer limit = limit(page);
-        Integer offset = offset(page);
-        String orderBy = orderBy(present(sort), limit != null || offset != null);
+        Long offset = offset(page);
+        String orderBy = sorts.orderBy(present(sort), page != null);
         LOG.debug("Query on {}: WHERE {} {} LIMIT {} OFFSET {}", table.name(), where.text(), orderBy, limit, offset);
         return new PgQuery(where.text(), where.params(), orderBy, limit, offset, projection(present(projection)));
     }
@@ -109,55 +103,18 @@ public final class PgQueryBuilder {
         return page.getPageSize() == 0 ? null : page.getPageSize();
     }
 
-    private static Integer offset(IPageable page) throws ApiException {
+    /** {@code index * size} in long arithmetic: an int product would wrap to a negative skip. */
+    private static Long offset(IPageable page) {
         if (page == null || page.getPageSize() == 0 || page.getPageIndex() == 0) {
             return null;
         }
-        try {
-            return Math.multiplyExact(page.getPageIndex(), page.getPageSize());
-        } catch (ArithmeticException e) {
-            throw new ApiException("Invalid page: index " + page.getPageIndex() + " of size " + page.getPageSize()
-                    + " is beyond any addressable row", e);
-        }
-    }
-
-    private String orderBy(ISort sort, boolean paged) throws ApiException {
-        List<String> keys = new ArrayList<>();
-        PgColumn sorted = null;
-        if (sort != null) {
-            sorted = sortColumn(sort.getFieldName());
-            // Same test as MongoDao: anything but asc sorts descending.
-            boolean ascending = sort.getDirection() == SortDirection.asc;
-            keys.add(qualified(sorted) + (ascending ? " ASC NULLS FIRST" : " DESC NULLS LAST"));
-        }
-        if (paged && (sorted == null || sorted.kind() != PgColumnKind.ID)) {
-            keys.add(qualified(table.id()) + " ASC");
-        }
-        return keys.isEmpty() ? "" : "ORDER BY " + String.join(", ", keys);
-    }
-
-    private PgColumn sortColumn(String fieldName) throws ApiException {
-        Optional<PgColumn> column = fieldName == null ? Optional.empty() : table.column(fieldName);
-        if (column.isEmpty()) {
-            throw new ApiException("Cannot sort domain '" + table.name() + "' on '" + fieldName
-                    + "': it is not a single-valued field of the domain (unknown, a collection, or a path"
-                    + " inside a JSON field). Sort on a scalar DTO field path, e.g. 'createdAt' or 'address.city'.");
-        }
-        PgColumnKind kind = column.get().kind();
-        if (kind == PgColumnKind.JSONB || kind == PgColumnKind.IKEY || kind == PgColumnKind.GEOMETRY) {
-            throw new ApiException("Cannot sort domain '" + table.name() + "' on '" + fieldName + "': it is stored as "
-                    + column.get().sqlType() + ", which has no meaningful order. Sort on a scalar field.");
-        }
-        return column.get();
-    }
-
-    private static String qualified(PgColumn column) {
-        return PgQuery.ALIAS + "." + PgNaming.quote(column.name());
+        return (long) page.getPageIndex() * page.getPageSize();
     }
 
     /**
-     * Entity field names to DTO field paths, like {@code MongoDao}: the first segment is translated
-     * through {@code @FieldMappingRule}, the rest of a dotted path is kept.
+     * Entity field names to the DTO fields to load, like {@code MongoDao.applyProjection}: a dotted path
+     * keeps only its first segment (MongoDB then returns the whole sub-document), translated through
+     * {@code @FieldMappingRule}. An unknown name selects nothing — only the identity comes back.
      */
     private List<String> projection(List<String> entityFields) {
         if (entityFields == null || entityFields.isEmpty()) {
@@ -170,8 +127,7 @@ public final class PgQueryBuilder {
             }
             String trimmed = entityField.trim();
             int dot = trimmed.indexOf('.');
-            String head = dot < 0 ? trimmed : trimmed.substring(0, dot);
-            fields.add(translateToDtoField(head.trim()) + (dot < 0 ? "" : trimmed.substring(dot)));
+            fields.add(translateToDtoField((dot < 0 ? trimmed : trimmed.substring(0, dot)).trim()));
         }
         return fields.isEmpty() ? null : new ArrayList<>(fields);
     }
