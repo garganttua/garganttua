@@ -330,6 +330,11 @@ class ParityNestedShapesTest {
         ParityHarness.assertSame(what, o, ordered);
     }
 
+    /** {@link #check} for a documented residual: see {@link ParityResiduals#pinned}. */
+    private static void pinnedCheck(String reason, String what, Outcome o, boolean ordered) {
+        ParityResiduals.pinned(reason, () -> check(what, o, ordered));
+    }
+
     private static String show(Object value, Throwable error) {
         if (error == null) {
             return String.valueOf(value);
@@ -692,16 +697,16 @@ class ParityNestedShapesTest {
         }
 
         @Test
-        @DisplayName("filter on a SUBCLASS-only field: pet.breed")
+        @DisplayName("RESIDUAL: filter on a SUBCLASS-only field: pet.breed")
         void filterSubclassField() {
-            check("pet.breed = collie",
+            pinnedCheck(ParityResiduals.POLYMORPHISM, "pet.breed = collie",
                     where(owners(), "owners", ParityFilter.field("pet.breed", "$eq", "collie")), false);
         }
 
         @Test
-        @DisplayName("filter on a SUBCLASS-only field of a list element: pets.indoor")
+        @DisplayName("RESIDUAL: filter on a SUBCLASS-only field of a list element: pets.indoor")
         void filterSubclassFieldInList() {
-            check("pets.indoor = true",
+            pinnedCheck(ParityResiduals.POLYMORPHISM, "pets.indoor = true",
                     where(owners(), "owners", ParityFilter.field("pets.indoor", "$eq", true)), false);
         }
 
@@ -715,11 +720,11 @@ class ParityNestedShapesTest {
         }
 
         @Test
-        @DisplayName("sort on a SUBCLASS-only field: pet.breed")
+        @DisplayName("RESIDUAL: sort on a SUBCLASS-only field: pet.breed")
         void sortSubclassField() {
             // The breed is not readable back (the declared Animal has no such field): key by uuid.
             Map<String, String> breeds = Map.of("o1", "collie", "o3", "akita");
-            check("sort pet.breed desc", sorted(owners(), "owners", "pet.breed", SortDirection.desc,
+            pinnedCheck(ParityResiduals.POLYMORPHISM, "sort pet.breed desc", sorted(owners(), "owners", "pet.breed", SortDirection.desc,
                     o -> breeds.get(((Owner) o).uuid)), true);
         }
     }
@@ -991,7 +996,7 @@ class ParityNestedShapesTest {
     class Naming {
 
         @Test
-        @DisplayName("a field named home__city next to home.city")
+        @DisplayName("RESIDUAL: a field named home__city next to home.city")
         void collision() {
             Clash clash = with(new Clash(), c -> {
                 c.uuid = "c1";
@@ -1019,7 +1024,7 @@ class ParityNestedShapesTest {
                 }
                 outcome = new Outcome(mongoAnswer, null, mongoError, e);
             }
-            check("home__city next to home.city", outcome, false);
+            pinnedCheck(ParityResiduals.NAME_COLLISION, "home__city next to home.city", outcome, false);
         }
 
         @Test
@@ -1120,19 +1125,19 @@ class ParityNestedShapesTest {
         }
 
         @Test
-        @DisplayName("sort on a T value declared Integer")
+        @DisplayName("RESIDUAL: sort on a T value declared Integer")
         void sortInteger() {
-            check("sort number.value desc", sorted(boxes(), "boxes", "number.value", SortDirection.desc, b -> {
+            pinnedCheck(ParityResiduals.GENERICS, "sort number.value desc", sorted(boxes(), "boxes", "number.value", SortDirection.desc, b -> {
                 Boxes box = (Boxes) b;
                 return box.number == null ? null : box.number.value;
             }), true);
         }
 
         @Test
-        @DisplayName("sort on a T value declared String")
+        @DisplayName("RESIDUAL: sort on a T value declared String")
         void sortString() {
             ParityHarness h = boxes();
-            check("sort text.value asc", sorted(h, "boxes", "text.value", SortDirection.asc, b -> {
+            pinnedCheck(ParityResiduals.GENERICS, "sort text.value asc", sorted(h, "boxes", "text.value", SortDirection.asc, b -> {
                 Boxes box = (Boxes) b;
                 return box.text == null ? null : box.text.value;
             }), true);

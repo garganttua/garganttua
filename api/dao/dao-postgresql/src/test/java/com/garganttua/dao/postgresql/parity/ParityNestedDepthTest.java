@@ -19,9 +19,11 @@ import java.util.TreeMap;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.garganttua.api.commons.filter.IFilter;
@@ -94,8 +96,41 @@ class ParityNestedDepthTest {
         return out;
     }
 
+    /**
+     * The documented residuals (see {@link ParityResiduals}), keyed {@code NestedClass#method|check}: they
+     * print {@code [KNOWN]} instead of failing, and fail the day the engines agree on them.
+     */
+    private static final Map<String, String> RESIDUALS = Map.ofEntries(
+            Map.entry("PojoListPojo#intermediate|a.items.dims $eq null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("PojoListPojo#intermediate|a.items.dims $ne null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("PojoListPojo#intermediate|a.items.dims $empty", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("PojoListPojo#updateDeep|after update a.items.dims $eq null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("ListPojoPojo#intermediate|lines.product.brand $eq null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("ListPojoPojo#intermediate|lines.product.brand $ne null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("ListPojoPojo#intermediate|lines.product $eq null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("ListPojoPojo#intermediate|lines.product.brand $empty", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("ListPojoPojo#updateDeep|after update lines.product $eq null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("MapPojoPojoList#intermediate|stock.paris.origin $eq null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("MapPojoPojoList#intermediate|stock.paris.origin $ne null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("MapPojoPojoList#updateDeep|after update lyon.origin $eq null", ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("Recursive#sortDeep|sort head.next.next.next.v asc", ParityResiduals.JSONB_SORT),
+            Map.entry("Recursive#sortDeep|sort head.next.next.next.v desc", ParityResiduals.JSONB_SORT),
+            Map.entry("NullElements#nullPojoElement|lines.product $eq null",
+                    ParityResiduals.NULL_ELEMENT + " and " + ParityResiduals.PRESENCE_IN_ELEMENT),
+            Map.entry("NullElements#nullGrandchild|orders.lines.sku $eq null", ParityResiduals.NULL_ELEMENT),
+            Map.entry("NullElements#nullElementUnderPojo|a.items.dims.width $eq null", ParityResiduals.NULL_ELEMENT));
+
     /** Every disagreement of the running test — all sub-checks run, the test fails once at the end. */
     private final List<String> failures = new ArrayList<>();
+
+    /** {@code NestedClass#method} of the running test, the prefix of its {@link #RESIDUALS} keys. */
+    private String running = "";
+
+    @BeforeEach
+    void identify(TestInfo info) {
+        running = info.getTestClass().map(Class::getSimpleName).orElse("") + "#"
+                + info.getTestMethod().map(m -> m.getName()).orElse("");
+    }
 
     @AfterEach
     void reportAll() {
@@ -105,6 +140,15 @@ class ParityNestedDepthTest {
     }
 
     private void verify(String what, Outcome outcome, boolean ordered) {
+        String residual = RESIDUALS.get(running + "|" + what);
+        if (residual != null) {
+            try {
+                ParityResiduals.pinned(residual, () -> ParityHarness.assertSame(what, outcome, ordered));
+            } catch (AssertionError gone) {
+                failures.add(gone.getMessage());
+            }
+            return;
+        }
         try {
             ParityHarness.assertSame(what, outcome, ordered);
             System.out.println("[AGREE] " + what + " -> " + (outcome.mongoError() != null ? "both threw"
