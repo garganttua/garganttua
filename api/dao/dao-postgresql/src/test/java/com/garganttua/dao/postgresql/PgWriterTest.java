@@ -755,10 +755,22 @@ class PgWriterTest {
             h.uuid = "h1";
             h.legacy = new Legacy();
             h.legacy.uuid = "l-9";
-            h.ticket = "t-4";
             save(db, new PgWriter(holders, new PgSchemaRegistry()), h);
-            assertEquals(List.of(List.of("l-9", "t-4")), rows(db, "SELECT \"legacy\", \"ticket\" FROM \"holders\""),
-                    "an unregistered target is read with 'uuid'; a String reference is the uuid itself");
+            assertEquals(List.of(Arrays.asList("l-9", null)), rows(db, "SELECT \"legacy\", \"ticket\" FROM \"holders\""),
+                    "an unregistered target is read with 'uuid'");
+        }
+
+        @Test
+        @DisplayName("refuse a bare String in a @Composed field, as MongoDB does")
+        void stringReferenceRefused() throws Exception {
+            PgTable holders = model("holders", IClass.getClass(Holder.class), Map.of("legacy", "legacies", "ticket", "tickets"));
+            DataSource db = create(holders);
+            Holder h = new Holder();
+            h.uuid = "h1";
+            h.ticket = "t-4";
+            ApiException e = assertThrows(ApiException.class, () -> save(db, new PgWriter(holders, new PgSchemaRegistry()), h),
+                    "a composition holds the referenced entity: MongoDB refuses a String there, so must PostgreSQL");
+            assertTrue(e.getMessage().contains("must hold the referenced entity"), e::getMessage);
         }
 
         @Test

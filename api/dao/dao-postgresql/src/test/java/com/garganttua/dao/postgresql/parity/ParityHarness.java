@@ -125,6 +125,14 @@ public final class ParityHarness {
         }
     }
 
+    /**
+     * Writes ONE entity to both engines and reports what each did, without failing on a divergence —
+     * for the few pinned residuals whose test states the divergence itself.
+     */
+    public Outcome saveEach(String domain, Object entity) {
+        return run(() -> mongo.get(domain).save(entity), () -> pg.get(domain).save(entity));
+    }
+
     /** Asks both engines to delete. */
     public Outcome delete(String domain, Object entity) {
         return run(() -> {

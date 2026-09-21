@@ -205,14 +205,19 @@ public class MongoDao implements IDao {
 		Document doc = dtoToDocument(object);
 		Object id = doc.get(MongoDaoConfig.MONGO_ID);
 
-		if (id != null) {
-			getCollection().replaceOne(
-					Filters.eq(MongoDaoConfig.MONGO_ID, id),
-					doc,
-					new ReplaceOptions().upsert(true));
-		} else {
-			getCollection().insertOne(doc);
+		// A document saved without its uuid used to be INSERTED with a server-generated ObjectId _id,
+		// which the reader then mapped onto the String uuid field: a row nobody could read back, update
+		// or delete by uuid. The api stamps a uuid before every save, so this only ever caught a bug —
+		// refuse it, as the PostgreSQL DAO does, rather than store an unaddressable document.
+		if (id == null) {
+			throw new ApiException("Cannot save a " + object.getClass().getName() + " without a uuid ('"
+					+ this.config.uuidFieldName() + "' is null): a document without it could not be read, "
+					+ "updated or deleted by uuid.");
 		}
+		getCollection().replaceOne(
+				Filters.eq(MongoDaoConfig.MONGO_ID, id),
+				doc,
+				new ReplaceOptions().upsert(true));
 
 		return object;
 	}

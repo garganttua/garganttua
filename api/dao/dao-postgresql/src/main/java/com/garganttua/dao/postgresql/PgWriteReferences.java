@@ -50,7 +50,12 @@ final class PgWriteReferences {
             return null;
         }
         if (referenced instanceof CharSequence || referenced instanceof UUID) {
-            return referenced.toString();
+            // A @Composed field holds the referenced ENTITY, not its uuid: that is what the MongoDB DAO
+            // requires, and it refuses a bare String there. Accepting it here would make an application
+            // that works on PostgreSQL fail on MongoDB — refuse it the same way.
+            throw new ApiException("Composed DTO " + referenced.getClass().getName()
+                    + " has no uuid field to reference: a @Composed field must hold the referenced entity, "
+                    + "not its uuid.");
         }
         List<String> idPath = idPathOf(targetDomain);
         Object uuid;
