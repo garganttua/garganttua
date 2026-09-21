@@ -46,6 +46,7 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  */
 final class PgTextSearch {
 
+    private static final String FIELD_OPERATOR = "$field";
     private static final String CONFIG = "'english'";
     private static final String SEPARATOR = "chr(1)";
     private static final String OWNER_ALIAS = "tx";
@@ -61,6 +62,7 @@ final class PgTextSearch {
      * @param filter the whole filter, possibly null
      * @throws ApiException when the filter breaks one of these rules
      */
+    @SuppressWarnings("PMD.AvoidLiteralsInIfCondition") // 1: the most $text expressions a filter may hold
     static void validate(IFilter filter) {
         if (count(filter, null) > 1) {
             throw new ApiException("A filter may hold only one $text: MongoDB refuses a second one"
@@ -72,7 +74,7 @@ final class PgTextSearch {
         if (filter == null || filter.getName() == null) {
             return 0;
         }
-        if ("$field".equals(filter.getName())) {
+        if (FIELD_OPERATOR.equals(filter.getName())) {
             boolean text = filter.getFilters() != null && filter.getFilters().size() == 1
                     && filter.getFilters().get(0) != null && "$text".equals(filter.getFilters().get(0).getName());
             if (text && under != null) {

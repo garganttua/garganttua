@@ -51,6 +51,7 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * than one per row flooding the log.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 final class PgCompositions {
 
     private static final Logger LOG = Logger.getLogger(PgCompositions.class);

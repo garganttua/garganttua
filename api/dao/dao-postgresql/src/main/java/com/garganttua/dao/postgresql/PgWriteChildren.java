@@ -60,6 +60,8 @@ final class PgWriteChildren {
      * @throws SQLException when the database refuses a statement
      * @throws ApiException when an element cannot be converted
      */
+    @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     void write(Connection connection, PgChildTable child, Object ownerId, Object dto)
             throws SQLException, ApiException {
         try (PreparedStatement delete = connection.prepareStatement(deleteSql(child))) {
@@ -87,7 +89,8 @@ final class PgWriteChildren {
                 continue;
             }
             insert.setObject(1, ownerId);
-            insert.setObject(2, ord++);
+            insert.setObject(2, ord);
+            ord++;
             bindValues(insert, child, element);
             insert.addBatch();
         }
@@ -123,7 +126,8 @@ final class PgWriteChildren {
             Object value = column.kind() == PgColumnKind.COMPOSITION
                     ? references.uuidOf(child.composedCollection(), element)
                     : PgWriteSupport.valueAt(element, column.fieldPath());
-            PgWriteSupport.bind(insert, index++, column, PgValues.toJdbc(column, value));
+            PgWriteSupport.bind(insert, index, column, PgValues.toJdbc(column, value));
+            index++;
         }
     }
 

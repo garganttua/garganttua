@@ -3,6 +3,7 @@ package com.garganttua.dao.postgresql;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.SortedSet;
 import java.util.TreeSet;
 
 /**
@@ -25,7 +26,11 @@ import java.util.TreeSet;
  * them out outside its Turkish mode.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 final class PgCaseFold {
+
+    /** A fold group of fewer members offers no other case variant. */
+    private static final int MIN_GROUP_SIZE = 2;
 
     private static final int[] NONE = new int[0];
     private static final int DOTTED_CAPITAL_I = 0x130;
@@ -62,7 +67,7 @@ final class PgCaseFold {
     }
 
     private static Map<Integer, int[]> build() {
-        Map<Integer, TreeSet<Integer>> groups = new HashMap<>();
+        Map<Integer, SortedSet<Integer>> groups = new HashMap<>();
         for (int cp = 0; cp <= Character.MAX_CODE_POINT; cp++) {
             if (cp == DOTTED_CAPITAL_I || cp == DOTLESS_SMALL_I || Character.getType(cp) == Character.SURROGATE) {
                 continue;
@@ -74,8 +79,8 @@ final class PgCaseFold {
             }
         }
         Map<Integer, int[]> table = new HashMap<>();
-        for (TreeSet<Integer> group : groups.values()) {
-            if (group.size() < 2) {
+        for (SortedSet<Integer> group : groups.values()) {
+            if (group.size() < MIN_GROUP_SIZE) {
                 continue;
             }
             int[] members = group.stream().mapToInt(Integer::intValue).toArray();

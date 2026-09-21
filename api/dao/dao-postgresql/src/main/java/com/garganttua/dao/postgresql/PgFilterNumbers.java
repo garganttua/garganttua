@@ -28,6 +28,7 @@ import java.util.Optional;
  */
 final class PgFilterNumbers {
 
+    private static final String EQUALS = "=";
     private static final String DOUBLE_PLACEHOLDER = "?";
     private static final String NUMERIC_PLACEHOLDER = "?::numeric";
 
@@ -87,7 +88,7 @@ final class PgFilterNumbers {
      * @return the predicate, {@link PgSql#FALSE} when no value of the column satisfies it
      */
     static PgSql compare(PgSql expr, boolean floatColumn, String op, Number n) {
-        if ("=".equals(op)) {
+        if (EQUALS.equals(op)) {
             return equality(floatColumn, n).map(v -> expr.then(" = ").then(v)).orElse(PgSql.FALSE);
         }
         if (isNaN(n)) {
@@ -125,6 +126,9 @@ final class PgFilterNumbers {
     }
 
     /** {@return the sign of {@code nearest - exact}: where the double landed relative to the value} */
+    // new BigDecimal(double) on purpose: the comparison needs the double's EXACT binary value;
+    // BigDecimal.valueOf would round it through its shortest decimal text and hide the gap.
+    @SuppressWarnings("PMD.AvoidDecimalLiteralsInBigDecimalConstructor")
     private static int side(double nearest, BigDecimal exact) {
         if (Double.isInfinite(nearest)) {
             return nearest > 0 ? 1 : -1;
@@ -140,6 +144,9 @@ final class PgFilterNumbers {
         return (n instanceof Double || n instanceof Float) && Double.isNaN(n.doubleValue());
     }
 
+    // new BigDecimal(double) on purpose: MongoDB compares numbers by exact value, so a double stands for
+    // its exact binary value, not for the shortest decimal that rounds to it (BigDecimal.valueOf).
+    @SuppressWarnings("PMD.AvoidDecimalLiteralsInBigDecimalConstructor")
     private static Optional<BigDecimal> finite(double d) {
         return Double.isFinite(d) ? Optional.of(new BigDecimal(d)) : Optional.empty();
     }

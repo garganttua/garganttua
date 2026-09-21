@@ -46,6 +46,7 @@ import com.garganttua.dao.postgresql.schema.SchemaMode;
  * find everything in place.</li>
  * </ul>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 public final class PgSchemaManager {
 
     private static final Logger log = Logger.getLogger(PgSchemaManager.class);
@@ -110,6 +111,8 @@ public final class PgSchemaManager {
         }
     }
 
+    @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     private static void create(Connection connection, PgTable table) throws SQLException, ApiException {
         lock(connection, table.name());
         if (table.needsPostgis()) {
@@ -162,6 +165,8 @@ public final class PgSchemaManager {
         }
     }
 
+    @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     private static void addColumn(Connection connection, PgSchemaExpectation.Table expected,
             PgSchemaExpectation.Column column) throws SQLException, ApiException {
         if (!column.addable()) {

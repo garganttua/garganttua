@@ -107,6 +107,11 @@ public final class PgSchemaModel {
         all.add(id);
         all.addAll(columns);
         refuseCollisions(table, all, children);
+        return new PgTable(table, id, all, children, composedFields(dtoClass, compositions));
+    }
+
+    /** The {@code @Composed} fields the DTO really persists, in field order: field name to target domain. */
+    private static Map<String, String> composedFields(IClass<?> dtoClass, Map<String, String> compositions) {
         Map<String, String> composed = new LinkedHashMap<>();
         if (compositions != null) {
             for (IField field : persistedFields(dtoClass)) {
@@ -116,7 +121,7 @@ public final class PgSchemaModel {
                 }
             }
         }
-        return new PgTable(table, id, all, children, composed);
+        return composed;
     }
 
     private static void addComposition(String table, IField field, List<String> path, String target,

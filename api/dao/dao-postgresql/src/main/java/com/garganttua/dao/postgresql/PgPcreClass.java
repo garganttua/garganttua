@@ -22,6 +22,10 @@ import java.util.Map;
  * {@code fixed} members — the {@code \d \w \s} families and POSIX classes — do not, as in PCRE.
  * </p>
  */
+// A PCRE reader: the character literals it tests ('\\', '{', ')', 'Q', ...) ARE the grammar being parsed,
+// and its small integers are bounds (group 1, range lengths); naming each would only hide the syntax.
+// Its constants share a name with the method that uses them (accessor style).
+@SuppressWarnings({"PMD.AvoidFieldNameMatchingMethodName", "PMD.AvoidLiteralsInIfCondition"})
 final class PgPcreClass {
 
     private static final int SURROGATE_FIRST = 0xD800;
@@ -195,7 +199,8 @@ final class PgPcreClass {
             return negated ? "." : "[^\\u0001-\\U0010FFFF]";
         }
         StringBuilder out = new StringBuilder(negated ? "[^" : "[");
-        for (int low = all.nextSetBit(0); low >= 0; low = all.nextSetBit(low)) {
+        int low = all.nextSetBit(0);
+        while (low >= 0) {
             int end = all.nextClearBit(low);
             out.append(escape(low, true));
             if (end - low > 2) {
@@ -204,7 +209,7 @@ final class PgPcreClass {
             if (end - low > 1) {
                 out.append(escape(end - 1, true));
             }
-            low = end;
+            low = all.nextSetBit(end);
         }
         return out.append(']').toString();
     }

@@ -147,10 +147,15 @@ final class PgWriteSupport {
             for (int i = at; i >= 0 && json.charAt(i) == '\\'; i--) {
                 backslashes++;
             }
-            if (backslashes % 2 == 1) {
+            if (isOdd(backslashes)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /** {@return whether n is odd} {@code % 2 != 0}, unlike {@code % 2 == 1}, also holds for negatives. */
+    private static boolean isOdd(int n) {
+        return n % 2 != 0;
     }
 }

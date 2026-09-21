@@ -111,7 +111,8 @@ final class PgElementPredicates {
         int ord = 0;
         for (Object value : list) {
             PgSql equal = scalars.on(e.operand(), new PgCondition("$eq", value, List.of(), ""));
-            PgSql at = PgSql.of(PgFieldResolver.CHILD_ALIAS + "." + PgNaming.quote(PgChildTable.ORD) + " = ?", ord++);
+            PgSql at = PgSql.of(PgFieldResolver.CHILD_ALIAS + "." + PgNaming.quote(PgChildTable.ORD) + " = ?", ord);
+            ord++;
             parts.add(subquery(e, PgSql.all(List.of(at, equal))).wrap("EXISTS (", ")"));
         }
         return PgSql.all(parts);

@@ -12,6 +12,10 @@ import com.garganttua.api.commons.ApiException;
  * brackets, and that every refusal names the pattern the same way.
  * </p>
  */
+// A PCRE reader: the character literals it tests ('\\', '{', ')', 'Q', ...) ARE the grammar being parsed,
+// and its small integers are bounds (group 1, range lengths); naming each would only hide the syntax.
+// Its constants share a name with the method that uses them (accessor style).
+@SuppressWarnings({"PMD.AvoidFieldNameMatchingMethodName", "PMD.AvoidLiteralsInIfCondition"})
 final class PgPcreCursor {
 
     private static final int HEX = 16;
@@ -128,7 +132,8 @@ final class PgPcreCursor {
         }
         StringBuilder digits = new StringBuilder();
         while (digits.length() < 2 && !atEnd() && Character.digit(pattern.charAt(pos), HEX) >= 0) {
-            digits.append(pattern.charAt(pos++));
+            digits.append(pattern.charAt(pos));
+            pos++;
         }
         return digits.isEmpty() ? 0 : number(digits.toString(), HEX);
     }
@@ -136,7 +141,8 @@ final class PgPcreCursor {
     private int octalAfterZero() {
         StringBuilder digits = new StringBuilder("0");
         while (digits.length() < 3 && !atEnd() && Character.digit(pattern.charAt(pos), OCTAL) >= 0) {
-            digits.append(pattern.charAt(pos++));
+            digits.append(pattern.charAt(pos));
+            pos++;
         }
         return number(digits.toString(), OCTAL);
     }
@@ -149,15 +155,22 @@ final class PgPcreCursor {
     }
 
     private int number(String digits, int radix) {
+        int cp;
         try {
-            int cp = Integer.parseInt(digits.trim(), radix);
-            if (Character.isValidCodePoint(cp)) {
-                return cp;
-            }
+            cp = Integer.parseInt(digits.trim(), radix);
         } catch (NumberFormatException e) {
-            // reported below
+            ApiException refusal = notACharacterCode(digits);
+            refusal.initCause(e);
+            throw refusal;
         }
-        throw invalid("'" + digits + "' is not a character code");
+        if (!Character.isValidCodePoint(cp)) {
+            throw notACharacterCode(digits);
+        }
+        return cp;
+    }
+
+    private ApiException notACharacterCode(String digits) {
+        return invalid("'" + digits + "' is not a character code");
     }
 
     /** {@return a refusal of an invalid pattern — PCRE refuses it too} */
