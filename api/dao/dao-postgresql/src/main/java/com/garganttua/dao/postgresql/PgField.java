@@ -1,5 +1,7 @@
 package com.garganttua.dao.postgresql;
 
+import java.util.List;
+
 import com.garganttua.dao.postgresql.schema.PgChildTable;
 
 /**
@@ -22,21 +24,47 @@ sealed interface PgField {
     }
 
     /**
-     * A single value inside a collection's elements: compared through {@code EXISTS} on the child
-     * table, with MongoDB's array semantics.
+     * A single value inside a collection's elements — at any depth: compared through one
+     * {@code EXISTS} per collection on the way ({@link PgHop#some}), with MongoDB's array semantics.
      *
-     * @param child   the child table
-     * @param scope   the condition selecting the owner's rows (and, for a map entry, its key)
-     * @param operand the compared value inside the element
-     * @param whole   whether the filter names the collection itself ({@code tags}) rather than a
-     *                path inside its elements ({@code lines.sku}, {@code stock.apple})
-     * @param missing the predicate "this path is missing from the document" — what a comparison
-     *                MongoDB satisfies with a missing value ({@code $eq null}) also matches: the
-     *                collection is absent (an EMPTY array is present and does not match), or, for a
-     *                map, the key is absent
+     * @param hops    the path through the child tables, outermost first — at least one hop; the last
+     *                one holds the compared value
+     * @param operand the compared value inside the last hop's element (null only with {@code items})
+     * @param whole   whether the filter names the collection itself ({@code tags}, {@code lines.tags})
+     *                rather than a path inside its elements ({@code lines.sku}, {@code stock.apple})
+     * @param items   when the collection's elements are THEMSELVES arrays ({@code List<List<String>>}):
+     *                the hop from one element to its items, which {@code operand} then reads; null
+     *                otherwise
      */
-    record Element(PgChildTable child, PgSql scope, PgOperand operand, boolean whole, PgSql missing)
-            implements PgField {
+    record Element(List<PgHop> hops, PgOperand operand, boolean whole, PgHop items) implements PgField {
+
+        public Element {
+            hops = List.copyOf(hops);
+        }
+
+        /** {@return the hop holding the compared value} */
+        PgHop last() {
+            return hops.get(hops.size() - 1);
+        }
+
+        /** {@return the hops above the last one} */
+        List<PgHop> parents() {
+            return hops.subList(0, hops.size() - 1);
+        }
+
+        /** {@return the child table holding the compared value} */
+        PgChildTable child() {
+            return last().child();
+        }
+
+        /**
+         * {@return the predicate "this path is missing from the document on SOME branch" — what a
+         * comparison MongoDB satisfies with a missing value ({@code $eq null}) also matches: a collection
+         * on the way is absent (an EMPTY one is present and yields no branch), or, for a map, the key is}
+         */
+        PgSql missing() {
+            return PgHop.someMisses(hops, last().absent());
+        }
     }
 
     /**

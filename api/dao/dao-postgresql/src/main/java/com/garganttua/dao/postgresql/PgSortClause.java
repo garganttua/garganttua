@@ -1,7 +1,6 @@
 package com.garganttua.dao.postgresql;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,9 +52,12 @@ final class PgSortClause {
     private static final String BINARY_COLLATION = " COLLATE \"C\"";
 
     private final PgTable table;
+    private final PgPathLocator locator;
 
     PgSortClause(PgTable table) {
         this.table = table;
+        // Keys inlined: an ORDER BY carries no bind values. "h" keeps its aliases apart from PgBsonOrder's.
+        this.locator = new PgPathLocator(table, "h", true);
     }
 
     /**
@@ -65,7 +67,7 @@ final class PgSortClause {
      * @param paged whether a page is requested (the uuid then breaks ties)
      * @return the clause including the keyword, or an empty string
      * @throws ApiException when the sort has no field name, or names a value whose MongoDB order is not
-     *                      reproduced (a JSONB or geometry value, a map entry)
+     *                      reproduced (a JSONB or geometry value, a collection nested in a collection)
      */
     String orderBy(ISort sort, boolean paged) throws ApiException {
         List<String> keys = new ArrayList<>();
@@ -99,22 +101,21 @@ final class PgSortClause {
             return columnKeys(column.get(), ascending);
         }
         PgBsonOrder bson = new PgBsonOrder(table);
-        Optional<PgChildTable> child = table.child(field);
+        Optional<PgChildTable> child = table.children().stream().filter(c -> c.dottedPath().equals(field))
+                .findFirst();
         if (child.isPresent()) {
             return childKeys(bson, child.get(), ascending);
         }
         Optional<PgColumn> presence = table.presence(field);
         if (presence.isPresent()) {
+            refuseNested(field);
             PgColumn p = presence.get();
             return List.of(bson.document(PgQuery.ALIAS, table.columns(), p.fieldPath(),
                     PgBsonOrder.ref(PgQuery.ALIAS, p)).orNull() + direction(ascending));
         }
-        Optional<PgChildTable> container = table.children().stream()
-                .filter(c -> field.startsWith(c.dottedPath() + "."))
-                .max(Comparator.comparingInt(c -> c.dottedPath().length()));
-        if (container.isPresent()) {
-            return elementKeys(bson, container.get(), field.substring(container.get().dottedPath().length() + 1),
-                    ascending);
+        Optional<PgPathLocator.Located> located = locator.locate(field);
+        if (located.isPresent()) {
+            return pathKeys(bson, located.get(), field, ascending);
         }
         refuseInsideJson(field, table.columns());
         LOG.debug("Sort on unknown field '{}' of domain '{}': no key, every row ties as in MongoDB", field,
@@ -140,6 +141,7 @@ final class PgSortClause {
 
     /** A whole collection (by its smallest / largest element) or a whole map (as a sub-document). */
     private List<String> childKeys(PgBsonOrder bson, PgChildTable child, boolean ascending) throws ApiException {
+        refuseNested(child.dottedPath());
         Optional<PgColumn> presence = table.presence(child.dottedPath());
         String presenceRef = presence.map(p -> PgBsonOrder.ref(PgQuery.ALIAS, p)).orElse("TRUE");
         if (child.kind() == PgChildKind.MAP) {
@@ -157,28 +159,71 @@ final class PgSortClause {
     }
 
     /**
-     * A path inside the elements of a collection ({@code lines.qty}): smallest / largest over the
-     * elements. MongoDB gives an empty array no special place here — its key is simply missing.
+     * A path through the child tables — inside the elements of a collection ({@code lines.qty}),
+     * across several collections ({@code orders.lines.qty}), onto a map entry ({@code stock.paris.qty}),
+     * or a collection nested in an element ({@code lines.tags}): smallest / largest over every value
+     * reachable ({@link PgPathSortKey}). MongoDB gives an empty array no special place here — its key is
+     * simply missing.
      */
-    private List<String> elementKeys(PgBsonOrder bson, PgChildTable child, String rest, boolean ascending)
+    private List<String> pathKeys(PgBsonOrder bson, PgPathLocator.Located at, String field, boolean ascending)
             throws ApiException {
-        if (child.kind() == PgChildKind.MAP) {
-            throw new ApiException("Cannot sort domain '" + table.name() + "' on an entry of the map '"
-                    + child.dottedPath() + "': sort on the whole map, or on a scalar field.");
+        PgHop last = at.last();
+        PgChildTable child = last.child();
+        PgBsonOrder.Encoded element;
+        if (at.rest() == null) {
+            // A nested collection of scalars sorts by its extreme element; one of objects, a map or a
+            // reference collection would need BSON array-of-document order across levels. A map ENTRY is
+            // a plain sub-document.
+            boolean scalars = child.kind() == PgChildKind.SCALAR_COLLECTION;
+            if (child.hasChildren() || (!scalars && !last.keyed())) {
+                throw nestedUnsortable(field);
+            }
+            element = bson.element(child, last.alias());
+        } else {
+            Optional<PgColumn> column = child.valueColumns().stream()
+                    .filter(v -> v.dottedPath().equals(at.rest())).findFirst();
+            if (column.isEmpty()) {
+                refuseInsideJson(at.rest(), child.valueColumns());
+                LOG.debug("Sort on unknown element path '{}' of '{}': no key", at.rest(), child.dottedPath());
+                return List.of();
+            }
+            element = elementValue(bson, last, column.get(), field);
         }
-        Optional<PgColumn> column = child.valueColumns().stream().filter(v -> v.dottedPath().equals(rest))
-                .findFirst();
-        if (column.isEmpty()) {
-            refuseInsideJson(rest, child.valueColumns());
-            LOG.debug("Sort on unknown element path '{}' of '{}': no key", rest, child.dottedPath());
-            return List.of();
+        return List.of(PgPathSortKey.of(bson, at.hops(), element, direction(ascending)));
+    }
+
+    /** One value column of an element — or, for a presence bit, the POJO it marks, as a sub-document. */
+    private PgBsonOrder.Encoded elementValue(PgBsonOrder bson, PgHop hop, PgColumn target, String field)
+            throws ApiException {
+        if (target.kind() != PgColumnKind.PRESENCE) {
+            return bson.scalar(hop.alias(), target);
         }
-        String c = bson.alias("c");
-        PgColumn target = column.get();
-        PgBsonOrder.Encoded element = target.kind() == PgColumnKind.PRESENCE
-                ? bson.document(c, child.valueColumns(), target.fieldPath(), PgBsonOrder.ref(c, target))
-                : bson.scalar(c, target);
-        return List.of(extreme(bson, child, c, element, ascending));
+        // A POJO of the element holding a collection: that collection is a nested table, not a column.
+        List<String> pojo = target.fieldPath();
+        if (hop.child().children().stream().anyMatch(c -> c.fieldPath().size() > pojo.size()
+                && c.fieldPath().subList(0, pojo.size()).equals(pojo))) {
+            throw nestedUnsortable(field);
+        }
+        return bson.document(hop.alias(), hop.child().valueColumns(), target.fieldPath(),
+                PgBsonOrder.ref(hop.alias(), target));
+    }
+
+    /**
+     * Refuses a structure that is, or holds, a collection nested in a collection: its BSON order is not
+     * reproduced — the sub-document encoding reads flattened columns and top-level arrays only.
+     */
+    private void refuseNested(String path) throws ApiException {
+        boolean nested = table.allChildren().stream().anyMatch(c -> (c.nested() || c.hasChildren())
+                && (c.dottedPath().equals(path) || c.dottedPath().startsWith(path + ".")));
+        if (nested) {
+            throw nestedUnsortable(path);
+        }
+    }
+
+    private ApiException nestedUnsortable(String path) {
+        return new ApiException("Cannot sort domain '" + table.name() + "' on '" + path + "': it is, or holds,"
+                + " a collection nested in another collection, whose MongoDB (BSON) order the PostgreSQL DAO"
+                + " does not reproduce. Sort on a scalar reachable through it instead.");
     }
 
     /** {@code (SELECT smallest-or-largest element)}: a null element is the smallest of all. */
