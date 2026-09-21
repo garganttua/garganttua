@@ -56,9 +56,17 @@ import com.garganttua.core.reflection.IField;
  * </p>
  *
  * <p>
- * Two more bounds keep the mapping finite: a child table never has children of its own (a collection
- * inside a collection element becomes a {@code JSONB} value column), and an abstract class or an
- * interface is never flattened (the reader could not instantiate it).
+ * <b>Nested tables.</b> A collection or map inside a collection element (a {@code List<String>} in a
+ * POJO element, a {@code List<List<String>>}, a {@code Map<String, List<Book>>}) is a child table of the
+ * element's table, at any depth: its rows point at their element through {@code _parent} (the element
+ * row's {@code _id}) and at the root entity through {@code _owner}. An element that is itself a
+ * collection gets a table of its own, with an empty field path ({@link PgChildTable#elementTable()}).
+ * </p>
+ *
+ * <p>
+ * Bounds that keep the mapping finite: an element type that recurses, an untyped element or a map with
+ * non-scalar keys stays {@code JSONB}, and an abstract class or an interface is never flattened (the
+ * reader could not instantiate it).
  * </p>
  */
 public final class PgSchemaModel {
@@ -215,33 +223,48 @@ public final class PgSchemaModel {
                         element, key, List.of(value), null, absolute, ownerChild, List.of());
             }
             if (isFlattenable(element, visiting)) {
-                List<PgColumn> columns = new ArrayList<>();
-                List<PgChildTable> children = new ArrayList<>();
-                // A null element and an element whose fields are all null would both be an all-NULL row.
-                columns.add(new PgColumn(PgChildTable.PRESENT, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, List.of(), element));
-                Walker inner = new Walker(table, name, absolute);
-                Set<IClass<?>> deeper = new HashSet<>(visiting);
-                deeper.add(element);
-                for (IField sub : persistedFields(element)) {
-                    inner.add(List.of(sub.getName()), sub.getType(), sub.getGenericType(), deeper, columns, children);
-                }
-                return new PgChildTable(name, map ? PgChildKind.MAP : PgChildKind.POJO_COLLECTION, path, type,
-                        element, key, columns, null, absolute, ownerChild, children);
+                return pojoTable(name, path, absolute, type, element, key, visiting);
             }
             if (isCollection(element) || isMap(element)) {
-                // The element IS a collection (List<List<String>>, Map<String, List<Book>>): it becomes a
-                // table of its own, under this one, with an empty field path — "the element itself".
-                PgChildTable itself = new Walker(table, name, absolute)
-                        .build(name + PgNaming.PATH_SEPARATOR + ELEMENT_SUFFIX, List.of(), absolute, element,
-                                elementGeneric, visiting);
-                if (itself == null) {
-                    return null;
-                }
-                PgColumn present = new PgColumn(PgChildTable.PRESENT, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, List.of(), element);
-                return new PgChildTable(name, map ? PgChildKind.MAP : PgChildKind.NESTED_COLLECTION, path, type,
-                        element, key, List.of(present), null, absolute, ownerChild, List.of(itself));
+                PgChildTable itself = elementTable(name, absolute, element, elementGeneric, visiting);
+                return itself == null ? null
+                        : new PgChildTable(name, map ? PgChildKind.MAP : PgChildKind.NESTED_COLLECTION, path, type,
+                                element, key, List.of(present(element)), null, absolute, ownerChild, List.of(itself));
             }
             return null;
+        }
+
+        /** A table of POJO elements (or map values): their fields, walked one level down. */
+        private PgChildTable pojoTable(String name, List<String> path, List<String> absolute, IClass<?> type,
+                IClass<?> element, IClass<?> key, Set<IClass<?>> visiting) {
+            List<PgColumn> columns = new ArrayList<>();
+            List<PgChildTable> children = new ArrayList<>();
+            // A null element and an element whose fields are all null would both be an all-NULL row.
+            columns.add(present(element));
+            Walker inner = new Walker(table, name, absolute);
+            Set<IClass<?>> deeper = new HashSet<>(visiting);
+            deeper.add(element);
+            for (IField sub : persistedFields(element)) {
+                inner.add(List.of(sub.getName()), sub.getType(), sub.getGenericType(), deeper, columns, children);
+            }
+            return new PgChildTable(name, isMap(type) ? PgChildKind.MAP : PgChildKind.POJO_COLLECTION, path, type,
+                    element, key, columns, null, absolute, ownerChild, children);
+        }
+
+        /**
+         * The table of an element that IS a collection ({@code List<List<String>>},
+         * {@code Map<String, List<Book>>}): a table of its own, under the table {@code name}, with an empty
+         * field path — "the element itself". Null when that inner collection has no relational form.
+         */
+        private PgChildTable elementTable(String name, List<String> absolute, IClass<?> element,
+                Type elementGeneric, Set<IClass<?>> visiting) {
+            return new Walker(table, name, absolute).build(name + PgNaming.PATH_SEPARATOR + ELEMENT_SUFFIX,
+                    List.of(), absolute, element, elementGeneric, visiting);
+        }
+
+        /** The {@code _present} column of an element: a null element and an all-null one differ. */
+        private static PgColumn present(IClass<?> element) {
+            return new PgColumn(PgChildTable.PRESENT, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, List.of(), element);
         }
 
         private static PgColumn column(List<String> path, String sqlType, PgColumnKind kind, IClass<?> type) {
