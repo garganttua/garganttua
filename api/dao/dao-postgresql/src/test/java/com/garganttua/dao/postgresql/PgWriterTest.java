@@ -304,7 +304,8 @@ class PgWriterTest {
                 assertEquals("x", r.getString("letter"));
                 assertEquals(0, s.amount.compareTo(r.getBigDecimal("amount")), "NUMERIC must keep every digit");
                 assertEquals(s.huge, r.getBigDecimal("huge").toBigIntegerExact());
-                assertEquals(s.at, r.getObject("at", OffsetDateTime.class).toInstant(), "microseconds kept");
+                assertEquals(Instant.parse("2026-09-21T10:15:30.123Z"), r.getObject("at", OffsetDateTime.class).toInstant(),
+                        "truncated to the millisecond a BSON date keeps");
                 assertEquals(s.date.toInstant(), r.getObject("date", OffsetDateTime.class).toInstant());
                 assertEquals(s.day, r.getObject("day", LocalDate.class));
                 assertEquals(s.local, r.getObject("local", LocalDateTime.class));
@@ -331,6 +332,73 @@ class PgWriterTest {
             for (int i = 0; i < row.size(); i++) {
                 assertNull(row.get(i), "column #" + (i + 1) + " of a null field must be NULL");
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("MongoDB's limits, kept for parity")
+    class Limits {
+
+        private final PgTable table = model("scalars", IClass.getClass(Scalars.class), Map.of());
+
+        private Scalars scalars() {
+            Scalars s = new Scalars();
+            s.uuid = "s1";
+            s.letter = 'x';
+            return s;
+        }
+
+        @Test
+        @DisplayName("truncate instants and local date-times to the millisecond of a BSON date")
+        void millis() throws Exception {
+            DataSource db = create(table);
+            Scalars s = scalars();
+            s.local = LocalDateTime.parse("2024-01-02T03:04:05.123456");
+            s.time = LocalTime.parse("23:59:58.999999");
+            s.offset = OffsetDateTime.parse("2024-01-02T03:04:05.123999+02:00");
+            save(db, new PgWriter(table, new PgSchemaRegistry()), s);
+            try (Connection c = db.getConnection(); Statement st = c.createStatement();
+                    ResultSet r = st.executeQuery("SELECT \"local\", \"time\", \"offset\" FROM \"scalars\"")) {
+                r.next();
+                assertEquals(LocalDateTime.parse("2024-01-02T03:04:05.123"), r.getObject(1, LocalDateTime.class));
+                assertEquals(LocalTime.parse("23:59:58.999"), r.getObject(2, LocalTime.class));
+                assertEquals(Instant.parse("2024-01-02T01:04:05.123Z"), r.getObject(3, OffsetDateTime.class).toInstant(),
+                        "truncated, never rounded up");
+            }
+        }
+
+        @Test
+        @DisplayName("accept 34 significant digits and refuse 35, naming the field")
+        void decimal128() throws Exception {
+            DataSource db = create(table);
+            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            Scalars s = scalars();
+            s.amount = new BigDecimal("1234567890123456789012345678901.234");
+            save(db, writer, s);
+            s.amount = new BigDecimal("1234567890123456789012345678901.2345");
+            ApiException e = assertThrows(ApiException.class, () -> save(db, writer, s));
+            assertTrue(e.getMessage().contains("amount") && e.getMessage().contains("34"), e::getMessage);
+            s.amount = null;
+            s.huge = BigInteger.TEN.pow(40);
+            assertThrows(ApiException.class, () -> save(db, writer, s), "a BigInteger is held to the same limit");
+        }
+
+        @Test
+        @DisplayName("refuse the NUL character with a message naming the field")
+        void nul() throws Exception {
+            DataSource db = create(table);
+            Scalars s = scalars();
+            s.text = "a\0b";
+            ApiException e = assertThrows(ApiException.class,
+                    () -> save(db, new PgWriter(table, new PgSchemaRegistry()), s));
+            assertTrue(e.getMessage().contains("text") && e.getMessage().contains("NUL"), e::getMessage);
+        }
+
+        @Test
+        @DisplayName("tell an escaped NUL in JSON from an escaped backslash followed by 'u0000'")
+        void escapedNul() {
+            assertTrue(PgWriteSupport.escapesNul("{\"a\":\"x\\u0000\"}"));
+            assertFalse(PgWriteSupport.escapesNul("{\"a\":\"x\\\\u0000\"}"));
         }
     }
 
@@ -382,6 +450,25 @@ class PgWriterTest {
                     rows(db, "SELECT \"_ord\", \"value\" FROM \"riches__tags\" ORDER BY \"_ord\""));
             assertEquals(Arrays.asList(1, null, null),
                     rows(db, "SELECT \"_ord\", \"sku\", \"price\" FROM \"riches__lines\" ORDER BY \"_ord\"").get(1));
+        }
+
+        @Test
+        @DisplayName("mark each structure present (TRUE) or absent (NULL), empty ones included")
+        void presenceBits() throws Exception {
+            DataSource db = create(table);
+            Rich r = rich("r1");
+            r.address = new Address();
+            r.tags = new ArrayList<>();
+            r.stock = null;
+            r.lines = Arrays.asList(new Line(), null);
+            save(db, new PgWriter(table, new PgSchemaRegistry()), r);
+            assertEquals(Arrays.asList(true, true, null),
+                    rows(db, "SELECT \"address\", \"tags\", \"stock\" FROM \"riches\"").get(0),
+                    "an all-null POJO and an empty list exist; a null map does not");
+            assertEquals(Arrays.asList(true, null),
+                    rows(db, "SELECT \"_present\" FROM \"riches__lines\" ORDER BY \"_ord\"").stream()
+                            .map(row -> row.get(0)).toList(),
+                    "an all-null element is present, a null element is not");
         }
 
         @Test

@@ -31,8 +31,11 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * </p>
  *
  * <p>
- * A null or empty collection is written as zero rows. A null element of a scalar or POJO collection
- * is a row whose value columns are NULL — it keeps its position. A null element of a REFERENCE
+ * A null or empty collection is written as zero rows; the owner's presence column (written with the
+ * main row) is what tells them apart. A null element of a scalar or POJO collection
+ * is a row whose value columns are NULL — it keeps its position; for a POJO element, its
+ * {@code _present} column is NULL too, which is how the reader tells it from an element whose fields
+ * are all null. A null element of a REFERENCE
  * collection is skipped, as the MongoDB DAO skips it when building its {@code DBRef} list: there is
  * no entity to point to.
  * </p>

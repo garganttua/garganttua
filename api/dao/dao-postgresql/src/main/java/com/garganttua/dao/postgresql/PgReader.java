@@ -32,9 +32,10 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * It behaves like the MongoDB reader wherever the relational model allows: DTOs and embedded POJOs
  * are built through their no-arg constructor, values are coerced to the FIELD's declared type,
  * references are resolved one level deep, and a projection always keeps the id and every reference —
- * without them the DTO could neither be identified nor its references resolved. Two divergences are
- * deliberate and shared by the whole DAO: a collection with no rows reads back EMPTY, never null
- * (null and empty are stored alike), and an embedded POJO whose columns are all NULL reads back null.
+ * without them the DTO could neither be identified nor its references resolved. Like MongoDB, a
+ * stored NULL never overwrites a field (the constructor's value survives, as it survives an absent
+ * key), and the presence columns of the model tell a null POJO, collection or map from an empty one:
+ * what was saved null reads back as the constructor left it, what was saved empty reads back empty.
  * </p>
  *
  * <p>
@@ -164,12 +165,22 @@ public final class PgReader {
     private List<PgSelected> selection(List<String> projection) {
         List<PgSelected> selected = new ArrayList<>();
         for (PgColumn column : table.columns()) {
-            boolean always = column.kind() == PgColumnKind.ID || column.kind() == PgColumnKind.COMPOSITION;
+            boolean always = column.kind() == PgColumnKind.ID || column.kind() == PgColumnKind.COMPOSITION
+                    || isReferenceCollectionPresence(column);
             if (always || projects(projection, column.dottedPath())) {
                 selected.add(PgSelected.of(PgQuery.ALIAS, column));
             }
         }
         return selected;
+    }
+
+    /**
+     * Whether a column is the presence bit of a reference collection — read whenever its child table
+     * is, i.e. always: without it, a reference list saved null could not be told from an empty one.
+     */
+    private boolean isReferenceCollectionPresence(PgColumn column) {
+        return column.kind() == PgColumnKind.PRESENCE && table.child(column.dottedPath())
+                .map(c -> c.kind() == PgChildKind.COMPOSITION_COLLECTION).orElse(false);
     }
 
     /**
@@ -188,9 +199,11 @@ public final class PgReader {
     }
 
     /**
-     * Whether a projection covers a path: equal, under a projected path ({@code address} covers
-     * {@code address.city}) or above one ({@code node.label} needs the JSONB column {@code node}).
-     * No projection, or an empty one, covers everything — as in the MongoDB DAO.
+     * Whether a projection covers a path. A projected path counts by its FIRST segment only, as in
+     * the MongoDB DAO, which projects the top-level field of a dotted path and so hands back the whole
+     * sub-document: {@code address.city} covers every {@code address} column, and a projected
+     * {@code node.label} the JSONB column {@code node}. No projection, or an empty one, covers
+     * everything.
      */
     static boolean projects(List<String> projection, String path) {
         if (projection == null || projection.isEmpty()) {
@@ -201,7 +214,9 @@ public final class PgReader {
                 continue;
             }
             String p = projected.trim();
-            if (path.equals(p) || path.startsWith(p + ".") || p.startsWith(path + ".")) {
+            int dot = p.indexOf('.');
+            p = dot < 0 ? p : p.substring(0, dot);
+            if (path.equals(p) || path.startsWith(p + ".")) {
                 return true;
             }
         }
@@ -212,7 +227,7 @@ public final class PgReader {
         Object dto = beans.instantiate(dtoClass);
         int idIndex = 1 + indexOfId(selected);
         PgLoadedRow row = new PgLoadedRow(rs.getString(idIndex), dto);
-        mapper.fill(dto, dtoClass, rs, selected, 1, row.references());
+        mapper.fill(row, dtoClass, rs, selected, 1);
         return row;
     }
 

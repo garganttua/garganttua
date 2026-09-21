@@ -137,7 +137,7 @@ class PgFoundationTest {
         }
 
         @Test
-        @DisplayName("round-trips an instant through the real engine without losing it")
+        @DisplayName("round-trips an instant through the real engine at the millisecond a BSON date keeps")
         void instantRoundTrips() throws Exception {
             Instant now = Instant.parse("2026-09-21T10:15:30.123456Z");
             DataSource db = PgTestDatabase.freshDatabase();
@@ -149,7 +149,8 @@ class PgFoundationTest {
                 }
                 try (ResultSet r = s.executeQuery("SELECT v FROM ts")) {
                     r.next();
-                    assertEquals(now, r.getObject(1, OffsetDateTime.class).toInstant());
+                    assertEquals(Instant.parse("2026-09-21T10:15:30.123Z"), r.getObject(1, OffsetDateTime.class).toInstant(),
+                            "truncated to the millisecond, as MongoDB stores it");
                 }
             }
         }

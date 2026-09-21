@@ -31,6 +31,15 @@ import com.garganttua.dao.postgresql.schema.PgColumn;
  * </p>
  *
  * <p>
+ * <b>Known limit — untyped numbers.</b> A field declared {@code Object} is a {@code JSONB} document,
+ * and JSON has one number type: {@code 5L} is written {@code 5} and read back as the smallest Java
+ * type that holds it, an {@code Integer}. BSON keeps int32, int64 and double apart, so MongoDB hands
+ * back the {@code Long}. A faithful fix needs a type tag inside the document, which every filter on
+ * that column would then have to see through; until then, a {@code Long} or {@code Float} held by an
+ * {@code Object} field reads back as the JSON-natural {@code Integer} or {@code Double}.
+ * </p>
+ *
+ * <p>
  * Temporal columns are read with a TYPED {@code getObject}: the untyped call returns
  * {@code java.sql.Timestamp}, which interprets a {@code TIMESTAMP} in the JVM's zone and would
  * shift every value by the host's offset.
