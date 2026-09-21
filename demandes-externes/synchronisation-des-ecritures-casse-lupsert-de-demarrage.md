@@ -172,3 +172,38 @@ tel qu'il est écrit. Un point à vérifier de votre côté quand vous mesurerez
 passez dans la `MutexStrategy` n'est **pas** lu par `RedisMutex` — il vient du `RedUtilsConfig` de
 la fabrique. C'est écrit dans la fiche d'origine, section « Précision sur le bail » ; nous le
 répétons ici parce que votre stratégie en déclare un et qu'il ne fera rien.
+
+---
+
+## Mesure du consommateur — 2026-09-20, sur `3.0.0-ALPHA21`
+
+**Corrigé, vérifié chez nous.** Deux instances de palliad (ports 3000 et 3005) sur la même base
+Mongo, Redis en conteneur, notre module `palliad-cluster` au classpath.
+
+Et d'abord : votre rectification était juste, et notre fiche avait tort sur le périmètre. Ce n'était
+pas le démarrage. Nous l'avons vérifié à notre tour — notre premier banc de course, deux écrivains
+seulement, ne perdait RIEN même sans aucune synchronisation : la fenêtre de lecture-fusion-écriture
+est trop courte devant la latence HTTP, les deux requêtes se sérialisaient d'elles-mêmes. Un test
+qui ne sait pas détecter le défaut qu'il cherche ne prouve rien de son absence. Nous l'avons donc
+durci — quatre écrivains, deux par nœud, un champ chacun, lâchés par une barrière — et là :
+
+| Banc (25 tours, 4 écritures simultanées sur la même entité) | Tours intacts | Tours avec au moins un champ perdu |
+|---|---|---|
+| **sans** le module (aucune politique) | **0** | **25** |
+| **avec** le module (politique globale, verrou Redis) | **25** | **0** |
+
+Aucun 409 : la contention est absorbée par l'attente de 10 s, jamais rendue au client sur ce banc.
+
+Les clés observées par `MONITOR` sont exactement celles que vous décrivez :
+
+```
+locations:<tenant>                 ← sur create, sans uuid : la granularité dont notre quota a besoin
+locations:<tenant>:<uuid>          ← sur update, une clé par entité
+```
+
+Six écritures simultanées sur six entités différentes prennent six clés distinctes et ne se
+sérialisent pas (0,04 s, contre 0,05 s pour six écritures sur la même). Les verrous sont tous
+relâchés à la fin : `KEYS *` rend vide.
+
+Le démarrage, lui, tourne bien sous verrou comme une écriture ordinaire — c'est l'option 1, et les
+deux nœuds ont démarré l'un après l'autre sans incident.
