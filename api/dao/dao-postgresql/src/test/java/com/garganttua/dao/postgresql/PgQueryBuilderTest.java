@@ -142,17 +142,25 @@ class PgQueryBuilderTest {
         }
 
         @Test
-        @DisplayName("$regex is a POSIX match on text")
+        @DisplayName("$regex matches text")
         void regex() throws Exception {
             assertMatches(field("name", "$regex", "^(Al|Bo)"), "a", "b");
         }
 
         @Test
-        @DisplayName("$regex on a numeric column is refused with a message naming the field and its type")
-        void regexOnNumber() {
-            ApiException e = assertThrows(ApiException.class, () -> match(field("total", "$regex", "4")));
-            assertTrue(e.getMessage().contains("'total'") && e.getMessage().contains("INTEGER"),
-                    () -> "message should name the field and its type: " + e.getMessage());
+        @DisplayName("$regex on a numeric column matches nothing, as in MongoDB (a regex only matches strings)")
+        void regexOnNumber() throws Exception {
+            assertMatches(field("total", "$regex", "4"));
+            assertMatches(logical("$nor", field("total", "$regex", "4"), field("name", "$eq", "Bob")), "a", "c", "d",
+                    "e");
+        }
+
+        @Test
+        @DisplayName("an untranslatable $regex is refused with a message naming the field and the construct")
+        void regexUntranslatable() {
+            ApiException e = assertThrows(ApiException.class, () -> match(field("name", "$regex", "a++b")));
+            assertTrue(e.getMessage().contains("'name'") && e.getMessage().contains("possessive"),
+                    () -> "message should name the field and the construct: " + e.getMessage());
         }
 
         @Test
@@ -367,10 +375,31 @@ class PgQueryBuilderTest {
     class Text {
 
         @Test
-        @DisplayName("searches every text column of the main table, ignoring the named field")
+        @DisplayName("searches every string of the entity, ignoring the named field")
         void search() throws Exception {
             assertMatches(field("whatever", "$text", "alice"), "a");
             assertMatches(field("name", "$text", "Paris"), "a", "d");
+            assertMatches(field("name", "$text", "green"), "d");
+            assertMatches(field("name", "$text", "heavy"), "c");
+        }
+
+        @Test
+        @DisplayName("words are ORed, a -word excludes, and a stop word alone matches nothing")
+        void words() throws Exception {
+            assertMatches(field("name", "$text", "alice lyon"), "a", "b");
+            assertMatches(field("name", "$text", "paris -green"), "a");
+            assertMatches(field("name", "$text", "the"));
+        }
+
+        @Test
+        @DisplayName("MongoDB's restrictions are refused: under $or, under $nor, twice")
+        void restrictions() {
+            assertThrows(ApiException.class, () -> match(logical("$or", field("x", "$text", "alice"),
+                    field("name", "$eq", "Bob"))));
+            assertThrows(ApiException.class, () -> match(logical("$nor", field("x", "$text", "alice"),
+                    field("name", "$eq", "Bob"))));
+            assertThrows(ApiException.class, () -> match(logical("$and", field("x", "$text", "alice"),
+                    field("x", "$text", "bob"))));
         }
     }
 
