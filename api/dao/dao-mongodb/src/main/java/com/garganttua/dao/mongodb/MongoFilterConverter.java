@@ -1,5 +1,6 @@
 package com.garganttua.dao.mongodb;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.bson.Document;
@@ -11,8 +12,16 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.IFilter;
 import com.mongodb.client.model.Filters;
 
-// PMD note: org.bson.Document is the MongoDB driver's predicate type (the GeoJSON {type,coordinates}
-// handed to Filters.geoWithin), surfaced deliberately rather than via a Map interface.
+/**
+ * Translates the api's {@link IFilter} tree into a MongoDB query. Filter values are converted with
+ * {@link MongoBsonValues} — the same conversion the writer applies — so a {@code BigDecimal},
+ * {@code BigInteger} or {@code UUID} is compared in the form it was stored in.
+ *
+ * <p>
+ * PMD note: org.bson.Document is the MongoDB driver's predicate type (the GeoJSON {type,coordinates}
+ * handed to Filters.geoWithin), surfaced deliberately rather than via a Map interface.
+ * </p>
+ */
 @SuppressWarnings({ "PMD.LooseCoupling" })
 public class MongoFilterConverter {
 
@@ -70,7 +79,11 @@ public class MongoFilterConverter {
 
 		IFilter comparison = subs.get(0);
 		String op = comparison.getName();
-		Object value = comparison.getValue();
+		Object raw = comparison.getValue();
+		// Compare in the shape the writer stored: big numbers as Decimal128, UUIDs as strings.
+		Object value = "$geoWithin".equals(op) || "$geoWithinSphere".equals(op)
+				? raw
+				: MongoBsonValues.toBson(raw, fieldName);
 
 		return switch (op) {
 			case "$eq" -> Filters.eq(fieldName, value);
@@ -118,8 +131,7 @@ public class MongoFilterConverter {
 		if (values == null || values.isEmpty()) {
 			throw new ApiException("$in operator requires at least 1 value");
 		}
-		List<Object> inValues = values.stream().map(IFilter::getValue).toList();
-		return Filters.in(fieldName, inValues);
+		return Filters.in(fieldName, bsonValues(fieldName, values));
 	}
 
 	private static Bson convertNin(String fieldName, IFilter comparison) throws ApiException {
@@ -127,7 +139,15 @@ public class MongoFilterConverter {
 		if (values == null || values.isEmpty()) {
 			throw new ApiException("$nin operator requires at least 1 value");
 		}
-		List<Object> ninValues = values.stream().map(IFilter::getValue).toList();
-		return Filters.nin(fieldName, ninValues);
+		return Filters.nin(fieldName, bsonValues(fieldName, values));
+	}
+
+	/** The listed values of an {@code $in} / {@code $nin}, each in the shape the writer stores it. */
+	private static List<Object> bsonValues(String fieldName, List<IFilter> values) throws ApiException {
+		List<Object> converted = new ArrayList<>(values.size());
+		for (IFilter value : values) {
+			converted.add(MongoBsonValues.toBson(value.getValue(), fieldName));
+		}
+		return converted;
 	}
 }

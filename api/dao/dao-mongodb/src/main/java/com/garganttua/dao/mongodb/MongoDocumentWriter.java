@@ -81,7 +81,7 @@ final class MongoDocumentWriter {
 		if (collection != null) {
 			map.put(field.getName(), toReference(value, collection));
 		} else {
-			map.put(field.getName(), toStorable(value));
+			map.put(field.getName(), toStorable(value, new IdentityHashMap<>(), field.getName()));
 		}
 	}
 
@@ -93,13 +93,16 @@ final class MongoDocumentWriter {
 	 * element-by-element; an <em>embedded</em> POJO (anything that is neither a native BSON scalar
 	 * nor a declared {@code @Composed} DBRef) becomes a sub-{@link Document} via {@link #pojoToDocument}.
 	 * The native scalars (temporal types, numbers, strings, {@code byte[]}) are handed to the driver
-	 * verbatim.
+	 * verbatim, except the few the default codecs cannot store faithfully ({@link MongoBsonValues}).
+	 * A null (an element of a collection, a map value) is stored as a BSON null so it keeps its place.
+	 *
+	 * @param path the dotted field path, for error messages
 	 */
-	private Object toStorable(Object value) throws ApiException {
-		return toStorable(value, new IdentityHashMap<>());
-	}
-
-	private Object toStorable(Object value, IdentityHashMap<Object, Boolean> visited) throws ApiException {
+	private Object toStorable(Object value, IdentityHashMap<Object, Boolean> visited, String path)
+			throws ApiException {
+		if (value == null) {
+			return null;
+		}
 		if (value instanceof Enum<?> e) {
 			return e.name();
 		}
@@ -110,46 +113,49 @@ final class MongoDocumentWriter {
 		// Map/Collection are themselves in java.util.* — they must be recursed BEFORE the
 		// "native by package" test below, else they would be handed to the driver raw.
 		if (value instanceof Map<?, ?> map) {
-			return mapToDocument(map, visited);
+			return mapToDocument(map, visited, path);
 		}
 		if (value instanceof Collection<?> elements) {
-			return collectionToList(elements, visited);
+			return collectionToList(elements, visited, path);
 		}
 		if (value.getClass().isArray() && !value.getClass().getComponentType().isPrimitive()) {
-			return arrayToList(value, visited);
+			return arrayToList(value, visited, path);
 		}
 		if (isNativeBson(value)) {
-			return value;
+			return MongoBsonValues.toBson(value, path);
 		}
 		// An embedded POJO: persist it as a sub-document (NOT a DBRef — compositions are handled
 		// earlier, by field name, in dtoToDocument).
-		return pojoToDocument(value, visited);
+		return pojoToDocument(value, visited, path);
 	}
 
-	private Document mapToDocument(Map<?, ?> map, IdentityHashMap<Object, Boolean> visited) throws ApiException {
+	private Document mapToDocument(Map<?, ?> map, IdentityHashMap<Object, Boolean> visited, String path)
+			throws ApiException {
 		Document sub = new Document();
 		for (Map.Entry<?, ?> entry : map.entrySet()) {
-			sub.put(String.valueOf(entry.getKey()), toStorable(entry.getValue(), visited));
+			String key = String.valueOf(entry.getKey());
+			sub.put(key, toStorable(entry.getValue(), visited, path + "." + key));
 		}
 		return sub;
 	}
 
-	private List<Object> collectionToList(Collection<?> elements, IdentityHashMap<Object, Boolean> visited)
-			throws ApiException {
+	private List<Object> collectionToList(Collection<?> elements, IdentityHashMap<Object, Boolean> visited,
+			String path) throws ApiException {
 		List<Object> converted = new ArrayList<>(elements.size());
 		for (Object element : elements) {
-			converted.add(toStorable(element, visited));
+			converted.add(toStorable(element, visited, path));
 		}
 		return converted;
 	}
 
-	private List<Object> arrayToList(Object value, IdentityHashMap<Object, Boolean> visited) throws ApiException {
+	private List<Object> arrayToList(Object value, IdentityHashMap<Object, Boolean> visited, String path)
+			throws ApiException {
 		// Array of reference types (POJO[], String[]…). Primitive arrays (byte[], int[]) are
 		// left native by the caller so binary/key material survives untouched.
 		int length = Array.getLength(value);
 		List<Object> converted = new ArrayList<>(length);
 		for (int i = 0; i < length; i++) {
-			converted.add(toStorable(Array.get(value, i), visited));
+			converted.add(toStorable(Array.get(value, i), visited, path));
 		}
 		return converted;
 	}
@@ -180,7 +186,7 @@ final class MongoDocumentWriter {
 	 * embedded POJO is a pure value object). Cycles are refused with a parlant {@link ApiException}:
 	 * embedded sub-documents must form a tree; a back-reference belongs in a {@code @Composed} DBRef.
 	 */
-	private Document pojoToDocument(Object pojo, IdentityHashMap<Object, Boolean> visited)
+	private Document pojoToDocument(Object pojo, IdentityHashMap<Object, Boolean> visited, String path)
 			throws ApiException {
 		if (visited.containsKey(pojo)) {
 			throw new ApiException("Cycle detected while embedding POJO of type " + pojo.getClass().getName()
@@ -192,7 +198,7 @@ final class MongoDocumentWriter {
 			IClass<?> clazz = IClass.getClass(pojo.getClass());
 			while (clazz != null) {
 				for (IField field : clazz.getDeclaredFields()) {
-					writeEmbeddedField(map, pojo, field, visited);
+					writeEmbeddedField(map, pojo, field, visited, path);
 				}
 				clazz = clazz.getSuperclass();
 			}
@@ -207,7 +213,7 @@ final class MongoDocumentWriter {
 	}
 
 	private void writeEmbeddedField(Map<String, Object> map, Object pojo, IField field,
-			IdentityHashMap<Object, Boolean> visited) throws ApiException, IllegalAccessException {
+			IdentityHashMap<Object, Boolean> visited, String path) throws ApiException, IllegalAccessException {
 		int mods = field.getModifiers();
 		if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) {
 			return;
@@ -217,7 +223,7 @@ final class MongoDocumentWriter {
 		if (value == null) {
 			return;
 		}
-		map.put(field.getName(), toStorable(value, visited));
+		map.put(field.getName(), toStorable(value, visited, path + "." + field.getName()));
 	}
 
 	/**
