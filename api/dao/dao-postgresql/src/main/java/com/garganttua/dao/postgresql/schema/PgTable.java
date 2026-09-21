@@ -17,7 +17,8 @@ import java.util.Optional;
  * @param name         the main table name, unquoted
  * @param id           the primary-key column (the DTO uuid field)
  * @param columns      every main-table column INCLUDING {@code id}, in declaration order
- * @param children     the child tables, one per collection or map field
+ * @param children     the TOP-LEVEL child tables, one per collection or map field of the entity; the
+ *                     tables of collections held by their elements hang below them ({@link #allChildren})
  * @param compositions every {@code @Composed} field — single or collection — by its dotted path, to
  *                     the domain it references: what the writer needs to read the target's uuid and
  *                     the reader to resolve it
@@ -76,13 +77,33 @@ public record PgTable(String name, PgColumn id, List<PgColumn> columns, List<PgC
      * @return the child table, or empty when the path is not a collection
      */
     public Optional<PgChildTable> child(String dottedPath) {
-        return children.stream().filter(c -> c.dottedPath().equals(dottedPath)).findFirst();
+        return allChildren().stream().filter(c -> c.dottedPath().equals(dottedPath)).findFirst();
+    }
+
+    /**
+     * Every child table at every depth, parents before their children (the order DDL needs).
+     *
+     * @return the child tables, depth-first
+     */
+    public List<PgChildTable> allChildren() {
+        List<PgChildTable> out = new java.util.ArrayList<>();
+        for (PgChildTable child : children) {
+            collect(child, out);
+        }
+        return out;
+    }
+
+    private static void collect(PgChildTable child, List<PgChildTable> out) {
+        out.add(child);
+        for (PgChildTable grandchild : child.children()) {
+            collect(grandchild, out);
+        }
     }
 
     /** {@return whether any column needs PostGIS — the DDL must then create the extension} */
     public boolean needsPostgis() {
         return columns.stream().anyMatch(c -> c.kind() == PgColumnKind.GEOMETRY)
-                || children.stream().flatMap(c -> c.valueColumns().stream())
+                || allChildren().stream().flatMap(c -> c.valueColumns().stream())
                         .anyMatch(c -> c.kind() == PgColumnKind.GEOMETRY);
     }
 }

@@ -31,6 +31,7 @@ final class PgSchemaExpectation {
     static final String CREATE_POSTGIS = "CREATE EXTENSION IF NOT EXISTS " + POSTGIS;
 
     private static final String INTEGER = "INTEGER";
+    private static final String BIGINT = "BIGINT";
 
     /**
      * One expected column.
@@ -70,7 +71,7 @@ final class PgSchemaExpectation {
             main.add(new Column(column.name(), column.sqlType(), column.kind() != PgColumnKind.ID));
         }
         tables.add(new Table(table.name(), PgDdl.createMain(table), main));
-        for (PgChildTable child : table.children()) {
+        for (PgChildTable child : table.allChildren()) {
             tables.add(new Table(child.name(), PgDdl.createChild(table, child), childColumns(child)));
         }
         return tables;
@@ -78,7 +79,14 @@ final class PgSchemaExpectation {
 
     private static List<Column> childColumns(PgChildTable child) {
         List<Column> columns = new ArrayList<>();
+        // Structural, never addable: the identity a nested table's _parent references, and _parent itself.
+        if (child.hasChildren()) {
+            columns.add(new Column(PgChildTable.ID, BIGINT, false));
+        }
         columns.add(new Column(PgChildTable.OWNER, PgTypes.TEXT, false));
+        if (child.nested()) {
+            columns.add(new Column(PgChildTable.PARENT, BIGINT, false));
+        }
         if (child.ordered()) {
             columns.add(new Column(PgChildTable.ORD, INTEGER, false));
         } else {
@@ -96,7 +104,7 @@ final class PgSchemaExpectation {
         List<String> fields = new ArrayList<>();
         table.columns().stream().filter(c -> c.kind() == PgColumnKind.GEOMETRY)
                 .forEach(c -> fields.add(c.dottedPath()));
-        for (PgChildTable child : table.children()) {
+        for (PgChildTable child : table.allChildren()) {
             child.valueColumns().stream().filter(c -> c.kind() == PgColumnKind.GEOMETRY)
                     .forEach(c -> fields.add(child.dottedPath() + "[]"
                             + (c.fieldPath().isEmpty() ? "" : "." + c.dottedPath())));

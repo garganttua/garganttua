@@ -114,7 +114,9 @@ final class PgFieldResolver {
                     PgOperand.of(CHILD_ALIAS, child.valueColumns().get(0)), true, absent);
             case POJO_COLLECTION -> new PgField.Opaque(absent, PgSql.any(List.of(absent, rows(child,
                     ownerScope().then(" AND " + present() + " IS NULL")).wrap("EXISTS (", ")"))));
-            case MAP, COMPOSITION_COLLECTION -> PgField.Opaque.of(absent);
+            // PROVISIONAL for NESTED_COLLECTION (an element that is itself a collection): presence only,
+            // until the nested-tables pass gives it element semantics.
+            case MAP, COMPOSITION_COLLECTION, NESTED_COLLECTION -> PgField.Opaque.of(absent);
         };
     }
 
