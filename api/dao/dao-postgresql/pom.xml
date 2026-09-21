@@ -74,6 +74,14 @@
 			<artifactId>garganttua-reflections</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Parity tests run the SAME operations on the MongoDB DAO against a real mongod, and demand
+		     the same answers: "iso-functional with MongoDB" is checked, not asserted. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-dao-mongodb</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
 		<!-- A REAL PostgreSQL 17 for the tests, from Maven-fetched binaries (every platform, pinned
 		     by the BOM in the api parent): no Docker needed. -->
 		<dependency>
