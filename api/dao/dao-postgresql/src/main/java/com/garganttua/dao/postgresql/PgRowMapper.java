@@ -3,13 +3,11 @@ package com.garganttua.dao.postgresql;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
@@ -21,13 +19,19 @@ import com.garganttua.dao.postgresql.schema.PgColumnKind;
  * one row.
  *
  * <p>
- * Flattening loses one bit: {@code address = null} and {@code address = new Address()} with every
- * field null both become all-NULL columns. The shared rule is that all-NULL reads back as null — the
- * likelier intent, and the one that does not invent objects out of empty columns. It is enforced
- * explicitly rather than by merely not creating the POJO, because a DTO whose field initialiser
- * builds the POJO ({@code Address address = new Address()}) would otherwise read back a non-null
- * shell that was stored as null.
+ * It reads a row the way the MongoDB reader reads a document, which is what makes the two DAOs
+ * answer alike:
  * </p>
+ * <ul>
+ * <li><b>NULL means absent.</b> The MongoDB writer omits a null field and its reader skips an absent
+ * key, so a field initialiser ({@code String status = "draft"}) survives a stored null. Here a NULL
+ * cell is therefore never written into a field: the value the no-arg constructor left is kept.</li>
+ * <li><b>Presence decides whether a POJO exists.</b> Flattening cannot tell {@code address = null}
+ * from {@code new Address()} with every field null — both are all-NULL columns — so the schema keeps
+ * a presence column beside them. {@code TRUE}: the POJO existed and is rebuilt as a FRESH instance
+ * (as MongoDB builds a sub-document, whatever the initialiser put there), even when all its fields
+ * are null. {@code NULL}: it did not, and the field is left as the constructor left it.</li>
+ * </ul>
  */
 final class PgRowMapper {
 
@@ -38,34 +42,32 @@ final class PgRowMapper {
     }
 
     /**
-     * Fills {@code target} from consecutive cells of the current row. Composition cells are not set
-     * — they hold uuids the caller resolves later — but collected into {@code references}.
+     * Fills a DTO from consecutive cells of the current row. Composition cells are not set — they
+     * hold uuids the caller resolves later — but collected into the row's references; presence cells
+     * are applied to the POJOs and kept on the row for the collections read later.
      *
-     * @param target     the object to fill
-     * @param type       its class, where the columns' field paths start
+     * @param row        the row being read: its instance is filled, its references and presence recorded
+     * @param type       the DTO class, where the columns' field paths start
      * @param rs         the result set, positioned on the row
      * @param cells      the selected columns, in select-list order
      * @param firstIndex the 1-based index of the first of {@code cells} in the result set
-     * @param references receives the stored uuid of every composition cell, by dotted path
      * @throws ApiException when a cell cannot be read or set
      */
-    void fill(Object target, IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex,
-            Map<String, String> references) throws ApiException {
-        Map<List<String>, Object> values = new LinkedHashMap<>();
-        for (int i = 0; i < cells.size(); i++) {
-            PgSelected cell = cells.get(i);
-            if (cell.column().kind() == PgColumnKind.COMPOSITION) {
-                references.put(cell.column().dottedPath(), text(rs, firstIndex + i));
-                continue;
-            }
-            values.put(cell.column().fieldPath(), read(type, rs, firstIndex + i, cell));
-        }
-        assign(target, values);
+    void fill(PgLoadedRow row, IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex)
+            throws ApiException {
+        Cells read = read(type, rs, cells, firstIndex, row.references());
+        read.presence().forEach((path, present) -> row.presence().put(String.join(".", path), present));
+        assign(row.instance(), type, read);
     }
 
     /**
-     * A new element built from consecutive cells, or null when every cell is NULL (the all-NULL rule,
-     * applied to the element itself).
+     * A new element built from consecutive cells, or null when the element itself was null.
+     *
+     * <p>
+     * The element's own presence cell ({@code _present}, empty path) tells a null element from one
+     * whose fields are all null. Without it (a table written before presence existed), the old rule
+     * applies: every cell NULL reads as a null element.
+     * </p>
      *
      * @param type       the element class
      * @param rs         the result set, positioned on the row
@@ -75,49 +77,88 @@ final class PgRowMapper {
      * @throws ApiException when a cell cannot be read or set
      */
     Object element(IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex) throws ApiException {
-        Map<List<String>, Object> values = new LinkedHashMap<>();
-        boolean any = false;
-        for (int i = 0; i < cells.size(); i++) {
-            Object value = read(type, rs, firstIndex + i, cells.get(i));
-            any |= value != null;
-            values.put(cells.get(i).column().fieldPath(), value);
-        }
-        if (!any) {
+        Cells read = read(type, rs, cells, firstIndex, new LinkedHashMap<>());
+        List<String> self = List.of();
+        boolean exists = read.presence().containsKey(self)
+                ? read.presence().get(self) != null
+                : read.values().values().stream().anyMatch(v -> v != null);
+        if (!exists) {
             return null;
         }
         Object element = beans.instantiate(type);
-        assign(element, values);
+        assign(element, type, read);
         return element;
     }
 
-    private Object read(IClass<?> type, ResultSet rs, int index, PgSelected cell) throws ApiException {
+    /** The decoded cells of one row: values and presence bits, by field path. */
+    private record Cells(Map<List<String>, Object> values, Map<List<String>, Boolean> presence) {
+    }
+
+    private Cells read(IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex,
+            Map<String, String> references) throws ApiException {
+        Map<List<String>, Object> values = new LinkedHashMap<>();
+        Map<List<String>, Boolean> presence = new LinkedHashMap<>();
+        for (int i = 0; i < cells.size(); i++) {
+            PgSelected cell = cells.get(i);
+            PgColumnKind kind = cell.column().kind();
+            if (kind == PgColumnKind.COMPOSITION) {
+                references.put(cell.column().dottedPath(), text(rs, firstIndex + i));
+            } else if (kind == PgColumnKind.PRESENCE) {
+                presence.put(cell.column().fieldPath(),
+                        (Boolean) PgJdbcDecoder.decode(rs, firstIndex + i, cell.column(),
+                                IClass.getClass(Boolean.class), Boolean.class));
+            } else {
+                values.put(cell.column().fieldPath(), decode(type, rs, firstIndex + i, cell));
+            }
+        }
+        return new Cells(values, presence);
+    }
+
+    private Object decode(IClass<?> type, ResultSet rs, int index, PgSelected cell) throws ApiException {
         IField field = beans.leaf(type, cell.column().fieldPath());
         return PgJdbcDecoder.decode(rs, index, cell.column(), field.getType(), field.getGenericType());
     }
 
     /**
-     * Sets every value along its path, then nulls every embedded POJO none of whose cells held a value.
-     * Shortest prefixes are nulled first, so a deeper prefix finds its parent already gone and stops.
+     * Creates every present POJO (shallowest first, each a fresh instance), then sets every non-NULL
+     * value that does not lie under an absent one.
      */
-    private void assign(Object target, Map<List<String>, Object> values) throws ApiException {
-        Set<List<String>> prefixes = new LinkedHashSet<>();
-        Set<List<String>> live = new HashSet<>();
-        for (Map.Entry<List<String>, Object> entry : values.entrySet()) {
-            List<String> path = entry.getKey();
-            for (int k = 1; k < path.size(); k++) {
-                prefixes.add(path.subList(0, k));
-                if (entry.getValue() != null) {
-                    live.add(path.subList(0, k));
-                }
+    private void assign(Object target, IClass<?> type, Cells cells) throws ApiException {
+        List<List<String>> present = new ArrayList<>();
+        for (Map.Entry<List<String>, Boolean> bit : cells.presence().entrySet()) {
+            if (bit.getValue() != null && !bit.getKey().isEmpty() && isPojo(type, bit.getKey())) {
+                present.add(bit.getKey());
             }
-            beans.set(target, path, entry.getValue(), entry.getValue() != null);
         }
-        List<List<String>> dead = new ArrayList<>(prefixes);
-        dead.removeAll(live);
-        dead.sort(Comparator.comparingInt(List::size));
-        for (List<String> prefix : dead) {
-            beans.set(target, prefix, null, false);
+        present.sort(Comparator.comparingInt(List::size));
+        for (List<String> path : present) {
+            if (!underAbsent(path, cells.presence())) {
+                beans.set(target, path, beans.instantiate(beans.leaf(type, path).getType()), true);
+            }
         }
+        for (Map.Entry<List<String>, Object> entry : cells.values().entrySet()) {
+            if (entry.getValue() != null && !underAbsent(entry.getKey(), cells.presence())) {
+                beans.set(target, entry.getKey(), entry.getValue(), true);
+            }
+        }
+    }
+
+    /** Whether a structure at a path is a POJO (the other presence bits belong to collections and maps). */
+    private boolean isPojo(IClass<?> type, List<String> path) throws ApiException {
+        IClass<?> declared = beans.leaf(type, path).getType();
+        return !declared.isArray() && !IClass.getClass(Collection.class).isAssignableFrom(declared)
+                && !IClass.getClass(Map.class).isAssignableFrom(declared);
+    }
+
+    /** Whether a proper prefix of the path is a structure known to be absent (presence selected, NULL). */
+    static boolean underAbsent(List<String> path, Map<List<String>, Boolean> presence) {
+        for (int k = 1; k < path.size(); k++) {
+            List<String> prefix = path.subList(0, k);
+            if (presence.containsKey(prefix) && presence.get(prefix) == null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String text(ResultSet rs, int index) throws ApiException {

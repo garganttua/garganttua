@@ -39,6 +39,16 @@ import com.garganttua.core.reflection.IField;
  * </table>
  *
  * <p>
+ * <b>Presence.</b> Relational storage loses a fact MongoDB keeps: whether a structure EXISTED. A
+ * null list and an empty one are both zero child rows; a null POJO and one whose fields are all null
+ * are both all-NULL columns. MongoDB answers differently for each ({@code $empty}, {@code $eq null},
+ * and what {@code find} hands back), so every flattened POJO, every collection, map and reference
+ * collection gets a {@link PgColumnKind#PRESENCE} column on its owner — {@code TRUE} when the value
+ * was there, {@code NULL} when it was not — and every POJO element of a child table a
+ * {@link PgChildTable#PRESENT} column, for the same reason one level down.
+ * </p>
+ *
+ * <p>
  * The {@code JSONB} fallback is not laziness. Some shapes have no finite relational form: a POJO
  * that contains itself ({@code Node self}) would flatten into infinitely many columns, and an
  * untyped {@code List<Object>} (GeoJSON coordinates are nested lists of numbers) has no column type
@@ -97,6 +107,11 @@ public final class PgSchemaModel {
         all.add(id);
         all.addAll(columns);
         refuseCollisions(table, all, children);
+        return new PgTable(table, id, all, children, composedFields(dtoClass, compositions));
+    }
+
+    /** The {@code @Composed} fields the DTO really persists, in field order: field name to target domain. */
+    private static Map<String, String> composedFields(IClass<?> dtoClass, Map<String, String> compositions) {
         Map<String, String> composed = new LinkedHashMap<>();
         if (compositions != null) {
             for (IField field : persistedFields(dtoClass)) {
@@ -106,7 +121,7 @@ public final class PgSchemaModel {
                 }
             }
         }
-        return new PgTable(table, id, all, children, composed);
+        return composed;
     }
 
     private static void addComposition(String table, IField field, List<String> path, String target,
@@ -114,6 +129,8 @@ public final class PgSchemaModel {
         if (isCollection(field.getType())) {
             PgColumn value = new PgColumn(PgChildTable.VALUE, PgTypes.TEXT, PgColumnKind.COMPOSITION,
                     List.of(), IClass.getClass(String.class));
+            columns.add(new PgColumn(PgNaming.column(path), PgTypes.BOOLEAN, PgColumnKind.PRESENCE, path,
+                    field.getType()));
             children.add(new PgChildTable(PgNaming.childTable(table, path),
                     PgChildKind.COMPOSITION_COLLECTION, path, field.getType(),
                     elementType(field.getGenericType(), 0), null, List.of(value), target));
@@ -145,6 +162,10 @@ public final class PgSchemaModel {
             } else if (isMap(type)) {
                 addMap(path, type, generic, visiting, columns, children);
             } else if (isFlattenable(type, visiting)) {
+                // Flattening loses whether the POJO existed: null and "present with every field null"
+                // both become all-NULL columns. MongoDB keeps them apart ({} vs absent), so the fact is
+                // stored beside the columns.
+                columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
                 Set<IClass<?>> deeper = new HashSet<>(visiting);
                 deeper.add(type);
                 for (IField sub : persistedFields(type)) {
@@ -167,9 +188,11 @@ public final class PgSchemaModel {
             String scalar = PgTypes.sqlTypeOf(element).orElse(null);
             if (scalar != null) {
                 PgColumn value = new PgColumn(PgChildTable.VALUE, scalar, PgColumnKind.SCALAR, List.of(), element);
+                columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
                 children.add(new PgChildTable(PgNaming.childTable(table, path), PgChildKind.SCALAR_COLLECTION,
                         path, type, element, null, List.of(value), null));
             } else if (isFlattenable(element, visiting)) {
+                columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
                 children.add(new PgChildTable(PgNaming.childTable(table, path), PgChildKind.POJO_COLLECTION,
                         path, type, element, null, elementColumns(element, visiting), null));
             } else {
@@ -195,6 +218,7 @@ public final class PgSchemaModel {
                 columns.add(column(path, PgTypes.JSONB, PgColumnKind.JSONB, type));
                 return;
             }
+            columns.add(column(path, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, type));
             children.add(new PgChildTable(PgNaming.childTable(table, path), PgChildKind.MAP, path, type,
                     value, key, valueColumns, null));
         }
@@ -202,6 +226,8 @@ public final class PgSchemaModel {
         /** The flattened columns of a collection element, paths relative to the element. */
         private List<PgColumn> elementColumns(IClass<?> element, Set<IClass<?>> visiting) {
             List<PgColumn> out = new ArrayList<>();
+            // A null element and an element whose fields are all null would both be an all-NULL row.
+            out.add(new PgColumn(PgChildTable.PRESENT, PgTypes.BOOLEAN, PgColumnKind.PRESENCE, List.of(), element));
             Walker inner = new Walker(table, false);
             Set<IClass<?>> deeper = new HashSet<>(visiting);
             deeper.add(element);

@@ -142,9 +142,10 @@ class PgSchemaModelTest {
 
             PgChildTable lines = child(table, "lines");
             assertEquals(PgChildKind.POJO_COLLECTION, lines.kind());
-            assertEquals(List.of("sku", "price"),
-                    lines.valueColumns().stream().map(PgColumn::name).toList());
-            assertEquals("NUMERIC", lines.valueColumns().get(1).sqlType());
+            assertEquals(List.of("_present", "sku", "price"),
+                    lines.valueColumns().stream().map(PgColumn::name).toList(),
+                    "a POJO element carries its own presence bit first, then its flattened fields");
+            assertEquals("NUMERIC", lines.valueColumns().get(2).sqlType());
 
             PgChildTable stock = child(table, "stock");
             assertEquals(PgChildKind.MAP, stock.kind());
@@ -174,6 +175,19 @@ class PgSchemaModelTest {
                     "GeoShape itself is finite and flattens");
             assertEquals(PgColumnKind.JSONB, column(table, "geo.coordinates").kind(),
                     "…but its List<Object> has no column type");
+        }
+
+        @Test
+        @DisplayName("a presence bit for every structure — the fact relational storage would lose")
+        void structuresCarryPresence() {
+            PgTable table = model();
+            for (String structure : List.of("address", "labels", "lines", "stock", "address.tags", "relatedOrders")) {
+                assertEquals(PgColumnKind.PRESENCE, table.presence(structure)
+                        .orElseThrow(() -> new AssertionError("no presence bit for " + structure)).kind());
+            }
+            assertTrue(table.column("address").isEmpty(),
+                    "column() must never return a presence bit: a filter on 'address' is not a filter on it");
+            assertTrue(table.presence("node").isEmpty(), "a JSONB field keeps null vs {} natively");
         }
 
         @Test

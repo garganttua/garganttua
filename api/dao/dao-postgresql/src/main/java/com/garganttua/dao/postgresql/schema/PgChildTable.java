@@ -37,6 +37,9 @@ public record PgChildTable(String name, PgChildKind kind, List<String> fieldPath
     public static final String ORD = "_ord";
     /** The map key, for maps. */
     public static final String KEY = "_key";
+    /** Whether a POJO element existed — a null element and an all-null one are otherwise the same row. */
+    public static final String PRESENT = "_present";
+
     /** The single value column of scalar and reference collections. */
     public static final String VALUE = "value";
 

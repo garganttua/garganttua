@@ -72,14 +72,16 @@ public final class MongoTestServer {
                 return;
             }
             Path mongod = binary();
-            Path data = Files.createTempDirectory("parity-mongod");
+            // On disk, not in a RAM-backed /tmp; and removed on shutdown — a suite that leaves its data
+            // behind fills the host, as an earlier run of this very suite did.
+            Path data = Files.createTempDirectory(Files.createDirectories(cache().resolve("data")), "mongod-");
             int port = freePort();
             Process process = new ProcessBuilder(mongod.toString(), "--dbpath", data.toString(),
                     "--port", String.valueOf(port), "--bind_ip", "127.0.0.1", "--quiet")
                     .redirectErrorStream(true)
                     .redirectOutput(data.resolve("mongod.log").toFile())
                     .start();
-            Runtime.getRuntime().addShutdownHook(new Thread(process::destroy, "parity-mongod-shutdown"));
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> stop(process, data), "parity-mongod-shutdown"));
             awaitPort(port, process);
             client = MongoClients.create("mongodb://127.0.0.1:" + port);
         } catch (IOException | RuntimeException e) {
@@ -90,9 +92,28 @@ public final class MongoTestServer {
         }
     }
 
+    private static Path cache() {
+        return Path.of(System.getProperty("user.home"), ".cache", "garganttua-test");
+    }
+
+    /** Stops mongod, waits for it, and deletes its data directory. */
+    private static void stop(Process process, Path data) {
+        process.destroy();
+        try {
+            process.waitFor(20, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        try (java.util.stream.Stream<Path> files = Files.walk(data)) {
+            files.sorted(java.util.Comparator.reverseOrder()).forEach(f -> f.toFile().delete());
+        } catch (IOException ignored) {
+            // Best effort at shutdown.
+        }
+    }
+
     /** The mongod binary, downloaded and extracted on first use. */
     private static Path binary() throws IOException, InterruptedException {
-        Path home = Path.of(System.getProperty("user.home"), ".cache", "garganttua-test", "mongodb-" + VERSION);
+        Path home = cache().resolve("mongodb-" + VERSION);
         Path mongod = home.resolve("mongodb-linux-x86_64-ubuntu2204-" + VERSION).resolve("bin").resolve("mongod");
         if (Files.isExecutable(mongod)) {
             return mongod;

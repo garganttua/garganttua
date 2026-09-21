@@ -1,11 +1,11 @@
 package com.garganttua.dao.mongodb;
 
+import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,10 +26,10 @@ import com.mongodb.client.model.Filters;
  *
  * <p><b>PMD note:</b> {@code org.bson.Document} (a {@code Map} subtype) is the MongoDB driver's
  * decoding type, surfaced deliberately rather than via a {@code Map} interface — hence the narrow
- * {@code LooseCoupling}/{@code ReplaceJavaUtilDate} suppressions ({@code java.util.Date} is how the
- * driver decodes a BSON datetime).
+ * {@code LooseCoupling} suppression. Scalar conversions live in {@link MongoValueCoercer}, container
+ * construction in {@link MongoContainers}.
  */
-@SuppressWarnings({ "PMD.LooseCoupling", "PMD.ReplaceJavaUtilDate" })
+@SuppressWarnings({ "PMD.LooseCoupling" })
 final class MongoDocumentReader {
 
 	private final MongoDatabase database;
@@ -135,51 +135,73 @@ final class MongoDocumentReader {
 	/**
 	 * Reconstructs a value decoded from BSON onto its declared (possibly generic) Java type — the
 	 * symmetric read of {@code MongoDocumentWriter}'s storable conversion. A sub-{@link Document}
-	 * becomes either a {@link Map} (when the field is a {@code Map<…>}) or an embedded POJO (via
-	 * {@link #documentToDto}); a {@link List} is rebuilt element-by-element on its declared element
-	 * type (recovered from the field's {@code ParameterizedType}); everything scalar falls through to
-	 * {@link #coerce}. The recursion carries the generic {@link Type} so nested {@code List<POJO>} /
-	 * {@code Map<String,POJO>} recover their concrete element types rather than staying raw {@code Document}s.
+	 * becomes a {@link Map} (for a {@code Map<…>} or an untyped field) or an embedded POJO; a BSON array
+	 * becomes the declared collection or array type ({@link MongoContainers}); scalars go through
+	 * {@link MongoValueCoercer}. The recursion carries the generic {@link Type} so nested
+	 * {@code List<POJO>} / {@code Map<K,POJO>} recover their concrete element and key types. A stored
+	 * null (a null element, a null map value) stays null.
 	 */
 	private Object mapValue(Type type, Object value) throws ApiException {
 		if (value == null) {
 			return null;
 		}
-		// A persisted IKey sub-document is reconstructed regardless of the (interface) target type —
-		// same priority as in coerce().
+		// A persisted IKey sub-document is reconstructed regardless of the (interface) target type.
 		if (IKeyBsonBridge.isKeyDocument(value)) {
 			return IKeyBsonBridge.fromDocument((Document) value);
 		}
 		Class<?> raw = rawClass(type);
 		if (value instanceof Document doc) {
-			return mapDocument(type, raw, doc, value);
+			return mapDocument(type, raw, doc);
 		}
 		if (value instanceof List<?> list) {
-			Type elementType = typeArgument(type, 0);
-			List<Object> result = new ArrayList<>(list.size());
-			for (Object element : list) {
-				result.add(mapValue(elementType, element));
-			}
-			return result;
+			return mapList(type, raw, list);
 		}
-		return coerce(value, raw);
+		return MongoValueCoercer.coerce(value, raw);
 	}
 
-	/** Maps a sub-{@link Document} to a {@link Map}, an embedded POJO, or leaves it raw when the type is unknown. */
-	private Object mapDocument(Type type, Class<?> raw, Document doc, Object value) throws ApiException {
-		if (raw != null && Map.class.isAssignableFrom(raw)) {
+	/** Maps a BSON array onto the declared array or collection type, each element on its declared type. */
+	private Object mapList(Type type, Class<?> raw, List<?> list) throws ApiException {
+		Type elementType = raw != null && raw.isArray() ? componentType(type) : typeArgument(type, 0);
+		List<Object> elements = new ArrayList<>(list.size());
+		for (Object element : list) {
+			elements.add(mapValue(elementType, element));
+		}
+		if (raw != null && raw.isArray()) {
+			return MongoContainers.array(raw.getComponentType(), elements);
+		}
+		return MongoContainers.collection(raw, elements);
+	}
+
+	/**
+	 * Maps a sub-{@link Document} to a {@link Map} or an embedded POJO. A field typed {@code Object} (or
+	 * an interface / abstract type, or an unresolved type variable) gets a {@link Map}: there is no class
+	 * to instantiate, and a bare {@code new Object()} would silently drop the stored content.
+	 */
+	private Object mapDocument(Type type, Class<?> raw, Document doc) throws ApiException {
+		if (raw == null || Map.class.isAssignableFrom(raw) || !isInstantiable(raw)) {
+			Class<?> keyType = rawClass(typeArgument(type, 0));
 			Type valueType = typeArgument(type, 1);
-			Map<String, Object> result = new LinkedHashMap<>();
+			Map<Object, Object> result = MongoContainers.map(raw);
 			for (Map.Entry<String, Object> entry : doc.entrySet()) {
-				result.put(entry.getKey(), mapValue(valueType, entry.getValue()));
+				result.put(MongoValueCoercer.coerce(entry.getKey(), keyType), mapValue(valueType, entry.getValue()));
 			}
 			return result;
 		}
-		if (raw != null) {
-			// An embedded POJO sub-document → a concrete instance of the declared field type.
-			return documentToDto(doc, IClass.getClass(raw), Map.of());
+		// An embedded POJO sub-document → a concrete instance of the declared field type.
+		return documentToDto(doc, IClass.getClass(raw), Map.of());
+	}
+
+	/** Whether {@code raw} is a class a sub-document can be mapped onto (not Object, not abstract). */
+	private boolean isInstantiable(Class<?> raw) {
+		return raw != Object.class && !raw.isInterface() && !Modifier.isAbstract(raw.getModifiers());
+	}
+
+	/** The component type of an array type ({@code String[]} → String, {@code List<X>[]} → List<X>). */
+	private Type componentType(Type type) {
+		if (type instanceof GenericArrayType generic) {
+			return generic.getGenericComponentType();
 		}
-		return value;
+		return type instanceof Class<?> c && c.isArray() ? c.getComponentType() : Object.class;
 	}
 
 	/** The raw {@link Class} behind a possibly-parameterized {@link Type} ({@code List<X>} → {@code List}), or {@code null}. */
@@ -206,105 +228,6 @@ final class MongoDocumentReader {
 
 	private String describeType(Object value) {
 		return value == null ? "null" : value.getClass().getName();
-	}
-
-	/**
-	 * Adapts a value decoded from BSON to the field's declared Java type — MongoDB's Document codec
-	 * is lossy across the JVM type system (an enum comes back as a String, a {@code java.time.Instant}
-	 * as a {@code java.util.Date}, a 32-bit field as an {@code Integer}). Handles the common, lossless
-	 * cases; anything it does not recognise is returned untouched for {@code field.set} to accept or reject.
-	 */
-	@SuppressWarnings({ "unchecked", "rawtypes" })
-	private Object coerce(Object value, Class<?> target) throws ApiException {
-		// A persisted IKey sub-document is reconstructed regardless of the (interface) target type.
-		if (IKeyBsonBridge.isKeyDocument(value)) {
-			return IKeyBsonBridge.fromDocument((Document) value);
-		}
-		if (value == null || target == null || target.isInstance(value)) {
-			return value;
-		}
-		if (value instanceof org.bson.types.Binary binary && target == byte[].class) {
-			// The driver decodes BSON binary back as org.bson.types.Binary, not byte[] — unwrap it,
-			// else any byte[] field (token signature, key material) is unreadable.
-			return binary.getData();
-		}
-		if (target.isEnum() && value instanceof String name) {
-			return Enum.valueOf((Class<? extends Enum>) target, name);
-		}
-		if (value instanceof java.util.Date date) {
-			return fromDate(date, target);
-		}
-		if (value instanceof Number number) {
-			return fromNumber(number, target);
-		}
-		if (value instanceof String text) {
-			return fromString(text, target);
-		}
-		return value;
-	}
-
-	/** {@code java.util.Date} (how the driver decodes a BSON datetime) → the declared {@code java.time} type, at UTC. */
-	private Object fromDate(java.util.Date date, Class<?> target) {
-		java.time.Instant instant = date.toInstant();
-		if (target == java.time.Instant.class) {
-			return instant;
-		}
-		if (target == java.time.LocalDateTime.class) {
-			return java.time.LocalDateTime.ofInstant(instant, java.time.ZoneOffset.UTC);
-		}
-		if (target == java.time.LocalDate.class) {
-			return java.time.LocalDate.ofInstant(instant, java.time.ZoneOffset.UTC);
-		}
-		if (target == java.time.ZonedDateTime.class) {
-			return instant.atZone(java.time.ZoneOffset.UTC);
-		}
-		if (target == java.time.OffsetDateTime.class) {
-			return instant.atOffset(java.time.ZoneOffset.UTC);
-		}
-		return date;
-	}
-
-	/** Widens/narrows a stored {@link Number} to the declared numeric type (handles primitives too). */
-	private Object fromNumber(Number number, Class<?> target) {
-		if (target == Long.class || target == long.class) {
-			return number.longValue();
-		}
-		if (target == Integer.class || target == int.class) {
-			return number.intValue();
-		}
-		if (target == Double.class || target == double.class) {
-			return number.doubleValue();
-		}
-		if (target == Float.class || target == float.class) {
-			return number.floatValue();
-		}
-		if (target == Short.class || target == short.class) {
-			return number.shortValue();
-		}
-		if (target == Byte.class || target == byte.class) {
-			return number.byteValue();
-		}
-		return number;
-	}
-
-	/** Parses a stored {@code String} into the declared scalar type (configs occasionally land as text). */
-	private Object fromString(String text, Class<?> target) {
-		if (target == Integer.class || target == int.class) {
-			return Integer.valueOf(text);
-		}
-		if (target == Long.class || target == long.class) {
-			return Long.valueOf(text);
-		}
-		if (target == Double.class || target == double.class) {
-			return Double.valueOf(text);
-		}
-		if (target == Float.class || target == float.class) {
-			return Float.valueOf(text);
-		}
-		if (target == Boolean.class || target == boolean.class) {
-			return Boolean.valueOf(text);
-		}
-		return text;
 	}
 
 	private boolean isReference(Object value) {

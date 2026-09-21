@@ -19,6 +19,7 @@ import java.util.Map;
  * flag every timestamp and every geometry as mistyped — so both sides are normalised first.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 final class PgSchemaInspector {
 
     /**

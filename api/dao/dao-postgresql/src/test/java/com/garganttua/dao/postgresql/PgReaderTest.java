@@ -290,22 +290,46 @@ class PgReaderTest {
         void flattened() throws Exception {
             PgTable table = model("persons", Person.class, Map.of());
             db(table);
-            exec("INSERT INTO persons (uuid, name, address__city, address__zip) VALUES ('p1', 'Ann', 'Dole', 39100)");
+            exec("INSERT INTO persons (uuid, name, address, address__city, address__zip) "
+                    + "VALUES ('p1', 'Ann', TRUE, 'Dole', 39100)");
             Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
-            assertNotNull(p.address, "address columns hold values, so address must exist");
+            assertNotNull(p.address, "the presence bit is TRUE, so address must exist");
             assertEquals("Dole", p.address.city);
             assertEquals(Integer.valueOf(39100), p.address.zip);
         }
 
         @Test
-        @DisplayName("read a POJO whose columns are all NULL as null — even over a field initialiser")
-        void allNullIsNull() throws Exception {
+        @DisplayName("leave an absent POJO as the constructor left it — null, or the field initialiser's")
+        void absentIsUntouched() throws Exception {
             PgTable table = model("persons", Person.class, Map.of());
             db(table);
             exec("INSERT INTO persons (uuid, name) VALUES ('p1', 'Ann')");
             Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
-            assertNull(p.address, "all-NULL address columns must read as a null address");
-            assertNull(p.home, "home is built by the field initialiser, but was stored as all-NULL: must be null");
+            assertNull(p.address, "presence NULL: the address was absent and has no initialiser");
+            assertNotNull(p.home, "presence NULL: home keeps its initialiser, as MongoDB keeps it for an absent key");
+            assertNull(p.home.city);
+        }
+
+        @Test
+        @DisplayName("rebuild a present POJO whose fields are all null as an empty POJO, not null")
+        void presentAllNullIsEmpty() throws Exception {
+            PgTable table = model("persons", Person.class, Map.of());
+            db(table);
+            exec("INSERT INTO persons (uuid, address) VALUES ('p1', TRUE)");
+            Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
+            assertNotNull(p.address, "presence TRUE: the POJO existed, even with every field null");
+            assertNull(p.address.city);
+            assertNull(p.address.zip);
+        }
+
+        @Test
+        @DisplayName("ignore values stored under an absent POJO")
+        void valuesUnderAbsentIgnored() throws Exception {
+            PgTable table = model("persons", Person.class, Map.of());
+            db(table);
+            exec("INSERT INTO persons (uuid, address__city) VALUES ('p1', 'Dole')");
+            Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
+            assertNull(p.address, "the presence bit says absent: a stray column must not bring it to life");
         }
 
         @Test
@@ -313,9 +337,9 @@ class PgReaderTest {
         void partlyNull() throws Exception {
             PgTable table = model("persons", Person.class, Map.of());
             db(table);
-            exec("INSERT INTO persons (uuid, home__city) VALUES ('p1', 'Dole')");
+            exec("INSERT INTO persons (uuid, home, home__city) VALUES ('p1', TRUE, 'Dole')");
             Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
-            assertNotNull(p.home, "one non-NULL column is enough for the POJO to exist");
+            assertNotNull(p.home, "the POJO is present");
             assertEquals("Dole", p.home.city);
             assertNull(p.home.zip);
         }
@@ -347,6 +371,9 @@ class PgReaderTest {
     @DisplayName("child tables")
     class Children {
 
+        private static final String PRESENT_BAG = "INSERT INTO bags (uuid, tags, numbers, sorted, codes, stock, "
+                + "lines, \"byCode\") VALUES ('b1', TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE)";
+
         private PgTable bags() {
             return model("bags", Bag.class, Map.of());
         }
@@ -356,14 +383,14 @@ class PgReaderTest {
         void collections() throws Exception {
             PgTable table = bags();
             db(table);
-            exec("INSERT INTO bags (uuid) VALUES ('b1')",
+            exec(PRESENT_BAG,
                     "INSERT INTO bags__tags VALUES ('b1', 2, 'c'), ('b1', 0, 'a'), ('b1', 1, 'b')",
                     "INSERT INTO bags__numbers VALUES ('b1', 0, 30), ('b1', 1, 10)",
                     "INSERT INTO bags__sorted VALUES ('b1', 0, 'z'), ('b1', 1, 'm')",
                     "INSERT INTO bags__codes VALUES ('b1', 0, 5), ('b1', 1, 6)",
                     "INSERT INTO bags__stock VALUES ('b1', 'x', 1), ('b1', 'y', 2)",
-                    "INSERT INTO bags__lines VALUES ('b1', 1, 'B', 2.00), ('b1', 0, 'A', 1.00)",
-                    "INSERT INTO \"bags__byCode\" VALUES ('b1', 'k', 'K', 9.99)");
+                    "INSERT INTO bags__lines VALUES ('b1', 1, TRUE, 'B', 2.00), ('b1', 0, TRUE, 'A', 1.00)",
+                    "INSERT INTO \"bags__byCode\" VALUES ('b1', 'k', TRUE, 'K', 9.99)");
             Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
 
             assertEquals(List.of("a", "b", "c"), b.tags, "elements must come back in _ord order");
@@ -380,11 +407,38 @@ class PgReaderTest {
         }
 
         @Test
-        @DisplayName("read zero child rows as EMPTY collections of the declared type, never null")
-        void zeroRowsIsEmpty() throws Exception {
+        @DisplayName("read zero child rows of an absent collection as null, like MongoDB's absent key")
+        void zeroRowsAbsentIsNull() throws Exception {
             PgTable table = bags();
             db(table);
             exec("INSERT INTO bags (uuid) VALUES ('b1')");
+            Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
+            assertNull(b.tags, "presence NULL: the list was saved null");
+            assertNull(b.stock, "presence NULL: the map was saved null");
+            assertNull(b.codes);
+            assertNull(b.lines);
+        }
+
+        @Test
+        @DisplayName("read a POJO element whose fields are all null as an element, and a null element as null")
+        void pojoElementPresence() throws Exception {
+            PgTable table = bags();
+            db(table);
+            exec("INSERT INTO bags (uuid, lines) VALUES ('b1', TRUE)",
+                    "INSERT INTO bags__lines VALUES ('b1', 0, TRUE, NULL, NULL), ('b1', 1, NULL, NULL, NULL)");
+            Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
+            assertEquals(2, b.lines.size());
+            assertNotNull(b.lines.get(0), "_present TRUE: an all-null element is still an element");
+            assertNull(b.lines.get(0).sku);
+            assertNull(b.lines.get(1), "_present NULL: the element itself was null");
+        }
+
+        @Test
+        @DisplayName("read zero child rows of a present collection as EMPTY collections of the declared type")
+        void zeroRowsIsEmpty() throws Exception {
+            PgTable table = bags();
+            db(table);
+            exec(PRESENT_BAG);
             Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
             assertNotNull(b.tags, "list must be empty, not null");
             assertTrue(b.tags.isEmpty());
@@ -402,7 +456,7 @@ class PgReaderTest {
         void groupedByOwner() throws Exception {
             PgTable table = bags();
             db(table);
-            exec("INSERT INTO bags (uuid, name) VALUES ('b1', '1'), ('b2', '2'), ('b3', '3')",
+            exec("INSERT INTO bags (uuid, name, tags) VALUES ('b1', '1', TRUE), ('b2', '2', TRUE), ('b3', '3', TRUE)",
                     "INSERT INTO bags__tags VALUES ('b1', 0, 'one'), ('b3', 0, 'three'), ('b3', 1, 'tres')");
             PgQuery byName = new PgQuery("TRUE", List.of(), "ORDER BY t.\"name\"", null, null, null);
             List<Object> found = reader(table, Bag.class).find(connection, byName);
@@ -421,7 +475,8 @@ class PgReaderTest {
         void projected() throws Exception {
             PgTable table = model("persons", Person.class, Map.of());
             db(table);
-            exec("INSERT INTO persons (uuid, name, address__city, address__zip) VALUES ('p1', 'Ann', 'Dole', 39100)");
+            exec("INSERT INTO persons (uuid, name, address, address__city, address__zip) "
+                    + "VALUES ('p1', 'Ann', TRUE, 'Dole', 39100)");
             PgQuery query = new PgQuery("TRUE", List.of(), "", null, null, List.of("address"));
             Person p = only(reader(table, Person.class).find(connection, query), Person.class);
             assertEquals("p1", p.uuid, "the id is always read");
@@ -435,11 +490,12 @@ class PgReaderTest {
         void projectedChildren() throws Exception {
             PgTable table = model("bags", Bag.class, Map.of());
             db(table);
-            exec("INSERT INTO bags (uuid, name) VALUES ('b1', 'n')",
+            exec("INSERT INTO bags (uuid, name, tags, lines) VALUES ('b1', 'n', TRUE, TRUE)",
                     "INSERT INTO bags__tags VALUES ('b1', 0, 'a')",
-                    "INSERT INTO bags__lines VALUES ('b1', 0, 'A', 1)");
+                    "INSERT INTO bags__lines VALUES ('b1', 0, TRUE, 'A', 1)");
             PgReader reader = reader(table, Bag.class);
-            assertEquals("t.\"uuid\"", reader.selectList(List.of("tags")), "only the id column for a child projection");
+            assertEquals("t.\"uuid\", t.\"tags\"", reader.selectList(List.of("tags")),
+                    "only the id and the collection's presence bit for a child projection");
             Bag b = only(reader.find(connection, new PgQuery("TRUE", List.of(), "", null, null, List.of("tags"))),
                     Bag.class);
             assertEquals(List.of("a"), b.tags);
@@ -459,7 +515,7 @@ class PgReaderTest {
         private void rows() throws SQLException {
             db(customers, orders);
             exec("INSERT INTO customers VALUES ('c0', 'Root', NULL), ('c1', 'Ann', 'c0'), ('c2', 'Bob', 'c0')",
-                    "INSERT INTO orders VALUES ('o1', 'c1', 'c2')",
+                    "INSERT INTO orders VALUES ('o1', 'c1', TRUE, 'c2')",
                     "INSERT INTO orders__customers VALUES ('o1', 0, 'c2'), ('o1', 1, 'ghost'), ('o1', 2, 'c1')");
         }
 
@@ -520,7 +576,7 @@ class PgReaderTest {
         @DisplayName("apply where, params, order by, limit and offset")
         void paging() throws Exception {
             PgTable table = ranked();
-            PgQuery query = new PgQuery("t.\"rank\" >= ?", List.of(2), "ORDER BY t.\"rank\" DESC", 2, 1, null);
+            PgQuery query = new PgQuery("t.\"rank\" >= ?", List.of(2), "ORDER BY t.\"rank\" DESC", 2, 1L, null);
             List<Object> found = reader(table, Ranked.class).find(connection, query);
             assertEquals(List.of(4, 3), found.stream().map(r -> ((Ranked) r).rank).toList(),
                     "ranks >= 2, descending, skip 1, take 2");
@@ -531,7 +587,7 @@ class PgReaderTest {
         void count() throws Exception {
             PgTable table = ranked();
             PgReader reader = reader(table, Ranked.class);
-            assertEquals(4, reader.count(connection, new PgQuery("t.\"rank\" >= ?", List.of(2), "", 1, 0, null)),
+            assertEquals(4, reader.count(connection, new PgQuery("t.\"rank\" >= ?", List.of(2), "", 1, 0L, null)),
                     "count ignores the page");
             assertEquals(5, reader.count(connection, PgQuery.all()));
         }

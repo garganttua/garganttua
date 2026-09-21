@@ -87,20 +87,20 @@ public class MongoDao implements IDao {
 	public List<Object> find(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
 			Optional<List<String>> projection) throws ApiException {
 		Bson mongoFilter = filter.map(MongoFilterConverter::convert).orElse(new Document());
+		IPageable page = pageable.orElse(null);
+		long offset = offset(page);
+		if (offset > Integer.MAX_VALUE) {
+			// Beyond what the driver's skip(int) addresses — and beyond any real collection: empty page.
+			return new ArrayList<>();
+		}
 
 		FindIterable<Document> iterable = getCollection().find(mongoFilter);
-
-		sort.ifPresent(s -> {
-			Bson mongoSort = s.getDirection() == SortDirection.asc
-					? Sorts.ascending(s.getFieldName())
-					: Sorts.descending(s.getFieldName());
-			iterable.sort(mongoSort);
-		});
-
-		pageable.ifPresent(p -> {
-			iterable.skip(p.getPageIndex() * p.getPageSize());
-			iterable.limit(p.getPageSize());
-		});
+		// A page of size 0 is "no limit" (driver and PostgreSQL DAO alike): nothing to stabilise.
+		orderBy(sort.orElse(null), page != null && page.getPageSize() != 0).ifPresent(iterable::sort);
+		if (page != null) {
+			iterable.skip((int) offset);
+			iterable.limit(page.getPageSize());
+		}
 
 		applyProjection(iterable, projection);
 
@@ -109,6 +109,41 @@ public class MongoDao implements IDao {
 			results.add(this.reader.documentToDto(doc));
 		}
 		return results;
+	}
+
+	/**
+	 * The number of documents a page skips, in long arithmetic so a large index cannot wrap around to
+	 * a negative (the driver would then silently return page 0). A negative index or size is refused,
+	 * as the PostgreSQL DAO does.
+	 */
+	static long offset(IPageable page) throws ApiException {
+		if (page == null) {
+			return 0L;
+		}
+		if (page.getPageIndex() < 0 || page.getPageSize() < 0) {
+			throw new ApiException("Invalid page: index " + page.getPageIndex() + ", size " + page.getPageSize()
+					+ " — both must be zero or positive");
+		}
+		return (long) page.getPageIndex() * page.getPageSize();
+	}
+
+	/**
+	 * The sort: the requested key, then — when a page is requested — {@code _id} ascending. MongoDB's
+	 * sort is not stable across skip/limit, so without a unique last key the pages over a non-unique
+	 * key overlap and miss documents. The PostgreSQL DAO appends its uuid the same way, so both stores
+	 * return the same rows on the same page.
+	 */
+	static Optional<Bson> orderBy(ISort sort, boolean paged) {
+		List<Bson> keys = new ArrayList<>();
+		if (sort != null) {
+			keys.add(sort.getDirection() == SortDirection.asc
+					? Sorts.ascending(sort.getFieldName())
+					: Sorts.descending(sort.getFieldName()));
+		}
+		if (paged && (sort == null || !MongoDaoConfig.MONGO_ID.equals(sort.getFieldName()))) {
+			keys.add(Sorts.ascending(MongoDaoConfig.MONGO_ID));
+		}
+		return keys.isEmpty() ? Optional.empty() : Optional.of(Sorts.orderBy(keys));
 	}
 
 	/**
@@ -170,14 +205,19 @@ public class MongoDao implements IDao {
 		Document doc = dtoToDocument(object);
 		Object id = doc.get(MongoDaoConfig.MONGO_ID);
 
-		if (id != null) {
-			getCollection().replaceOne(
-					Filters.eq(MongoDaoConfig.MONGO_ID, id),
-					doc,
-					new ReplaceOptions().upsert(true));
-		} else {
-			getCollection().insertOne(doc);
+		// A document saved without its uuid used to be INSERTED with a server-generated ObjectId _id,
+		// which the reader then mapped onto the String uuid field: a row nobody could read back, update
+		// or delete by uuid. The api stamps a uuid before every save, so this only ever caught a bug —
+		// refuse it, as the PostgreSQL DAO does, rather than store an unaddressable document.
+		if (id == null) {
+			throw new ApiException("Cannot save a " + object.getClass().getName() + " without a uuid ('"
+					+ this.config.uuidFieldName() + "' is null): a document without it could not be read, "
+					+ "updated or deleted by uuid.");
 		}
+		getCollection().replaceOne(
+				Filters.eq(MongoDaoConfig.MONGO_ID, id),
+				doc,
+				new ReplaceOptions().upsert(true));
 
 		return object;
 	}

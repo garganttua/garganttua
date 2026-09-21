@@ -96,7 +96,8 @@ public final class PgNaming {
         int keep = MAX_IDENTIFIER_BYTES - HASH_CHARS - 1;
         StringBuilder cut = new StringBuilder();
         int used = 0;
-        for (int i = 0; i < identifier.length(); ) {
+        int i = 0;
+        while (i < identifier.length()) {
             int cp = identifier.codePointAt(i);
             int len = new String(Character.toChars(cp)).getBytes(StandardCharsets.UTF_8).length;
             if (used + len > keep) {

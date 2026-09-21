@@ -48,6 +48,54 @@ record PgSql(String text, List<Object> params) {
         return new PgSql(text + next, params);
     }
 
+    /**
+     * {@return the negation of a predicate that may be NULL, as MongoDB negates: a row where the
+     * predicate is unknown (NULL, a missing value) is kept} Constants fold.
+     */
+    static PgSql not(PgSql predicate) {
+        if (TRUE.equals(predicate)) {
+            return FALSE;
+        }
+        if (FALSE.equals(predicate)) {
+            return TRUE;
+        }
+        return predicate.wrap("NOT COALESCE((", "), FALSE)");
+    }
+
+    /** {@return the disjunction of predicates, constants folded; FALSE when there are none} */
+    static PgSql any(List<PgSql> predicates) {
+        List<PgSql> kept = new ArrayList<>();
+        for (PgSql p : predicates) {
+            if (TRUE.equals(p)) {
+                return TRUE;
+            }
+            if (!FALSE.equals(p)) {
+                kept.add(p);
+            }
+        }
+        if (kept.isEmpty()) {
+            return FALSE;
+        }
+        return kept.size() == 1 ? kept.get(0) : join(" OR ", kept).wrap("(", ")");
+    }
+
+    /** {@return the conjunction of predicates, constants folded; TRUE when there are none} */
+    static PgSql all(List<PgSql> predicates) {
+        List<PgSql> kept = new ArrayList<>();
+        for (PgSql p : predicates) {
+            if (FALSE.equals(p)) {
+                return FALSE;
+            }
+            if (!TRUE.equals(p)) {
+                kept.add(p);
+            }
+        }
+        if (kept.isEmpty()) {
+            return TRUE;
+        }
+        return kept.size() == 1 ? kept.get(0) : join(" AND ", kept).wrap("(", ")");
+    }
+
     /** {@return the fragments joined by a separator, values concatenated in the same order} */
     static PgSql join(String separator, List<PgSql> parts) {
         StringBuilder text = new StringBuilder();

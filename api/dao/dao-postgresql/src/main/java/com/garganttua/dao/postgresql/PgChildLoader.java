@@ -30,9 +30,10 @@ import com.garganttua.dao.postgresql.schema.PgNaming;
  * </p>
  *
  * <p>
- * An owner with no child rows gets an EMPTY collection of the declared type, never null — storing
- * null and empty both as zero rows is a documented divergence from MongoDB, and the reader resolves
- * it towards the value that cannot throw a {@code NullPointerException} in the caller.
+ * Zero child rows mean either "empty" or "null", and only the owner's presence column knows which —
+ * MongoDB keeps {@code []} and an absent field apart, so the reader must too. Presence {@code TRUE}:
+ * the collection is built, empty when there are no rows. Presence NULL: the field is left as the
+ * constructor left it, exactly as the MongoDB reader leaves a field whose key is absent.
  * </p>
  */
 final class PgChildLoader {
@@ -56,6 +57,8 @@ final class PgChildLoader {
      * @param rows       the page, in order
      * @throws ApiException when the query fails or a value cannot be rebuilt
      */
+    @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     void load(Connection connection, PgChildTable child, List<PgLoadedRow> rows) throws ApiException {
         String sql = selectSql(child);
         Map<String, List<Map.Entry<Object, Object>>> byOwner = new HashMap<>();
@@ -106,7 +109,8 @@ final class PgChildLoader {
     private Object value(ResultSet rs, PgChildTable child) throws ApiException {
         List<PgColumn> columns = child.valueColumns();
         IClass<?> element = child.elementType();
-        if (columns.size() == 1 && columns.get(0).fieldPath().isEmpty()) {
+        if (columns.size() == 1 && columns.get(0).kind() != PgColumnKind.PRESENCE
+                && columns.get(0).fieldPath().isEmpty()) {
             PgColumn value = columns.get(0);
             IClass<?> type = child.kind() == PgChildKind.COMPOSITION_COLLECTION
                     ? IClass.getClass(String.class) : element;
@@ -119,6 +123,9 @@ final class PgChildLoader {
     /** Puts one owner's elements on its DTO — or hands reference uuids to the composition pass. */
     private void place(PgLoadedRow row, PgChildTable child, List<Map.Entry<Object, Object>> entries)
             throws ApiException {
+        if (row.absent(child.dottedPath())) {
+            return;
+        }
         if (child.kind() == PgChildKind.COMPOSITION_COLLECTION) {
             List<String> uuids = new ArrayList<>(entries.size());
             entries.forEach(e -> uuids.add((String) e.getValue()));
@@ -129,7 +136,10 @@ final class PgChildLoader {
                 ? PgCollections.map(child.collectionType(), entries)
                 : PgCollections.collection(child.collectionType(), child.elementType(),
                         entries.stream().map(Map.Entry::getValue).toList());
-        // An empty collection inside a null embedded POJO must not bring the POJO into existence.
-        beans.set(row.instance(), child.fieldPath(), built, !entries.isEmpty());
+        // Present (or presence not selected but rows found): set it, creating a missing owner POJO.
+        // With no presence bit and no rows, an empty collection must not bring a null POJO into
+        // existence.
+        boolean known = row.presence().containsKey(child.dottedPath());
+        beans.set(row.instance(), child.fieldPath(), built, known || !entries.isEmpty());
     }
 }

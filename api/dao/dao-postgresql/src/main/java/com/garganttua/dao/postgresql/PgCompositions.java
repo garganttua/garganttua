@@ -33,6 +33,9 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * a nested DBRef.</li>
  * <li><b>Dangling reference.</b> A uuid with no row behind it reads as null for a single reference,
  * and is skipped in a collection — exactly what MongoDB does for a DBRef whose document is gone.</li>
+ * <li><b>No reference.</b> A NULL uuid, or a reference collection whose presence bit is NULL, leaves
+ * the field as the constructor left it — MongoDB omits the key of a null reference and skips it on
+ * read.</li>
  * <li><b>Batched.</b> One query per referenced domain for the whole page ({@code id = ANY(?)}), not one
  * per row and field.</li>
  * </ul>
@@ -48,6 +51,7 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * than one per row flooding the log.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 final class PgCompositions {
 
     private static final Logger LOG = Logger.getLogger(PgCompositions.class);
@@ -102,11 +106,15 @@ final class PgCompositions {
 
     private void setSingle(PgLoadedRow row, String path, Map<String, Object> targets) throws ApiException {
         String uuid = row.references().get(path);
+        if (uuid == null) {
+            // No reference was saved: MongoDB omits the key and leaves the field as constructed.
+            return;
+        }
         IField field = beans.field(dtoClass, path);
         if (holdsUuid(field.getType())) {
             beans.set(row.instance(), List.of(path), uuid, false);
         } else if (targets != null) {
-            beans.set(row.instance(), List.of(path), uuid == null ? null : targets.get(uuid), false);
+            beans.set(row.instance(), List.of(path), targets.get(uuid), false);
         }
     }
 

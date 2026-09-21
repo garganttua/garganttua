@@ -364,7 +364,9 @@ class PgSchemaManagerTest {
                     "ALTER TABLE \"people\" ADD COLUMN IF NOT EXISTS \"age\" INTEGER",
                     "CREATE TABLE IF NOT EXISTS \"people__tags\"",
                     "\"people\".\"name\" is integer, the model expects TEXT",
-                    "3 problem(s)")) {
+                    // the fourth: the presence column of the "tags" collection, also missing
+                    "ALTER TABLE \"people\" ADD COLUMN IF NOT EXISTS \"tags\" BOOLEAN",
+                    "4 problem(s)")) {
                 assertTrue(message.contains(part), () -> "the report must contain " + part + ":\n" + message);
             }
             assertFalse(columns(db, "people").containsKey("age"), "VALIDATE must not add the column");

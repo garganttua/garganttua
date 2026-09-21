@@ -6,6 +6,8 @@ import java.sql.Types;
 import java.util.List;
 import java.util.Optional;
 
+import org.postgresql.util.PGobject;
+
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
@@ -33,7 +35,8 @@ final class PgWriteSupport {
      *
      * <p>
      * A null object anywhere on the way down makes the value null: an absent embedded POJO is
-     * written as all its flattened columns NULL — which is also how the reader recognises it. An
+     * written as all its flattened columns NULL, and its presence column NULL — the bit the reader
+     * recognises it by (a present POJO with every field null has the same columns, and presence TRUE). An
      * EMPTY path answers the root itself: that is how the single {@code value} column of a scalar or
      * reference collection reads its element.
      * </p>
@@ -100,15 +103,59 @@ final class PgWriteSupport {
      * @param statement the statement
      * @param index     the 1-based parameter index
      * @param column    the column the value belongs to
+     * <p>
+     * A text holding U+0000 is refused here, with the field named: PostgreSQL {@code TEXT} and
+     * {@code JSONB} cannot store the NUL character, and the driver's own error ("invalid byte
+     * sequence for encoding UTF8: 0x00") names neither the field nor the cause. MongoDB stores it;
+     * escaping it here would be faithful only for storage — every regex, text search, sort and
+     * prefix comparison would then see the escape instead of the character — so this is a documented
+     * limit of the PostgreSQL DAO rather than a silent rewrite of the data.
+     * </p>
+     *
      * @param jdbcValue the converted value, possibly null
      * @throws SQLException when the driver refuses the value
+     * @throws ApiException when the value holds a NUL character
      */
     static void bind(PreparedStatement statement, int index, PgColumn column, Object jdbcValue)
-            throws SQLException {
+            throws SQLException, ApiException {
+        refuseNul(column, jdbcValue);
         if (column.kind() == PgColumnKind.GEOMETRY) {
             statement.setObject(index, jdbcValue, Types.VARCHAR);
         } else {
             statement.setObject(index, jdbcValue);
         }
+    }
+
+    private static void refuseNul(PgColumn column, Object jdbcValue) throws ApiException {
+        boolean nul = jdbcValue instanceof String text ? text.indexOf('\0') >= 0
+                : jdbcValue instanceof PGobject json && escapesNul(json.getValue());
+        if (nul) {
+            String field = column.dottedPath().isEmpty() ? "a collection element (column '" + column.name() + "')"
+                    : "field '" + column.dottedPath() + "'";
+            throw new ApiException("Cannot store " + field + ": it contains the NUL character U+0000, which "
+                    + "PostgreSQL TEXT and JSONB cannot hold");
+        }
+    }
+
+    /** Whether a JSON text escapes U+0000: a backslash-u-0000 escape whose backslash is not itself escaped. */
+    static boolean escapesNul(String json) {
+        if (json == null) {
+            return false;
+        }
+        for (int at = json.indexOf("\\u0000"); at >= 0; at = json.indexOf("\\u0000", at + 1)) {
+            int backslashes = 0;
+            for (int i = at; i >= 0 && json.charAt(i) == '\\'; i--) {
+                backslashes++;
+            }
+            if (isOdd(backslashes)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@return whether n is odd} {@code % 2 != 0}, unlike {@code % 2 == 1}, also holds for negatives. */
+    private static boolean isOdd(int n) {
+        return n % 2 != 0;
     }
 }

@@ -10,6 +10,7 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import org.postgresql.util.PGobject;
@@ -38,10 +39,23 @@ import com.garganttua.dao.postgresql.schema.PgColumnKind;
  * widen what matches: a value that does not parse to the column's type is an error, never a silent
  * mismatch.
  * </p>
+ *
+ * <p>
+ * Two limits come from MongoDB, whose answers this DAO must reproduce. A BSON date holds
+ * MILLISECONDS, so every instant and local date-time is truncated to the millisecond — on write AND
+ * in filter values, since both come through here: a microsecond stored here and not there would make
+ * the same equality match on one engine and miss on the other. A {@code Decimal128} holds 34
+ * significant digits, so a {@code BigDecimal} or {@code BigInteger} beyond that is refused rather
+ * than stored in a {@code NUMERIC} that MongoDB could never have held.
+ * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 public final class PgValues {
 
     private static final String JSONB = "jsonb";
+
+    /** The significant digits of a BSON {@code Decimal128} — the widest decimal MongoDB stores. */
+    static final int DECIMAL128_DIGITS = 34;
 
     private PgValues() {
         // Static helpers
@@ -76,8 +90,13 @@ public final class PgValues {
                 case JSONB -> jsonb(PgJson.MAPPER.writeValueAsString(value));
                 case IKEY -> jsonb(PgKeyCodec.toJson((IKey) value).toString());
                 case GEOMETRY -> value instanceof String s ? s : PgJson.GEO.writeValueAsString(value);
-                case SCALAR -> scalar(column.javaType(), value);
+                case SCALAR -> withinDecimal128(column, scalar(column.javaType(), value));
+                // The value is the structure itself: present when non-null. NULL, not FALSE, so an
+                // absent structure reads as absent in SQL too.
+                case PRESENCE -> Boolean.TRUE;
             };
+        } catch (ApiException e) {
+            throw e;
         } catch (JsonProcessingException | SQLException e) {
             throw new ApiException("Cannot store a value in column '" + column.name() + "' ("
                     + column.sqlType() + "): " + e.getMessage(), e);
@@ -85,6 +104,20 @@ public final class PgValues {
             throw new ApiException("Value '" + value + "' does not fit column '" + column.name() + "' ("
                     + column.sqlType() + "): " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Refuses a decimal MongoDB could not hold. {@code BigInteger} is bound as a {@code BigDecimal},
+     * so one check covers both.
+     */
+    private static Object withinDecimal128(PgColumn column, Object bound) throws ApiException {
+        if (bound instanceof BigDecimal d && d.precision() > DECIMAL128_DIGITS) {
+            String field = column.dottedPath().isEmpty() ? "A collection element"
+                    : "Field '" + column.dottedPath() + "'";
+            throw new ApiException(field + " (column '" + column.name() + "') holds " + d.precision()
+                    + " significant digits: at most " + DECIMAL128_DIGITS + " can be stored (the Decimal128 limit of MongoDB, which this DAO keeps for parity)");
+        }
+        return bound;
     }
 
     private static PGobject jsonb(String json) throws SQLException {
@@ -109,6 +142,11 @@ public final class PgValues {
         if (type.represents(Character.class) || type.represents(char.class)) {
             return value.toString();
         }
+        return number(type, value);
+    }
+
+    /** {@link #scalar}, continued: the fixed-width numbers, then {@link #otherScalar}. */
+    private static Object number(IClass<?> type, Object value) {
         if (type.represents(Integer.class) || type.represents(int.class)) {
             return value instanceof Number n ? n.intValue() : Integer.parseInt(value.toString().trim());
         }
@@ -125,6 +163,11 @@ public final class PgValues {
         if (type.represents(Float.class) || type.represents(float.class)) {
             return value instanceof Number n ? n.floatValue() : Float.parseFloat(value.toString().trim());
         }
+        return otherScalar(type, value);
+    }
+
+    /** {@link #scalar}, continued: booleans, arbitrary-precision numbers, UUIDs, then {@link #temporal}. */
+    private static Object otherScalar(IClass<?> type, Object value) {
         if (type.represents(Boolean.class) || type.represents(boolean.class)) {
             return value instanceof Boolean b ? b : Boolean.parseBoolean(value.toString().trim());
         }
@@ -140,19 +183,25 @@ public final class PgValues {
         return temporal(type, value);
     }
 
-    private static Object temporal(IClass<?> type, Object value) {
+    /**
+     * A temporal value in its column type, truncated to the millisecond a BSON date keeps.
+     * Package-visible: the filter side binds its temporal values through it too.
+     */
+    static Object temporal(IClass<?> type, Object value) {
         if (type.represents(Instant.class) || type.represents(java.util.Date.class)
                 || type.represents(OffsetDateTime.class) || type.represents(ZonedDateTime.class)) {
-            return OffsetDateTime.ofInstant(instantOf(value), ZoneOffset.UTC);
+            return OffsetDateTime.ofInstant(instantOf(value).truncatedTo(ChronoUnit.MILLIS), ZoneOffset.UTC);
         }
         if (type.represents(LocalDateTime.class)) {
-            return value instanceof LocalDateTime l ? l : LocalDateTime.parse(value.toString().trim());
+            LocalDateTime l = value instanceof LocalDateTime d ? d : LocalDateTime.parse(value.toString().trim());
+            return l.truncatedTo(ChronoUnit.MILLIS);
         }
         if (type.represents(LocalDate.class)) {
             return value instanceof LocalDate l ? l : LocalDate.parse(value.toString().trim());
         }
         if (type.represents(LocalTime.class)) {
-            return value instanceof LocalTime l ? l : LocalTime.parse(value.toString().trim());
+            LocalTime l = value instanceof LocalTime t ? t : LocalTime.parse(value.toString().trim());
+            return l.truncatedTo(ChronoUnit.MILLIS);
         }
         return value;
     }
