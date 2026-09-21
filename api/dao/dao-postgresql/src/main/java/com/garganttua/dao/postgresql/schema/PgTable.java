@@ -1,6 +1,7 @@
 package com.garganttua.dao.postgresql.schema;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -13,18 +14,33 @@ import java.util.Optional;
  * domain by {@link PgSchemaModel#of}.
  * </p>
  *
- * @param name     the main table name, unquoted
- * @param id       the primary-key column (the DTO uuid field)
- * @param columns  every main-table column INCLUDING {@code id}, in declaration order
- * @param children the child tables, one per collection or map field
+ * @param name         the main table name, unquoted
+ * @param id           the primary-key column (the DTO uuid field)
+ * @param columns      every main-table column INCLUDING {@code id}, in declaration order
+ * @param children     the child tables, one per collection or map field
+ * @param compositions every {@code @Composed} field — single or collection — by its dotted path, to
+ *                     the domain it references: what the writer needs to read the target's uuid and
+ *                     the reader to resolve it
  */
-public record PgTable(String name, PgColumn id, List<PgColumn> columns, List<PgChildTable> children) {
+public record PgTable(String name, PgColumn id, List<PgColumn> columns, List<PgChildTable> children,
+        Map<String, String> compositions) {
 
     public PgTable {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(id, "id");
         columns = List.copyOf(Objects.requireNonNull(columns, "columns"));
         children = List.copyOf(Objects.requireNonNull(children, "children"));
+        compositions = compositions == null ? Map.of() : Map.copyOf(compositions);
+    }
+
+    /**
+     * The domain a {@code @Composed} field references.
+     *
+     * @param dottedPath the composition field's path
+     * @return the target domain name, or empty when the path is not a composition
+     */
+    public Optional<String> compositionTarget(String dottedPath) {
+        return Optional.ofNullable(compositions.get(dottedPath));
     }
 
     /**

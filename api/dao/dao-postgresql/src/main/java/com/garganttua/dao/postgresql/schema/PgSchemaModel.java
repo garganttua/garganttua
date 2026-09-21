@@ -97,7 +97,16 @@ public final class PgSchemaModel {
         all.add(id);
         all.addAll(columns);
         refuseCollisions(table, all, children);
-        return new PgTable(table, id, all, children);
+        Map<String, String> composed = new LinkedHashMap<>();
+        if (compositions != null) {
+            for (IField field : persistedFields(dtoClass)) {
+                String target = compositions.get(field.getName());
+                if (target != null) {
+                    composed.put(field.getName(), target);
+                }
+            }
+        }
+        return new PgTable(table, id, all, children, composed);
     }
 
     private static void addComposition(String table, IField field, List<String> path, String target,

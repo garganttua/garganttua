@@ -159,6 +159,9 @@ class PgSchemaModelTest {
             PgChildTable related = child(table, "relatedOrders");
             assertEquals(PgChildKind.COMPOSITION_COLLECTION, related.kind());
             assertEquals("orders", related.composedCollection());
+            assertEquals("customers", table.compositionTarget("customer").orElseThrow(),
+                    "a single reference must say which domain it points to, like a collection does");
+            assertEquals("orders", table.compositionTarget("relatedOrders").orElseThrow());
         }
 
         @Test
