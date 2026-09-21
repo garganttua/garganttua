@@ -6,18 +6,24 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.NavigableSet;
+import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
@@ -55,12 +61,11 @@ final class MongoContainers {
 		Collection<Object> out = isConcrete(declared, Collection.class)
 				? (Collection<Object>) instantiate(declared)
 				: emptyCollection(declared);
-		try {
-			out.addAll(elements);
-		} catch (NullPointerException e) {
+		if (elements.contains(null) && refusesNull(out)) {
 			throw new ApiException("A stored null element cannot be put in a " + declared.getName()
-					+ ", which refuses null elements", e);
+					+ ", which refuses null elements");
 		}
+		out.addAll(elements);
 		return out;
 	}
 
@@ -114,6 +119,19 @@ final class MongoContainers {
 			return new ArrayDeque<>();
 		}
 		return new ArrayList<>();
+	}
+
+	/**
+	 * Whether the container is one of the JDK families that reject a {@code null} element: sorted
+	 * sets in natural order, array deques, priority queues, enum sets and the concurrent queues /
+	 * skip-list sets. Tested up front so a stored null is reported as an {@link ApiException}
+	 * instead of surfacing as a {@code NullPointerException} from {@code addAll}.
+	 */
+	private static boolean refusesNull(Collection<Object> out) {
+		return out instanceof SortedSet<?> sorted && sorted.comparator() == null
+				|| out instanceof ArrayDeque<?> || out instanceof PriorityQueue<?> || out instanceof EnumSet<?>
+				|| out instanceof ConcurrentSkipListSet<?> || out instanceof BlockingQueue<?>
+				|| out instanceof ConcurrentLinkedQueue<?> || out instanceof ConcurrentLinkedDeque<?>;
 	}
 
 	private static boolean isConcrete(Class<?> declared, Class<?> family) {

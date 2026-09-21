@@ -49,6 +49,7 @@ import com.garganttua.dao.postgresql.schema.PgColumnKind;
  * than stored in a {@code NUMERIC} that MongoDB could never have held.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 public final class PgValues {
 
     private static final String JSONB = "jsonb";
@@ -141,6 +142,11 @@ public final class PgValues {
         if (type.represents(Character.class) || type.represents(char.class)) {
             return value.toString();
         }
+        return number(type, value);
+    }
+
+    /** {@link #scalar}, continued: the fixed-width numbers, then {@link #otherScalar}. */
+    private static Object number(IClass<?> type, Object value) {
         if (type.represents(Integer.class) || type.represents(int.class)) {
             return value instanceof Number n ? n.intValue() : Integer.parseInt(value.toString().trim());
         }
@@ -157,6 +163,11 @@ public final class PgValues {
         if (type.represents(Float.class) || type.represents(float.class)) {
             return value instanceof Number n ? n.floatValue() : Float.parseFloat(value.toString().trim());
         }
+        return otherScalar(type, value);
+    }
+
+    /** {@link #scalar}, continued: booleans, arbitrary-precision numbers, UUIDs, then {@link #temporal}. */
+    private static Object otherScalar(IClass<?> type, Object value) {
         if (type.represents(Boolean.class) || type.represents(boolean.class)) {
             return value instanceof Boolean b ? b : Boolean.parseBoolean(value.toString().trim());
         }

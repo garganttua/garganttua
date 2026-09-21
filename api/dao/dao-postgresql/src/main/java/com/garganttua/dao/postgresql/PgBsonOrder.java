@@ -13,6 +13,7 @@ import com.garganttua.dao.postgresql.schema.PgColumn;
 import com.garganttua.dao.postgresql.schema.PgColumnKind;
 import com.garganttua.dao.postgresql.schema.PgNaming;
 import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.postgresql.schema.PgTypes;
 
 /**
  * SQL expressions whose PostgreSQL order IS MongoDB's BSON order — what a sort on a whole embedded
@@ -42,7 +43,11 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * One instance serves one {@code ORDER BY}: it numbers the aliases of the subqueries it nests.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 final class PgBsonOrder {
+
+    private static final String THEN = " THEN ";
+    private static final String IS_NOT_NULL = " IS NOT NULL";
 
     /** BSON canonical type ranks, in MongoDB's cross-type sort order. */
     static final int NULL = 1;
@@ -65,7 +70,7 @@ final class PgBsonOrder {
 
         /** {@return the value, SQL NULL when absent} */
         String orNull() {
-            return "CASE WHEN " + present + " THEN " + value + " END";
+            return "CASE WHEN " + present + THEN + value + " END";
         }
     }
 
@@ -135,14 +140,14 @@ final class PgBsonOrder {
         String value;
         if (floating(column)) {
             value = "ROW(" + ref + " <> 'NaN', " + ref + ")";
-        } else if ("TEXT".equals(column.sqlType())) {
+        } else if (PgTypes.TEXT.equals(column.sqlType())) {
             value = "convert_to(" + ref + ", 'UTF8')";
-        } else if ("BYTEA".equals(column.sqlType())) {
+        } else if (PgTypes.BYTEA.equals(column.sqlType())) {
             value = "ROW(octet_length(" + ref + "), " + ref + ")";
         } else {
             value = ref;
         }
-        return new Encoded(value, ref + " IS NOT NULL", rank);
+        return new Encoded(value, ref + IS_NOT_NULL, rank);
     }
 
     /**
@@ -167,7 +172,7 @@ final class PgBsonOrder {
                 names.add(path.get(path.size() - 1));
             }
         }
-        return new Encoded(fields(members, names), presenceRef + " IS NOT NULL", OBJECT);
+        return new Encoded(fields(members, names), presenceRef + IS_NOT_NULL, OBJECT);
     }
 
     private Encoded member(String alias, List<PgColumn> columns, PgColumn column) throws ApiException {
@@ -196,7 +201,7 @@ final class PgBsonOrder {
         for (int i = 0; i < members.size(); i++) {
             Encoded m = members.get(i);
             int position = i + 1;
-            row.add("CASE WHEN " + v + ".p = " + position + " THEN " + m.value() + " END");
+            row.add("CASE WHEN " + v + ".p = " + position + THEN + m.value() + " END");
             values.add("(" + position + ", " + m.rank() + ", " + sorted.indexOf(names.get(i)) + ", " + m.present()
                     + ")");
         }
@@ -215,10 +220,10 @@ final class PgBsonOrder {
     Encoded array(PgChildTable child, String presenceRef) throws ApiException {
         String c = alias("c");
         Encoded element = element(child, c);
-        String value = "ARRAY(SELECT ROW(CASE WHEN " + element.present() + " THEN " + element.rank() + " ELSE "
+        String value = "ARRAY(SELECT ROW(CASE WHEN " + element.present() + THEN + element.rank() + " ELSE "
                 + NULL + " END, " + element.orNull() + ") FROM " + PgNaming.quote(child.name()) + " " + c
                 + " WHERE " + owner(c) + " ORDER BY " + c + "." + PgNaming.quote(PgChildTable.ORD) + ")";
-        return new Encoded(value, presenceRef + " IS NOT NULL", ARRAY);
+        return new Encoded(value, presenceRef + IS_NOT_NULL, ARRAY);
     }
 
     /**
@@ -236,10 +241,10 @@ final class PgBsonOrder {
         String c = alias("c");
         Encoded element = element(child, c);
         String key = "convert_to(CAST(" + c + "." + PgNaming.quote(PgChildTable.KEY) + " AS TEXT), 'UTF8')";
-        String value = "ARRAY(SELECT ROW(CASE WHEN " + element.present() + " THEN " + element.rank() + " ELSE "
+        String value = "ARRAY(SELECT ROW(CASE WHEN " + element.present() + THEN + element.rank() + " ELSE "
                 + NULL + " END, " + key + ", " + element.orNull() + ") FROM " + PgNaming.quote(child.name()) + " "
                 + c + " WHERE " + owner(c) + " ORDER BY " + key + ")";
-        return new Encoded(value, presenceRef + " IS NOT NULL", OBJECT);
+        return new Encoded(value, presenceRef + IS_NOT_NULL, OBJECT);
     }
 
     /**

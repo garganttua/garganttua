@@ -57,6 +57,8 @@ final class PgChildLoader {
      * @param rows       the page, in order
      * @throws ApiException when the query fails or a value cannot be rebuilt
      */
+    @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     void load(Connection connection, PgChildTable child, List<PgLoadedRow> rows) throws ApiException {
         String sql = selectSql(child);
         Map<String, List<Map.Entry<Object, Object>>> byOwner = new HashMap<>();

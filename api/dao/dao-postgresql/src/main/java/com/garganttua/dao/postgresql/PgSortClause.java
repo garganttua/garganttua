@@ -15,6 +15,7 @@ import com.garganttua.dao.postgresql.schema.PgColumn;
 import com.garganttua.dao.postgresql.schema.PgColumnKind;
 import com.garganttua.dao.postgresql.schema.PgNaming;
 import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.postgresql.schema.PgTypes;
 
 /**
  * Builds the {@code ORDER BY} of a read so that PostgreSQL returns rows in the order MongoDB would.
@@ -131,7 +132,7 @@ final class PgSortClause {
         if (PgBsonOrder.floating(column)) {
             return List.of("(" + ref + " <> 'NaN')" + dir, ref + dir);
         }
-        if ("BYTEA".equals(column.sqlType())) {
+        if (PgTypes.BYTEA.equals(column.sqlType())) {
             return List.of("octet_length(" + ref + ")" + dir, ref + dir);
         }
         return List.of(ref + ("TEXT".equals(column.sqlType()) ? BINARY_COLLATION : "") + dir);

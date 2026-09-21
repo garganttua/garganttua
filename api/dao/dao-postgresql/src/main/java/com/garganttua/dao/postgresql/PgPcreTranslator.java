@@ -40,6 +40,10 @@ import com.garganttua.api.commons.ApiException;
  * different strings.
  * </p>
  */
+// A PCRE reader: the character literals it tests ('\\', '{', ')', 'Q', ...) ARE the grammar being parsed,
+// and its small integers are bounds (group 1, range lengths); naming each would only hide the syntax.
+// Its constants share a name with the method that uses them (accessor style).
+@SuppressWarnings({"PMD.AvoidFieldNameMatchingMethodName", "PMD.AvoidLiteralsInIfCondition"})
 final class PgPcreTranslator {
 
     private static final String WORD = "[0-9A-Z_a-z]";
@@ -60,6 +64,7 @@ final class PgPcreTranslator {
     }
 
     private final PgPcreCursor in;
+    @SuppressWarnings("PMD.AvoidStringBufferField") // one translator per pattern, discarded once translated
     private final StringBuilder out = new StringBuilder();
     private final Deque<Group> groups = new ArrayDeque<>();
     private final Map<String, Integer> names = new HashMap<>();
@@ -270,9 +275,15 @@ final class PgPcreTranslator {
                     flags = changed;
                     return;
                 }
-                case '-' -> on = false;
-                case '^' -> changed = new Flags(false, false, false, false);
-                default -> changed = option(changed, c, on);
+                case '-' -> {
+                    on = false;
+                }
+                case '^' -> {
+                    changed = new Flags(false, false, false, false);
+                }
+                default -> {
+                    changed = option(changed, c, on);
+                }
             }
         }
     }

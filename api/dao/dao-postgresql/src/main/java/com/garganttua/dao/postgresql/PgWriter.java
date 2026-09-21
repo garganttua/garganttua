@@ -29,6 +29,7 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * {@link PgTable} model, quoted. Nothing from the entity is ever concatenated into SQL.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 public final class PgWriter {
 
     private static final Logger LOG = Logger.getLogger(PgWriter.class);
@@ -61,6 +62,8 @@ public final class PgWriter {
      * @throws ApiException when the entity has no uuid, a value does not fit its column, or the
      *                      database refuses the write
      */
+    @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     public void upsert(Connection connection, Object dto) throws ApiException {
         Object id = idOf(dto, "save");
         try {
@@ -85,6 +88,8 @@ public final class PgWriter {
      * @param dto        the entity, of which only the uuid is read
      * @throws ApiException when the entity has no uuid, no row has it, or the database refuses
      */
+    @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     public void delete(Connection connection, Object dto) throws ApiException {
         Object id = idOf(dto, "delete");
         int deleted;
@@ -127,7 +132,8 @@ public final class PgWriter {
                 String target = table.compositionTarget(column.dottedPath()).orElse(null);
                 value = references.uuidOf(target, value);
             }
-            PgWriteSupport.bind(statement, index++, column, PgValues.toJdbc(column, value));
+            PgWriteSupport.bind(statement, index, column, PgValues.toJdbc(column, value));
+            index++;
         }
     }
 

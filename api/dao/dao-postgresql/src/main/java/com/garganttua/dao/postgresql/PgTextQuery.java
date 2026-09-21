@@ -116,6 +116,7 @@ record PgTextQuery(List<String> positive, List<String> negated, List<String> phr
     }
 
     /** MongoDB's search-string reading: one pass, a phrase and a negation state. */
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // quote: the open quote's position, set by quote(at)
     private static final class Parser {
 
         private final String search;
@@ -123,6 +124,7 @@ record PgTextQuery(List<String> positive, List<String> negated, List<String> phr
         private final List<String> negated = new ArrayList<>();
         private final List<String> phrases = new ArrayList<>();
         private final List<String> negatedPhrases = new ArrayList<>();
+        @SuppressWarnings("PMD.AvoidStringBufferField") // one parser per search string, discarded after run()
         private final StringBuilder term = new StringBuilder();
         private boolean inPhrase;
         private boolean inNegation;
@@ -144,6 +146,7 @@ record PgTextQuery(List<String> positive, List<String> negated, List<String> phr
             return new PgTextQuery(positive, negated, phrases, negatedPhrases);
         }
 
+        @SuppressWarnings("PMD.AvoidLiteralsInIfCondition") // '"' is the phrase delimiter of the search grammar
         private void read(int cp, int at) {
             if (cp == '"') {
                 flush();

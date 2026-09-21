@@ -38,27 +38,33 @@ public final class PgTypes {
     /** The column type of ids, references, enums and strings. */
     public static final String TEXT = "TEXT";
 
+    /** The column type of {@code byte[]} values. */
+    public static final String BYTEA = "BYTEA";
+
+    private static final String SMALLINT = "SMALLINT";
+    private static final String TIMESTAMPTZ = "TIMESTAMPTZ";
+
     private static final Map<Class<?>, String> SCALARS = Map.ofEntries(
             Map.entry(String.class, TEXT),
             Map.entry(Character.class, TEXT), Map.entry(char.class, TEXT),
             Map.entry(Integer.class, "INTEGER"), Map.entry(int.class, "INTEGER"),
             Map.entry(Long.class, "BIGINT"), Map.entry(long.class, "BIGINT"),
-            Map.entry(Short.class, "SMALLINT"), Map.entry(short.class, "SMALLINT"),
-            Map.entry(Byte.class, "SMALLINT"), Map.entry(byte.class, "SMALLINT"),
+            Map.entry(Short.class, SMALLINT), Map.entry(short.class, SMALLINT),
+            Map.entry(Byte.class, SMALLINT), Map.entry(byte.class, SMALLINT),
             Map.entry(Double.class, "DOUBLE PRECISION"), Map.entry(double.class, "DOUBLE PRECISION"),
             Map.entry(Float.class, "REAL"), Map.entry(float.class, "REAL"),
             Map.entry(Boolean.class, "BOOLEAN"), Map.entry(boolean.class, "BOOLEAN"),
             Map.entry(BigDecimal.class, "NUMERIC"),
             Map.entry(BigInteger.class, "NUMERIC"),
-            Map.entry(Instant.class, "TIMESTAMPTZ"),
-            Map.entry(java.util.Date.class, "TIMESTAMPTZ"),
-            Map.entry(OffsetDateTime.class, "TIMESTAMPTZ"),
-            Map.entry(ZonedDateTime.class, "TIMESTAMPTZ"),
+            Map.entry(Instant.class, TIMESTAMPTZ),
+            Map.entry(java.util.Date.class, TIMESTAMPTZ),
+            Map.entry(OffsetDateTime.class, TIMESTAMPTZ),
+            Map.entry(ZonedDateTime.class, TIMESTAMPTZ),
             Map.entry(LocalDateTime.class, "TIMESTAMP"),
             Map.entry(LocalDate.class, "DATE"),
             Map.entry(LocalTime.class, "TIME"),
             Map.entry(UUID.class, "UUID"),
-            Map.entry(byte[].class, "BYTEA"));
+            Map.entry(byte[].class, BYTEA));
 
     private PgTypes() {
         // Static helpers

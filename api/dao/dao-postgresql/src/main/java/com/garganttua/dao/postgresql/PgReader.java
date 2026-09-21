@@ -81,6 +81,8 @@ public final class PgReader {
      * @return the DTOs — a mutable list, empty when nothing matches
      * @throws ApiException when a statement fails or a row cannot be rebuilt into the DTO
      */
+    @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     public List<Object> find(Connection connection, PgQuery query) throws ApiException {
         List<PgSelected> selected = selection(query.projection());
         String sql = selectSql(selected, query);
@@ -114,14 +116,16 @@ public final class PgReader {
      * @return the count
      * @throws ApiException when the statement fails
      */
+    @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     public long count(Connection connection, PgQuery query) throws ApiException {
         String sql = "SELECT count(*) FROM " + PgNaming.quote(table.name()) + " " + PgQuery.ALIAS
                 + " WHERE " + query.where();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             bind(statement, query.params());
             try (ResultSet rs = statement.executeQuery()) {
-                rs.next();
-                return rs.getLong(1);
+                // count(*) without GROUP BY always yields exactly one row.
+                return rs.next() ? rs.getLong(1) : 0L;
             }
         } catch (SQLException e) {
             throw failure("count", e, sql);
@@ -243,7 +247,8 @@ public final class PgReader {
     private static int bind(PreparedStatement statement, List<Object> params) throws SQLException {
         int index = 1;
         for (Object param : params) {
-            statement.setObject(index++, param);
+            statement.setObject(index, param);
+            index++;
         }
         return index;
     }
@@ -252,7 +257,8 @@ public final class PgReader {
             throws SQLException, ApiException {
         int index = next;
         if (query.limit() != null) {
-            statement.setInt(index++, (int) nonNegative("limit", query.limit()));
+            statement.setInt(index, (int) nonNegative("limit", query.limit()));
+            index++;
         }
         if (query.offset() != null) {
             statement.setLong(index, nonNegative("offset", query.offset()));

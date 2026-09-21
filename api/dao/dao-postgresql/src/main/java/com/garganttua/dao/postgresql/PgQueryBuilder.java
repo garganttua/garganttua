@@ -73,7 +73,8 @@ public final class PgQueryBuilder {
         Long offset = offset(page);
         String orderBy = sorts.orderBy(present(sort), page != null);
         LOG.debug("Query on {}: WHERE {} {} LIMIT {} OFFSET {}", table.name(), where.text(), orderBy, limit, offset);
-        return new PgQuery(where.text(), where.params(), orderBy, limit, offset, projection(present(projection)));
+        return new PgQuery(where.text(), where.params(), orderBy, limit, offset,
+                projection(present(projection)).orElse(null));
     }
 
     /**
@@ -116,9 +117,9 @@ public final class PgQueryBuilder {
      * keeps only its first segment (MongoDB then returns the whole sub-document), translated through
      * {@code @FieldMappingRule}. An unknown name selects nothing — only the identity comes back.
      */
-    private List<String> projection(List<String> entityFields) {
+    private Optional<List<String>> projection(List<String> entityFields) {
         if (entityFields == null || entityFields.isEmpty()) {
-            return null;
+            return Optional.empty();
         }
         Set<String> fields = new LinkedHashSet<>();
         for (String entityField : entityFields) {
@@ -129,7 +130,7 @@ public final class PgQueryBuilder {
             int dot = trimmed.indexOf('.');
             fields.add(translateToDtoField((dot < 0 ? trimmed : trimmed.substring(0, dot)).trim()));
         }
-        return fields.isEmpty() ? null : new ArrayList<>(fields);
+        return fields.isEmpty() ? Optional.empty() : Optional.of(new ArrayList<>(fields));
     }
 
     /** The DTO field whose {@code @FieldMappingRule} reads the entity field; the same name otherwise. */
