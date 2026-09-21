@@ -29,5 +29,13 @@ public enum PgColumnKind {
      * A single {@code @Composed} reference to another domain's entity: holds the referenced uuid
      * ({@code TEXT}), resolved one level deep on read — the relational counterpart of a DBRef.
      */
-    COMPOSITION
+    COMPOSITION,
+
+    /**
+     * Whether a structure EXISTED — a flattened POJO, a collection, a map, a reference collection, or
+     * (in a child table) one POJO element. {@code BOOLEAN}: {@code TRUE} when the value was present,
+     * {@code NULL} when it was not. Relational storage cannot otherwise tell a null list from an empty
+     * one, or a null POJO from one whose fields are all null — MongoDB can, and answers differently.
+     */
+    PRESENCE
 }

@@ -32,6 +32,9 @@ public final class PgTypes {
     /** The column type of {@link PgColumnKind#JSONB} and {@link PgColumnKind#IKEY} columns. */
     public static final String JSONB = "JSONB";
 
+    /** The column type of {@link PgColumnKind#PRESENCE} columns. */
+    public static final String BOOLEAN = "BOOLEAN";
+
     /** The column type of ids, references, enums and strings. */
     public static final String TEXT = "TEXT";
 

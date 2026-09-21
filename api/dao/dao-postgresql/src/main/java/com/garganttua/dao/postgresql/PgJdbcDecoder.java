@@ -63,6 +63,7 @@ final class PgJdbcDecoder {
                 case IKEY -> key(rs.getString(index));
                 case GEOMETRY -> geometry(rs.getString(index), type);
                 case SCALAR -> scalar(rs, index, type);
+                case PRESENCE -> rs.getObject(index, Boolean.class);
             };
         } catch (SQLException | JsonProcessingException | RuntimeException e) {
             throw new ApiException("Cannot read column '" + column.name() + "' (" + column.sqlType()

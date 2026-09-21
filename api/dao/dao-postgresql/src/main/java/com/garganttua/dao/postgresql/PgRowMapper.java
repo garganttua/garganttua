@@ -58,6 +58,11 @@ final class PgRowMapper {
                 references.put(cell.column().dottedPath(), text(rs, firstIndex + i));
                 continue;
             }
+            if (cell.column().kind() == PgColumnKind.PRESENCE) {
+                // A presence bit is not a field value. PROVISIONAL: selected and ignored; the storage
+                // parity pass gives it its meaning (create the POJO / the collection iff TRUE).
+                continue;
+            }
             values.put(cell.column().fieldPath(), read(type, rs, firstIndex + i, cell));
         }
         assign(target, values);
@@ -78,6 +83,10 @@ final class PgRowMapper {
         Map<List<String>, Object> values = new LinkedHashMap<>();
         boolean any = false;
         for (int i = 0; i < cells.size(); i++) {
+            if (cells.get(i).column().kind() == PgColumnKind.PRESENCE) {
+                // PROVISIONAL, as in fill(): the storage parity pass gives the element bit its meaning.
+                continue;
+            }
             Object value = read(type, rs, firstIndex + i, cells.get(i));
             any |= value != null;
             values.put(cells.get(i).column().fieldPath(), value);

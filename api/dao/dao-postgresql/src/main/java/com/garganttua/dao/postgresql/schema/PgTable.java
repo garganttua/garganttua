@@ -50,7 +50,23 @@ public record PgTable(String name, PgColumn id, List<PgColumn> columns, List<PgC
      * @return the column, or empty when the path names a collection (see {@link #child}) or nothing
      */
     public Optional<PgColumn> column(String dottedPath) {
-        return columns.stream().filter(c -> c.dottedPath().equals(dottedPath)).findFirst();
+        return columns.stream()
+                .filter(c -> c.kind() != PgColumnKind.PRESENCE && c.dottedPath().equals(dottedPath))
+                .findFirst();
+    }
+
+    /**
+     * The presence column of a structure — a flattened POJO, a collection, a map or a reference
+     * collection — at a dotted path. Not returned by {@link #column}: a presence bit is not the value
+     * of the field, and resolving a filter on {@code address} or {@code tags} must not land on it.
+     *
+     * @param dottedPath the structure's path
+     * @return its presence column, or empty when the path is not a structure
+     */
+    public Optional<PgColumn> presence(String dottedPath) {
+        return columns.stream()
+                .filter(c -> c.kind() == PgColumnKind.PRESENCE && c.dottedPath().equals(dottedPath))
+                .findFirst();
     }
 
     /**

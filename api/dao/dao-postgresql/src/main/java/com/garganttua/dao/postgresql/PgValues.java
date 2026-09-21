@@ -77,6 +77,9 @@ public final class PgValues {
                 case IKEY -> jsonb(PgKeyCodec.toJson((IKey) value).toString());
                 case GEOMETRY -> value instanceof String s ? s : PgJson.GEO.writeValueAsString(value);
                 case SCALAR -> scalar(column.javaType(), value);
+                // The value is the structure itself: present when non-null. NULL, not FALSE, so an
+                // absent structure reads as absent in SQL too.
+                case PRESENCE -> Boolean.TRUE;
             };
         } catch (JsonProcessingException | SQLException e) {
             throw new ApiException("Cannot store a value in column '" + column.name() + "' ("
