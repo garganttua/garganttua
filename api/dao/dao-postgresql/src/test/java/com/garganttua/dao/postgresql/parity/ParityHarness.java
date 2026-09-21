@@ -71,8 +71,23 @@ public final class ParityHarness {
 
     private final Map<String, MongoDao> mongo = new LinkedHashMap<>();
     private final Map<String, PgDao> pg = new LinkedHashMap<>();
+    private MongoDatabase mongoDatabase;
+    private DataSource pgDatabase;
 
     private ParityHarness() {
+    }
+
+    /**
+     * The raw MongoDB database — for what the MongoDB DAO leaves to the application, such as creating
+     * the text or 2dsphere index a {@code $text} or {@code $geoWithin} filter needs.
+     */
+    public MongoDatabase mongoDatabase() {
+        return mongoDatabase;
+    }
+
+    /** The raw PostgreSQL database — to inspect what was stored. */
+    public DataSource pgDatabase() {
+        return pgDatabase;
     }
 
     /**
@@ -86,6 +101,8 @@ public final class ParityHarness {
         DataSource pgDb = PgTestDatabase.freshDatabase();
         PgSchemaRegistry registry = new PgSchemaRegistry();
         ParityHarness harness = new ParityHarness();
+        harness.mongoDatabase = mongoDb;
+        harness.pgDatabase = pgDb;
         for (Domain d : domains) {
             MongoDao m = new MongoDao(mongoDb, d.name());
             m.registerDomain(TestDomains.definition(d.dto(), d.compositions()));
