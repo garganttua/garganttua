@@ -21,11 +21,12 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * EVERY string value of the entity — whatever field the filter names. The relational model
  * scatters those strings, so the searched document is re-assembled per row: the main table's TEXT
  * columns (the uuid and enums included), the strings inside its JSONB documents, the type of its
- * geometries (a GeoJSON {@code "type"} is a string to MongoDB), and, from every child table, the
- * TEXT values of scalar collections, POJO elements and map values. Map KEYS are left out: MongoDB
- * stores them as field names, which a text index does not see. Values are joined with
- * {@code chr(1)}, so a phrase can never straddle two values — MongoDB matches a phrase inside one
- * field.
+ * geometries (a GeoJSON {@code "type"} is a string to MongoDB), and, from every child table at every
+ * depth, the TEXT values of scalar collections, POJO elements and map values — every child table
+ * carries the ROOT id in {@code _owner}, so a nested one is read like a top-level one. Map KEYS are
+ * left out: MongoDB stores them as field names, which a text index does not see. Values are joined
+ * with {@code chr(1)}, so a phrase can never straddle two values — MongoDB matches a phrase inside
+ * one field.
  * </p>
  *
  * <p>
@@ -142,7 +143,7 @@ final class PgTextSearch {
             strings(column, PgQuery.ALIAS).ifPresent(parts::add);
         }
         String owner = PgQuery.ALIAS + "." + PgNaming.quote(table.id().name());
-        for (PgChildTable child : table.children()) {
+        for (PgChildTable child : table.allChildren()) {
             List<String> values = new ArrayList<>();
             for (PgColumn column : child.valueColumns()) {
                 strings(column, OWNER_ALIAS).ifPresent(values::add);
