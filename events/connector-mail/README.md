@@ -14,12 +14,12 @@ as email).
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-connector-mail</artifactId>
-    <version>3.0.0-ALPHA21</version>
+    <version>3.0.0-ALPHA22</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA21
+3.0.0-ALPHA22
 
 ### Dependencies
  - `com.garganttua:garganttua-events-api`

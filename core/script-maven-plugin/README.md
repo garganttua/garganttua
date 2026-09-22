@@ -17,12 +17,12 @@ This plugin adds the `Garganttua-Packages` attribute to your JAR's manifest, ena
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-script-maven-plugin</artifactId>
-    <version>3.0.0-ALPHA21</version>
+    <version>3.0.0-ALPHA22</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA21
+3.0.0-ALPHA22
 
 ### Dependencies
  - `org.apache.maven.plugin-tools:maven-plugin-annotations:provided`

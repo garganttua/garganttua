@@ -1,9 +1,9 @@
 # Garganttua
 
 <!-- AUTO-GENERATED-COVERAGE-START -->
-![coverage](https://img.shields.io/badge/coverage-66.7%25%20instructions-yellowgreen)
+![coverage](https://img.shields.io/badge/coverage-68.5%25%20instructions-yellowgreen)
 
-Coverage: **66.7%** instructions · **60.6%** branches · **67.6%** lines across 38 modules (JaCoCo; full per-module report in CI artifacts).
+Coverage: **68.5%** instructions · **63.1%** branches · **69.3%** lines across 40 modules (JaCoCo; full per-module report in CI artifacts).
 <!-- AUTO-GENERATED-COVERAGE-STOP -->
 
 Unified reactor aggregating the three Garganttua framework libraries that form a tight,
@@ -44,11 +44,13 @@ Requires JDK 25.
 | \|    \|    \|- [**binding-javalin**](./api/bindings/binding-javalin/README.md) | Binding wrapping Javalin (lightweight HTTP server). Ships a Javalin-backed IInterface (transport entry point) plus its companion IProtocol Context adapter. |
 | \|    \|    \|- [**binding-jsonpath**](./api/bindings/binding-jsonpath/README.md) | Binding wrapping Jayway JsonPath — isolates the json-path dependency (used by the JWT security module for claims extraction). |
 | \|    \|    \|- [**binding-mongodb**](./api/bindings/binding-mongodb/README.md) | Binding wrapping the MongoDB sync driver — consumed by garganttua-api-dao-mongodb. |
+| \|    \|    \|- [**binding-postgresql**](./api/bindings/binding-postgresql/README.md) | Binding wrapping the PostgreSQL JDBC driver and the HikariCP connection pool — consumed by garganttua-api-dao-postgresql. |
 | \|    \|    \|- [**binding-slf4j**](./api/bindings/binding-slf4j/README.md) | Binding wrapping SLF4J (façade + simple impl) — opt-in classic SLF4J logging for downstream apps and bridging into the framework's observability logger. |
 | \|    \|- [**commons**](./api/commons/README.md) | Pure contract layer: interfaces, annotations, enums and definition records shared by every API module. Zero business logic. |
 | \|    \|- [**core**](./api/core/README.md) | Core engine: DSL builders, definition/context model, request pipeline and workflow assembly, repository filters and security expressions. |
 | \|    \|- [**dao**](./api/dao/README.md) | Data-access abstractions for entity persistence (parent module). |
 | \|    \|    \|- [**dao-mongodb**](./api/dao/dao-mongodb/README.md) | MongoDB DAO implementation — native-ready repository backed by the MongoDB driver. |
+| \|    \|    \|- [**dao-postgresql**](./api/dao/dao-postgresql/README.md) | PostgreSQL DAO implementation — relational mapping, one column per field, backed by JDBC. |
 | \|    \|- [**interface**](./api/interface/README.md) | Interface-layer abstractions for exposing domains over transport protocols (parent module). |
 | \|    \|    \|- [**interface-rest**](./api/interface/interface-rest/README.md) | REST interface binding — maps domain CRUD operations to HTTP/REST endpoints. |
 | \|    \|- [**javalin**](./api/javalin/README.md) | Javalin HTTP integration — serves API domains over a lightweight Javalin web layer. |
@@ -66,6 +68,7 @@ Requires JDK 25.
 | \|    \|    \|- [**starter-javalin**](./api/starters/starter-javalin/README.md) | Javalin add-on starter: exposes every annotation-scanned domain over HTTP on a 		shared Javalin server (server.port), with JSON serialization out of the box. |
 | \|    \|    \|- [**starter-jvm-mongo-javalin**](./api/starters/starter-jvm-mongo-javalin/README.md) | JVM starter: bootstrap runner + MongoDB persistence + Javalin HTTP, runtime reflection. |
 | \|    \|    \|- [**starter-mongodb**](./api/starters/starter-mongodb/README.md) | MongoDB add-on starter: auto-wires a default MongoDB DAO from application.yaml 		(mongodb.uri / mongodb.database) onto every annotation-scanned domain. |
+| \|    \|    \|- [**starter-postgresql**](./api/starters/starter-postgresql/README.md) | PostgreSQL starter — auto-configures a pooled DataSource and a relational DAO per domain from application config. |
 | \|    \|    \|- [**starter-quickstart**](./api/starters/starter-quickstart/README.md) | Quickstart starter: the bootstrap runner with the runtime reflection stack — 		no persistence, no transport. Supply your own in-memory IDao for tutorials and tests. |
 | \|- [**core**](./core/README.md) | Garganttua Core - Foundational Java framework for dependency injection, workflow orchestration, reflection utilities, and more. |
 | \|    \|- [**aot**](./core/aot/README.md) | Garganttua AOT (Ahead-of-Time) compilation support - parent module. |
@@ -149,12 +152,12 @@ graph TD
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua</artifactId>
-    <version>3.0.0-ALPHA21</version>
+    <version>3.0.0-ALPHA22</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA21
+3.0.0-ALPHA22
 
 ### Dependencies
 

@@ -12,6 +12,22 @@
 ## Installation
 
 <!-- AUTO-GENERATED-START -->
+### Installation with Maven
+```xml
+<dependency>
+    <groupId>com.garganttua</groupId>
+    <artifactId>garganttua-api-binding-postgresql</artifactId>
+    <version>3.0.0-ALPHA22</version>
+</dependency>
+```
+
+### Actual version
+3.0.0-ALPHA22
+
+### Dependencies
+ - `org.postgresql:postgresql:${postgresql-driver.version}`
+ - `com.zaxxer:HikariCP:${hikaricp.version}`
+
 <!-- AUTO-GENERATED-END -->
 
 ## Core Concepts

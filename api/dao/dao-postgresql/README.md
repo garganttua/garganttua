@@ -19,6 +19,34 @@
 ## Installation
 
 <!-- AUTO-GENERATED-START -->
+### Installation with Maven
+```xml
+<dependency>
+    <groupId>com.garganttua</groupId>
+    <artifactId>garganttua-api-dao-postgresql</artifactId>
+    <version>3.0.0-ALPHA22</version>
+</dependency>
+```
+
+### Actual version
+3.0.0-ALPHA22
+
+### Dependencies
+ - `com.garganttua:garganttua-api-commons`
+ - `com.garganttua:garganttua-api-binding-postgresql`
+ - `com.garganttua:garganttua-api-binding-jackson`
+ - `com.garganttua.core:garganttua-crypto`
+ - `com.garganttua.core:garganttua-aot-reflection`
+ - `com.garganttua.core:garganttua-aot-commons`
+ - `org.junit.jupiter:junit-jupiter-engine:test`
+ - `com.garganttua.core:garganttua-bootstrap:test`
+ - `com.garganttua.core:garganttua-runtime-reflection:test`
+ - `com.garganttua.core:garganttua-reflections:test`
+ - `com.garganttua:garganttua-api-dao-mongodb:${project.version}:test`
+ - `io.zonky.test:embedded-postgres:test`
+ - `org.mockito:mockito-core:test`
+ - `org.mockito:mockito-junit-jupiter:test`
+
 <!-- AUTO-GENERATED-END -->
 
 ## Core Concepts
