@@ -57,7 +57,7 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 Aucune.
 
-Les quatorze fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+Les seize fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -103,3 +103,24 @@ qui les appelle hors de lui — c'est écrit ici pour que vous le vérifiiez plu
 | `IEntityCreator.create(...)` | rend l'entité | rend un `EntityWriteOutcome` |
 
 Tout le reste est additif.
+
+## Fiches répondues — `3.0.0-ALPHA23`
+
+Traitées le 2026-09-23, corrigées sur `main`, **à paraître dans `3.0.0-ALPHA23`**. Les deux fiches
+sont de palliad, arrivées ensemble et liées : la seconde posait un préalable que la première
+attendait.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [la-portee-dentityunicity-est-perdue](la-portee-dentityunicity-est-perdue.md) | palliad | Corrigée, littéralement comme la fiche l'écrit — première du dossier dans ce cas. Le scanner passe désormais la portée déclarée. Les trois défauts qu'elle demandait de ne pas toucher n'ont pas bougé. Repli tranché et documenté : une adresse imbriquée non résoluble se lit comme le défaut de l'ANNOTATION (`tenant`). Son §5.3 traité au passage : `@EntityUnicities` et `@EntityMandatories`, déclarées, documentées actives et lues nulle part, sont **supprimées**. |
+| [aucun-index-nest-pose-et-lunicite-declaree-ne-tient-pas](aucun-index-nest-pose-et-lunicite-declaree-ne-tient-pas.md) | palliad | Traitée en entier, préalable compris. Leur §3.0 est **confirmé et plus large** : méthodes et constructeurs perdaient aussi leurs annotations ; la perte, en revanche, ne touchait que la vue d'ensemble (une recherche par nom retombait déjà sur la classe vivante). Au-delà de la demande, le générateur émet désormais des descripteurs pour les membres **privés**, ce qui rend les vues complètes et supprime la panne de démarrage due à une constante `public static final`. Défaut trouvé en vérifiant le leur : une classe imbriquée `@Reflected` était enregistrée sous son nom pointé et cherchée sous son nom binaire — son descripteur n'était jamais trouvé. `@EntityIndexed` livrée dans leur forme, index posés au `registerDomain`, `mongodb.index.auto` (`create` / `none` / `strict`), démarrage qui réussit avec un WARN nommant la requête d'agrégation des doublons. Une rectification : leur `partialFilterExpression` `{$exists,$ne:null}` est **refusée par mongod** (erreur 67) ; `{$type: […]}` donne le même effet. Mesure rejouée : 30 doublons sur 30 tours, **0 après**. Le natif n'a PAS été mesuré, et la fiche le dit. |
+
+## Ruptures d'API à la montée en `3.0.0-ALPHA23`
+
+| Élément | Avant | Après |
+|---|---|---|
+| `@EntityUnicity` **nue** (sans `scope`) | produisait une unicité `system` | produit une unicité `tenant`, son défaut déclaré — **la contrainte se resserre par locataire** |
+| `@EntityUnicities`, `@EntityMandatories` | déclarées, jamais lues | supprimées |
+
+Le reste est additif. `IEntityDefinition.indexes()` a une implémentation par défaut, donc un
+implémenteur extérieur ne casse pas — il déclare zéro index.
