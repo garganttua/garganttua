@@ -81,11 +81,31 @@ final class AOTMethodSourceGenerator {
            .append(buildStringArray(typeNames(params))).append(", ")
            .append(buildStringArray(paramNames(params))).append(", ")
            .append(TypeNames.toReflectModifiers(method.getModifiers())).append(", ")
-           .append("new Annotation[0], false, ")
+           .append(buildAnnotationsExpr(params)).append(", false, ")
            .append(method.getModifiers().contains(Modifier.DEFAULT)).append(", ")
            .append(method.isVarArgs()).append(", ")
            .append(buildStringArray(exceptionTypeNames())).append(");\n");
         src.append("    }\n\n");
+    }
+
+    /**
+     * Generated-source expression for the method's <em>real</em> annotations.
+     *
+     * <p>Emits {@code AOTAnnotations.ofMethod(Owner.class, "name", P1.class, …)}
+     * in place of the hardcoded {@code new Annotation[0]}, mirroring what
+     * {@code AOTClassSourceGenerator} already does for type annotations. The
+     * parameter types are the erased ones ({@link TypeNames#getTypeName}), i.e.
+     * exactly the runtime signature {@code getDeclaredMethod} expects.</p>
+     */
+    private String buildAnnotationsExpr(List<? extends VariableElement> params) {
+        StringBuilder sb = new StringBuilder(
+                "com.garganttua.core.aot.reflection.AOTAnnotations.ofMethod(")
+                .append(enclosingSourceName).append(".class, \"")
+                .append(method.getSimpleName()).append('"');
+        for (String typeName : typeNames(params)) {
+            sb.append(", ").append(typeName).append(".class");
+        }
+        return sb.append(')').toString();
     }
 
     /**

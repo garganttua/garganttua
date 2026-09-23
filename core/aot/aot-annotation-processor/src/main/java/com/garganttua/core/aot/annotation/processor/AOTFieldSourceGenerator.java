@@ -79,7 +79,7 @@ final class AOTFieldSourceGenerator {
            .append(enclosingQualifiedName).append("\", \"")
            .append(fieldTypeName).append("\", ")
            .append(TypeNames.toReflectModifiers(field.getModifiers())).append(", ")
-           .append("new Annotation[0], ").append(buildGenericTypeExpr()).append(");\n");
+           .append(buildAnnotationsExpr()).append(", ").append(buildGenericTypeExpr()).append(");\n");
         src.append("    }\n\n");
     }
 
@@ -131,6 +131,24 @@ final class AOTFieldSourceGenerator {
         src.append("        throw new UnsupportedOperationException(\"Cannot set final field ")
            .append(enclosingQualifiedName).append('.').append(field.getSimpleName())
            .append(" in AOT mode\");\n");
+    }
+
+    /**
+     * Generated-source expression for the field's <em>real</em> annotations.
+     *
+     * <p>Emits {@code AOTAnnotations.ofField(Owner.class, "name")} rather than
+     * the {@code new Annotation[0]} this generator used to hardcode — the same
+     * "read them off the live class" trick {@code AOTClassSourceGenerator} uses
+     * for type annotations, which is why a {@code @Reflected} type kept its own
+     * annotations under AOT while every field annotation ({@code @EntityId},
+     * {@code @Inject}, mapping rules…) silently disappeared. The call is routed
+     * through the helper because {@link Class#getDeclaredField(String)} throws a
+     * checked exception and so cannot be inlined into the {@code super(...)}
+     * argument list; the helper degrades to an empty array rather than throwing.</p>
+     */
+    private String buildAnnotationsExpr() {
+        return "com.garganttua.core.aot.reflection.AOTAnnotations.ofField("
+                + enclosingSourceName + ".class, \"" + field.getSimpleName() + "\")";
     }
 
     /**

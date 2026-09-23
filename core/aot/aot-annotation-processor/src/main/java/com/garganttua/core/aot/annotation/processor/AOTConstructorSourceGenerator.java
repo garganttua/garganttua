@@ -62,7 +62,7 @@ final class AOTConstructorSourceGenerator {
            .append(AOTMethodSourceGenerator.buildStringArray(typeNames(params))).append(", ")
            .append(AOTMethodSourceGenerator.buildStringArray(paramNames(params))).append(", ")
            .append(TypeNames.toReflectModifiers(constructor.getModifiers())).append(", ")
-           .append("new Annotation[0], ")
+           .append(buildAnnotationsExpr(params)).append(", ")
            .append(constructor.isVarArgs()).append(", ")
            .append(AOTMethodSourceGenerator.buildStringArray(exceptionTypeNames())).append(");\n");
         src.append("    }\n\n");
@@ -76,6 +76,27 @@ final class AOTConstructorSourceGenerator {
 
         src.append("}\n");
         return src.toString();
+    }
+
+    /**
+     * Generated-source expression for the constructor's <em>real</em>
+     * annotations.
+     *
+     * <p>Emits {@code AOTAnnotations.ofConstructor(Owner.class, P1.class, …)}
+     * in place of the hardcoded {@code new Annotation[0]}, mirroring what
+     * {@code AOTClassSourceGenerator} already does for type annotations — a
+     * {@code @Inject} constructor was invisible under AOT for exactly that
+     * reason. Parameter types are erased, i.e. the runtime signature
+     * {@code getDeclaredConstructor} expects.</p>
+     */
+    private String buildAnnotationsExpr(List<? extends VariableElement> params) {
+        StringBuilder sb = new StringBuilder(
+                "com.garganttua.core.aot.reflection.AOTAnnotations.ofConstructor(")
+                .append(enclosingSourceName).append(".class");
+        for (String typeName : typeNames(params)) {
+            sb.append(", ").append(typeName).append(".class");
+        }
+        return sb.append(')').toString();
     }
 
     private String[] typeNames(List<? extends VariableElement> params) {
