@@ -22,6 +22,8 @@ import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.mongodb.ErrorCategory;
+import com.mongodb.MongoWriteException;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
@@ -264,12 +266,33 @@ public class MongoDao implements IDao {
 					+ this.config.uuidFieldName() + "' is null): a document without it could not be read, "
 					+ "updated or deleted by uuid.");
 		}
-		getCollection().replaceOne(
-				Filters.eq(MongoDaoConfig.MONGO_ID, id),
-				doc,
-				new ReplaceOptions().upsert(true));
+		try {
+			getCollection().replaceOne(
+					Filters.eq(MongoDaoConfig.MONGO_ID, id),
+					doc,
+					new ReplaceOptions().upsert(true));
+		} catch (MongoWriteException e) {
+			throw translateWriteFailure(e);
+		}
 
 		return object;
+	}
+
+	/**
+	 * Translates a write the server refused. A duplicate key is the SAME refusal the framework's own
+	 * unicity check reports, only decided by the database instead — under concurrency the database is
+	 * the one that wins the race — so it reads as a conflict (HTTP 409), not as a server error. Any
+	 * other write failure keeps its own meaning.
+	 *
+	 * @param e the refusal the driver raised
+	 * @return the exception to throw, never null
+	 */
+	private ApiException translateWriteFailure(MongoWriteException e) {
+		if (e.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
+			return ApiException.wrap(e);
+		}
+		return ApiException.conflict("Unicity constraint violated on collection '" + this.collectionName
+				+ "', refused by the database: " + e.getError().getMessage());
 	}
 
 	@Override

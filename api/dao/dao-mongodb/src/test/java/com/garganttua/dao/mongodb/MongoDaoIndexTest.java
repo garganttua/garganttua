@@ -20,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
 import com.garganttua.api.commons.definition.IEntityDefinition;
@@ -186,6 +187,22 @@ class MongoDaoIndexTest {
 
 			assertEquals(1, collection.countDocuments(), "the database kept exactly one");
 			assertEquals(1, failures.size(), () -> "one save had to fail, got " + failures);
+		}
+
+		@Test
+		@DisplayName("the refusal is a CONFLICT (409), the same answer the framework's own unicity "
+				+ "check gives — not a server error")
+		void databaseRefusalReadsAsAConflict() throws Exception {
+			MongoDao dao = register(MongoIndexMode.CREATE, null,
+					rule("email", true, UnicityScope.system, IndexKind.standard));
+			dao.save(person("uuid-1", null, "taken@example.org"));
+
+			ApiException thrown = assertThrows(ApiException.class,
+					() -> dao.save(person("uuid-2", null, "taken@example.org")));
+
+			assertEquals(ApiException.CONFLICT, thrown.getCode(),
+					() -> "a duplicate the database catches must read like one the api catches: " + thrown.getMessage());
+			assertTrue(thrown.getMessage().contains("people"), thrown.getMessage());
 		}
 
 		@Test
