@@ -2,6 +2,26 @@ import os
 import re
 import xml.etree.ElementTree as ET
 
+def extract_artifact_id_from_pom(pom_path: str) -> str:
+    """
+    Lit le pom.xml et extrait le contenu de la balise <artifactId>.
+
+    Sert UNIQUEMENT pour le module racine : son nom de repertoire est celui de la copie de
+    travail, donc un worktree (ou un clone renomme) y inscrirait son propre nom a la place de
+    celui du projet, et tout build y ferait apparaitre README.md comme modifie. Les sous-modules
+    gardent leur nom de repertoire, qui est celui que la table affiche.
+    """
+    try:
+        tree = ET.parse(pom_path)
+        root = tree.getroot()
+        ns = {'mvn': root.tag.split('}')[0].strip('{')} if '}' in root.tag else {}
+        elem = root.find('mvn:artifactId', ns) if ns else root.find('artifactId')
+        if elem is not None and elem.text:
+            return elem.text.strip()
+    except ET.ParseError:
+        print(f"Warning: Failed to parse {pom_path}")
+    return ""
+
 def extract_description_from_pom(pom_path: str) -> str:
     """
     Lit le pom.xml et extrait le contenu de la balise <description>.
@@ -39,8 +59,11 @@ def generate_modules_table(root_dir: str) -> str:
 
     def walk_dir(dir_path: str, depth: int = 0):
         if "pom.xml" in os.listdir(dir_path):
-            module_name = os.path.basename(dir_path)
             pom_path = os.path.join(dir_path, "pom.xml")
+            # Racine : le nom vient du pom, pas du repertoire (cf. extract_artifact_id_from_pom).
+            module_name = extract_artifact_id_from_pom(pom_path) if depth == 0 else ""
+            if not module_name:
+                module_name = os.path.basename(dir_path)
             description = extract_description_from_pom(pom_path)
             rel_path = os.path.relpath(dir_path, root_dir).replace(os.sep, "/")
             readme_link = f"./{rel_path}/README.md"
