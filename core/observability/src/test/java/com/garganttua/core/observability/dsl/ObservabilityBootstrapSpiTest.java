@@ -6,11 +6,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ServiceLoader;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.garganttua.core.dsl.DslException;
 import com.garganttua.core.dsl.IBootstrapBuilderFactory;
 import com.garganttua.core.dsl.IBuilder;
+import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.dsl.ReflectionBuilder;
+import com.garganttua.core.reflections.ReflectionsAnnotationScanner;
+import com.garganttua.core.reflection.runtime.RuntimeReflectionProvider;
 
 /**
  * Cold-start verification that {@link ObservabilityBuilder} is discoverable
@@ -22,6 +28,21 @@ import com.garganttua.core.dsl.IBuilder;
  */
 @DisplayName("Observability SPI auto-discovery")
 class ObservabilityBootstrapSpiTest {
+
+    /**
+     * A builder needs a reflection provider, which the bootstrap installs in a real application.
+     * This suite calls the factory directly, so it installs one itself — without it the test only
+     * passed when another test class in the same fork happened to run first, which is how it broke
+     * on CI the day the class order changed.
+     */
+    @BeforeAll
+    static void wireReflection() throws DslException {
+        IClass.setReflection(ReflectionBuilder.builder()
+                .withProvider(new RuntimeReflectionProvider(), 0)
+                .withScanner(new ReflectionsAnnotationScanner(), 0)
+                .build());
+    }
+
 
     @Test
     @DisplayName("META-INF/services/IBootstrapBuilderFactory yields an ObservabilityBuilder")

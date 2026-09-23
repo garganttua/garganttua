@@ -39,7 +39,27 @@ jobs:
     - name: Bootstrap local repo (no annotation processing)
       run: mvn -B -ntp -Pbootstrap-no-apt install -DskipTests --file pom.xml
     - name: Build with Maven
-      run: mvn -B -ntp clean package --file pom.xml
+      run: |
+        set -o pipefail
+        mvn -B -ntp clean package --file pom.xml 2>&1 | tee /tmp/build.log
+
+    # Diagnostics branch: the job logs need admin rights to download, so a failed build
+    # publishes what it knows — the surefire reports of the failing tests and the tail of
+    # the maven output — where a plain `git fetch` can read them.
+    - name: Publish failure diagnostics
+      if: failure()
+      run: |
+        rm -rf ci-diag && mkdir -p ci-diag
+        tail -n 600 /tmp/build.log > ci-diag/build-tail.log || true
+        for f in $(grep -rl -E 'FAILURE!|<<< ERROR' --include='*.txt' . | head -40); do
+          cp "$f" "ci-diag/$(echo "$f" | tr '/' '_')" || true
+        done
+        git config user.name "garganttua-ci"
+        git config user.email "ci@garganttua.invalid"
+        git checkout -B ci-diagnostics
+        git add -f ci-diag
+        git commit -m "ci: diagnostics for ${GITHUB_SHA}"
+        git push -f origin ci-diagnostics
 
     # Aggregate JaCoCo coverage across every module: writes the run summary,
     # refreshes the README badge, and emits target/coverage/coverage-summary.md.
