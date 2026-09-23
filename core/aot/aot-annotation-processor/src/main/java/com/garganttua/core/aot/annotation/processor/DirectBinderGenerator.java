@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.Writer;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,15 +42,22 @@ import javax.tools.StandardLocation;
  * {@code AOTClass_<FlatName>} (the flattened nesting path — {@code AOTClass_Outer_Inner}
  * for a nested type — see {@link AOTNaming}) in the type's true package, referencing
  * per-member descriptor singletons ({@code AOTField_*}, {@code AOTMethod_*},
- * {@code AOTConstructor_*} with direct, no-reflection access) plus a listing entry in
+ * {@code AOTConstructor_*}) plus a listing entry in
  * {@code META-INF/garganttua/aot/classes/<fqn>}. Members may carry an explicit
  * {@code @Reflected} in addition to the class-level
  * {@code queryAll* / allDeclaredFields} flags; the enclosing type must itself be
  * {@code @Reflected} or a member-only annotation is rejected at compile time.</p>
  *
- * <p><strong>Visibility constraint:</strong> an explicitly-{@code @Reflected}
- * {@code private} member is a compile-time error (direct binders cannot bypass Java
- * visibility); privates pulled in by {@code queryAll*} are filtered.</p>
+ * <p><strong>Visibility:</strong> every declared member the flags select gets a
+ * descriptor, {@code private} ones included — they simply get a <em>reflective</em>
+ * descriptor (metadata and annotations baked in, access left to the memoised
+ * {@code java.lang.reflect} handle inside {@code AOTField}/{@code AOTMethod}/
+ * {@code AOTConstructor}) instead of a direct binder, because a class generated
+ * beside the type cannot bypass Java visibility. Dropping them, as the processor
+ * used to, left {@code getDeclaredFields()} silently <em>incomplete</em> whenever
+ * the type had at least one non-private member: the array was no longer empty, so
+ * {@code AOTClass} stopped falling back to the live class and the private members
+ * were simply gone.</p>
  *
  * @since 2.0.0-ALPHA01
  */
@@ -205,8 +211,7 @@ public class DirectBinderGenerator extends AbstractProcessor {
                 false   // allDeclaredFields           — conservative, opt-in via @Reflected
         );
         try {
-            // strict=false: auto-promote filters privates silently.
-            processTypeWithFlags(type, Set.of(), flags, false);
+            processTypeWithFlags(type, Set.of(), flags);
         } catch (IOException e) {
             messager.printMessage(Diagnostic.Kind.ERROR,
                     "[garganttua-aot] Failed to auto-promote AOT class for " + fqn + ": " + e.getMessage(),
@@ -272,9 +277,7 @@ public class DirectBinderGenerator extends AbstractProcessor {
                 getAnnotationBooleanValue(typeElement, "queryAllPublicMethods"),
                 getAnnotationBooleanValue(typeElement, "allDeclaredFields"));
         try {
-            // strict=true: explicit @Reflected with a private member is a user
-            // intent we must enforce — emit an error.
-            processTypeWithFlags(typeElement, explicitMembers, flags, true);
+            processTypeWithFlags(typeElement, explicitMembers, flags);
         } catch (IOException e) {
             messager.printMessage(Diagnostic.Kind.ERROR,
                     "[garganttua-aot] Failed to generate AOT class for "
@@ -288,13 +291,13 @@ public class DirectBinderGenerator extends AbstractProcessor {
      * auto-promotion pass (Indexed-meta annotations). Idempotent across rounds
      * via {@link #processedTypes}.
      *
-     * @param strict when true, private members trigger an error (explicit
-     *               {@code @Reflected} path). When false, private members are
-     *               silently filtered out (auto-promote path — the user did
-     *               not opt-in to direct binders on this type).
+     * <p>Every selected member is described, {@code private} included; the
+     * per-member generators decide on their own whether the descriptor gets a
+     * direct binder or falls back to the reflective accessors of its base
+     * class.</p>
      */
     private void processTypeWithFlags(TypeElement typeElement, Set<Element> explicitMembers,
-            MemberInclusion.Flags flags, boolean strict) throws IOException {
+            MemberInclusion.Flags flags) throws IOException {
         String qualifiedName = typeElement.getQualifiedName().toString();
         if (!processedTypes.add(qualifiedName)) {
             return; // already generated in a previous round
@@ -303,13 +306,6 @@ public class DirectBinderGenerator extends AbstractProcessor {
         List<ExecutableElement> methods = MemberInclusion.includedMethods(typeElement, flags, explicitMembers);
         List<ExecutableElement> constructors = MemberInclusion.includedConstructors(typeElement, flags, explicitMembers);
         warnOnRedundantMembers(explicitMembers, flags);
-        if (strict && rejectExplicitPrivateMembers(explicitMembers)) {
-            return;
-        }
-        // Drop privates silently (queryAll*-pulled and auto-promote paths).
-        fields = filterNonPrivate(fields);
-        methods = filterNonPrivate(methods);
-        constructors = filterNonPrivate(constructors);
         // TRUE package via Elements — never a string-stripped qualified name (which
         // for a nested type names the enclosing class → "clashes with package").
         String packageName = processingEnv.getElementUtils()
@@ -330,36 +326,6 @@ public class DirectBinderGenerator extends AbstractProcessor {
                 "[garganttua-aot] Generated AOT descriptor: " + classGen.getGeneratedQualifiedName());
         writeListingEntry(qualifiedName, classGen.getGeneratedQualifiedName());
         this.generatedDescriptorFqns.add(classGen.getGeneratedQualifiedName());
-    }
-
-    /** Drops {@code private} members — direct binders cannot bypass Java visibility. */
-    private static <E extends Element> List<E> filterNonPrivate(List<E> members) {
-        return members.stream()
-                .filter(m -> !m.getModifiers().contains(Modifier.PRIVATE))
-                .toList();
-    }
-
-    /**
-     * In the strict (explicit {@code @Reflected}) path, emits an error for each
-     * explicitly-annotated private member — a clear user mistake, since direct
-     * binders cannot bypass Java visibility.
-     *
-     * @return {@code true} if any private member was rejected (caller must abort).
-     */
-    private boolean rejectExplicitPrivateMembers(Set<Element> explicitMembers) {
-        List<Element> explicitPrivate = new ArrayList<>();
-        for (Element member : explicitMembers) {
-            if (member.getModifiers().contains(Modifier.PRIVATE)) {
-                explicitPrivate.add(member);
-            }
-        }
-        for (Element offender : explicitPrivate) {
-            messager.printMessage(Diagnostic.Kind.ERROR,
-                    "[garganttua-aot] AOT direct binders cannot access private members. "
-                            + "Promote this member to package-private, or remove its @Reflected annotation.",
-                    offender);
-        }
-        return !explicitPrivate.isEmpty();
     }
 
     /** Emits the per-field, per-method and per-constructor descriptor source files. */

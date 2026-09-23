@@ -17,6 +17,7 @@ import org.graalvm.nativeimage.hosted.RuntimeClassInitialization;
 import org.graalvm.nativeimage.hosted.RuntimeReflection;
 
 import com.garganttua.core.aot.commons.AOTRegistry;
+import com.garganttua.core.aot.reflection.AOTAnnotations;
 import com.garganttua.core.aot.reflection.AOTClass;
 import com.garganttua.core.aot.reflection.AOTParameterizedType;
 import com.garganttua.core.aot.reflection.AOTReflectionProvider;
@@ -100,6 +101,14 @@ public class GarganttuaAotFeature implements Feature {
         // initialize-at-build-time too — otherwise native-image (notably the
         // stricter heap check in GraalVM 25) rejects the reachable object.
         RuntimeClassInitialization.initializeAtBuildTime(AOTParameterizedType.class);
+        // Same reasoning for AOTAnnotations: the AOTField_*/AOTMethod_*/
+        // AOTConstructor_* constructors now call AOTAnnotations.ofField(...)
+        // / ofMethod(...) / ofConstructor(...) to bake the member's REAL
+        // annotations into the descriptor (they used to hardcode an empty
+        // array, so every member annotation vanished under AOT). That call
+        // runs while the descriptor INSTANCE is initialised — at image-build
+        // time — which initialises AOTAnnotations itself at build time.
+        RuntimeClassInitialization.initializeAtBuildTime(AOTAnnotations.class);
 
         int classCount = 0;
         int memberCount = 0;
@@ -214,13 +223,6 @@ public class GarganttuaAotFeature implements Feature {
     }
 
     /**
-     * Eagerly register every declared constructor / method / field for
-     * reflective access. Conservative on purpose: native-image is happiest
-     * with explicit registration even when a constructor is never invoked
-     * reflectively. The cost is a slight image-size increase, never a
-     * correctness issue.
-     */
-    /**
      * Declare a descriptor's own class and its pre-generated member descriptor
      * classes ({@code AOTMethod_*}/{@code AOTField_*}/{@code AOTConstructor_*})
      * as initialize-at-build-time, matching the fact that they were already
@@ -248,6 +250,25 @@ public class GarganttuaAotFeature implements Feature {
         return 1;
     }
 
+    /**
+     * Eagerly registers every <em>declared</em> constructor / method / field of
+     * {@code clazz} for reflective access. Conservative on purpose: native-image
+     * is happiest with explicit registration even when a member is never
+     * invoked reflectively. The cost is a slight image-size increase, never a
+     * correctness issue.
+     *
+     * <p>The {@code getDeclared*} family is what makes this work for
+     * {@code private} members, and that is now load-bearing: a private member's
+     * AOT descriptor carries no direct binder, so at runtime it resolves its
+     * {@link java.lang.reflect.Field} / {@link Method} / {@link Constructor} by
+     * name through {@code Class.forName} + {@code getDeclaredXxx} and calls
+     * {@code trySetAccessible()} on it. Both steps need the class and the member
+     * in the closed world, which is exactly what {@code RuntimeReflection.register}
+     * grants here — no separate {@code setAccessible} registration exists.</p>
+     *
+     * @param clazz the class whose declared members to register
+     * @return the number of members registered
+     */
     private static int registerMembers(Class<?> clazz) {
         int count = 0;
         try {

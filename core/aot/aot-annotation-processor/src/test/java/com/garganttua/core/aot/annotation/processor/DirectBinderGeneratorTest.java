@@ -28,7 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
  *   <li>Member-level {@code @Reflected} inclusion (fields, methods, constructors).</li>
  *   <li>Direct binders: the generated sub-classes contain typed direct access
  *       (no {@code Field.get}, {@code Method.invoke}, {@code Constructor.newInstance}).</li>
- *   <li>Strict rejection of {@code private} members.</li>
+ *   <li>{@code private} members: described too, but reflectively — no direct binder.</li>
  *   <li>Validation: a member-only {@code @Reflected} requires the enclosing class to be {@code @Reflected}.</li>
  *   <li>Redundancy warning when a member is already covered by a class-level flag.</li>
  * </ul>
@@ -358,7 +358,10 @@ class DirectBinderGeneratorTest {
     }
 
     @Test
-    void privateMemberIsRejected(@TempDir Path tmp) {
+    void explicitlyReflectedPrivateMemberIsDescribedReflectively(@TempDir Path tmp) throws IOException {
+        // Used to be a hard ERROR ("direct binders cannot access private
+        // members"). A descriptor no longer implies a direct binder, so the
+        // member is simply described with reflective accessors.
         String src = """
                 package sample;
                 import com.garganttua.core.reflection.annotations.Reflected;
@@ -368,37 +371,107 @@ class DirectBinderGeneratorTest {
                 }
                 """;
         CompileResult r = compile(tmp, "sample.PrivateMember", src);
-        assertTrue(hasError(r, "cannot access private members"),
-                () -> "expected a private-rejection ERROR; got: " + diagSummary(r));
+        assertCompiled(r);
+        assertFalse(hasError(r, "cannot access private members"),
+                () -> "an explicitly @Reflected private member must no longer be rejected; got: " + diagSummary(r));
+        String aotClass = Files.readString(r.outputDir.resolve("sample/AOTClass_PrivateMember.java"));
+        assertTrue(aotClass.contains("AOTField_PrivateMember_secret"),
+                () -> "the private field must appear in the class descriptor: " + aotClass);
     }
 
     @Test
-    void privateMemberCapturedByFlagIsSilentlyFiltered(@TempDir Path tmp) throws IOException {
-        // queryAll* / allDeclaredFields flags include all matching members,
-        // INCLUDING private ones at the AST level. But the processor silently
-        // drops private members from the final descriptor — only an explicit
-        // @Reflected on a private member is a hard error (clear user mistake).
-        // This is the lenient behaviour that allows framework "Functions"
-        // utility classes with private static helpers to be safely processed
-        // alongside their @Expression-annotated public methods.
+    void privateFieldGetsADescriptorWithoutADirectBinder(@TempDir Path tmp) throws IOException {
+        // The whole consumer-visible defect: dropping private members left
+        // getDeclaredFields() INCOMPLETE — non-empty, so AOTClass no longer fell
+        // back to the live class — as soon as the type had one non-private
+        // member. A single public constant was enough to hide every private field.
         String src = """
                 package sample;
                 import com.garganttua.core.reflection.annotations.Reflected;
                 @Reflected(allDeclaredFields = true)
                 public class PrivateViaFlag {
+                    public static final String VERSION = "1";
                     private String secret;
                     String visible;
                 }
                 """;
         CompileResult r = compile(tmp, "sample.PrivateViaFlag", src);
         assertCompiled(r);
-        assertFalse(hasError(r, "cannot access private members"),
-                () -> "private fields captured via queryAll* must be silently filtered, not rejected; got: " + diagSummary(r));
         String aotClass = Files.readString(r.outputDir.resolve("sample/AOTClass_PrivateViaFlag.java"));
         assertTrue(aotClass.contains("AOTField_PrivateViaFlag_visible"),
                 () -> "package-private field 'visible' must appear in descriptor: " + aotClass);
-        assertFalse(aotClass.contains("AOTField_PrivateViaFlag_secret"),
-                () -> "private field 'secret' must be silently filtered out: " + aotClass);
+        assertTrue(aotClass.contains("AOTField_PrivateViaFlag_secret"),
+                () -> "private field 'secret' must appear in descriptor too: " + aotClass);
+        assertTrue(aotClass.contains("AOTField_PrivateViaFlag_VERSION"),
+                () -> "the public constant must appear in descriptor: " + aotClass);
+
+        // The private field's descriptor carries metadata + annotations but no
+        // direct accessor — AOTField's memoised reflective handle does the work.
+        String privateField = Files.readString(r.outputDir.resolve("sample/AOTField_PrivateViaFlag_secret.java"));
+        assertFalse(privateField.contains("public Object get(Object obj)"),
+                () -> "a private field must NOT get a direct binder: " + privateField);
+        assertTrue(privateField.contains("AOTAnnotations.ofField(PrivateViaFlag.class, \"secret\")"),
+                () -> "a private field must still carry its real annotations: " + privateField);
+
+        // The non-private ones keep their direct binder — that is the point of AOT.
+        String visibleField = Files.readString(r.outputDir.resolve("sample/AOTField_PrivateViaFlag_visible.java"));
+        assertTrue(visibleField.contains("public Object get(Object obj)"),
+                () -> "a package-private field must keep its direct binder: " + visibleField);
+    }
+
+    @Test
+    void privateMethodAndConstructorGetReflectiveDescriptors(@TempDir Path tmp) throws IOException {
+        String src = """
+                package sample;
+                import com.garganttua.core.reflection.annotations.Reflected;
+                @Reflected(queryAllDeclaredMethods = true, queryAllDeclaredConstructors = true)
+                public class PrivateCallables {
+                    private PrivateCallables() {}
+                    private String hidden(int n) { return String.valueOf(n); }
+                    public String shown() { return "x"; }
+                }
+                """;
+        CompileResult r = compile(tmp, "sample.PrivateCallables", src);
+        assertCompiled(r);
+
+        String hidden = Files.readString(r.outputDir.resolve("sample/AOTMethod_PrivateCallables_hidden_0.java"));
+        assertFalse(hidden.contains("public Object invoke("),
+                () -> "a private method must NOT get a direct call: " + hidden);
+        assertTrue(hidden.contains("AOTAnnotations.ofMethod(PrivateCallables.class, \"hidden\", int.class)"),
+                () -> "a private method must still carry its real annotations: " + hidden);
+
+        String shown = Files.readString(r.outputDir.resolve("sample/AOTMethod_PrivateCallables_shown_0.java"));
+        assertTrue(shown.contains("public Object invoke("),
+                () -> "a public method must keep its direct call: " + shown);
+
+        String ctor = Files.readString(r.outputDir.resolve("sample/AOTConstructor_PrivateCallables_0.java"));
+        assertFalse(ctor.contains("newInstance(Object... args)"),
+                () -> "a private constructor must NOT get a direct `new`: " + ctor);
+        assertTrue(ctor.contains("AOTAnnotations.ofConstructor(PrivateCallables.class)"),
+                () -> "a private constructor must still carry its real annotations: " + ctor);
+    }
+
+    @Test
+    void parameterTypeThatTheDescriptorCannotNameFallsBackToNoAnnotations(@TempDir Path tmp) throws IOException {
+        // The descriptor is a separate top-level class: it cannot write
+        // `Secret.class`. Emitting that literal would produce a descriptor that
+        // does not compile, so the member keeps an empty annotation array.
+        String src = """
+                package sample;
+                import com.garganttua.core.reflection.annotations.Reflected;
+                @Reflected(queryAllDeclaredMethods = true)
+                public class HasPrivateNested {
+                    private static class Secret {}
+                    private void feed(Secret s) {}
+                }
+                """;
+        CompileResult r = compile(tmp, "sample.HasPrivateNested", src);
+        assertCompiled(r);
+        String method = Files.readString(r.outputDir.resolve("sample/AOTMethod_HasPrivateNested_feed_0.java"));
+        assertTrue(method.contains("new Annotation[0]"),
+                () -> "an unnameable parameter type must degrade to no annotations: " + method);
+        assertFalse(method.contains("Secret.class"),
+                () -> "the descriptor must never emit a class literal it cannot name: " + method);
     }
 
     @Test
@@ -592,6 +665,47 @@ class DirectBinderGeneratorTest {
                 () -> "nested type must be referenced as Outer.Inner; got:\n" + aotClass);
         assertTrue(aotClass.contains("return Outer.Inner.class;"),
                 () -> "getType() must return Outer.Inner.class; got:\n" + aotClass);
+    }
+
+    @Test
+    void nestedClassRegistersUnderItsBinaryName(@TempDir Path tmp) throws IOException {
+        // The descriptor was registered under the dotted CANONICAL name
+        // ("sample.Outer.Inner") while AOTReflectionProvider only ever looks up
+        // Class#getName() ("sample.Outer$Inner"). The descriptor was generated,
+        // shipped, and never found: the type silently fell back to live
+        // reflection. Same for the declaring-class name every member descriptor
+        // feeds to Class.forName.
+        String src = """
+                package sample;
+                import com.garganttua.core.reflection.annotations.Reflected;
+                public class Outer {
+                    @Reflected(allDeclaredFields = true, queryAllDeclaredMethods = true,
+                               queryAllDeclaredConstructors = true)
+                    public static class Inner {
+                        String label;
+                        public Inner(String label) { this.label = label; }
+                        public String label() { return label; }
+                    }
+                }
+                """;
+        CompileResult r = compile(tmp, "sample.Outer", src);
+        assertCompiled(r);
+
+        String aotClass = Files.readString(r.outputDir.resolve("sample/AOTClass_Outer_Inner.java"));
+        assertTrue(aotClass.contains("AOTRegistry.getInstance().register(\"sample.Outer$Inner\", INSTANCE);"),
+                () -> "the registry key must be the binary name; got:\n" + aotClass);
+        assertTrue(aotClass.contains("\"sample.Outer$Inner\",\n            \"Inner\",\n            \"sample.Outer.Inner\","),
+                () -> "name must be binary, canonicalName must stay dotted; got:\n" + aotClass);
+
+        // Every member descriptor hands its declaring-class name to Class.forName.
+        for (String member : new String[] {
+                "AOTField_Outer_Inner_label", "AOTMethod_Outer_Inner_label_0", "AOTConstructor_Outer_Inner_0"}) {
+            String memberSrc = Files.readString(r.outputDir.resolve("sample/" + member + ".java"));
+            assertTrue(memberSrc.contains("\"sample.Outer$Inner\""),
+                    () -> member + " must declare the binary owner name; got:\n" + memberSrc);
+            assertFalse(memberSrc.contains("\"sample.Outer.Inner\""),
+                    () -> member + " must not use the dotted canonical name; got:\n" + memberSrc);
+        }
     }
 
     @Test

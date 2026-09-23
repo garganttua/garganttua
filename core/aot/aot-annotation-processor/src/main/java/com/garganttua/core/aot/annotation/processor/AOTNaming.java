@@ -60,6 +60,26 @@ final class AOTNaming {
         return sourceName(type, packageName).replace('.', '_');
     }
 
+    /**
+     * The JVM <em>binary</em> name of {@code type}: the package prefix followed
+     * by the flattened nesting path joined with {@code $}. Top-level
+     * {@code com.foo.Bar} yields {@code com.foo.Bar}; nested
+     * {@code com.foo.Outer.Inner} yields {@code com.foo.Outer$Inner}.
+     *
+     * <p>This is the name every runtime lookup uses — {@code Class.getName()},
+     * {@code Class.forName(...)} and, through them, the {@code AOTRegistry} key
+     * {@code AOTReflectionProvider} queries. The processor previously emitted
+     * {@code TypeElement.getQualifiedName()} (the dotted <em>canonical</em>
+     * name) in those positions, so a nested {@code @Reflected} type registered
+     * itself under {@code Outer.Inner} while it was only ever looked up under
+     * {@code Outer$Inner}: its descriptor was generated, shipped, and never
+     * used — the type silently fell back to live reflection.</p>
+     */
+    static String binaryName(TypeElement type, String packageName) {
+        String nested = sourceName(type, packageName).replace('.', '$');
+        return packageName.isEmpty() ? nested : packageName + "." + nested;
+    }
+
     static String classDescriptorName(TypeElement type, String packageName) {
         return "AOTClass_" + flatName(type, packageName);
     }
