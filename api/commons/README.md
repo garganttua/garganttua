@@ -12,7 +12,7 @@ In addition, this module ships the annotation families that drive auto-detection
 - **Zero business logic** — pure interfaces, annotations, enums, and records; no implementation dependency on Spring or any framework runtime
 - **Domain roles** — `@EntityTenant`, `@EntityOwner`, `@EntityOwned` type-level markers, and their DSL counterparts (`.tenant()`, `.owner()`, `.owned()`), drive the multi-tenancy filter matrix
 - **Entity characteristics** — `@EntityPublic`, `@EntityShared`, `@EntityHiddenable`, `@EntityGeolocalized` control visibility, soft-delete, geographic queries, and cross-tenant sharing
-- **Entity constraints** — `@EntityMandatory` (field required on create/update) and `@EntityUnicity`/`@EntityUnicities` (unique per `TENANT` or `SYSTEM` scope)
+- **Entity constraints** — `@EntityMandatory` (field required on create/update), `@EntityUnicity` (unique per `tenant` or `system` scope, checked by the framework) and `@EntityIndexed` (the index the store itself must carry — the only form of uniqueness a concurrent write cannot walk through)
 - **Security annotation families** — `@Authentication`/`@AuthenticationAuthenticate`, `@Authenticator` (scope, key algorithm, token lifetime), `@Authorization` (signable, renewable, encode/decode), `@Key` (signing / encryption material with `@KeyAlgorithm`, `@KeyForSigning`, `@KeyExpiration`, `@KeyRotate`, etc.)
 - **Fluent DSL contracts** — `IApiBuilder` → `IDomainBuilder` → `IEntityBuilder` / `IDtoBuilder` / `IDomainSecurityBuilder` / `IUseCaseBuilder` / `IDomainWorkflowBuilder` form the complete public DSL surface
 - **Service / pipeline contracts** — `IOperationRequest`, `IOperationResponse`, `IRequestBuilder`, `IPipeline`, `IPhase`, `IPhaseScript` define the request/response and pipeline execution model
@@ -77,8 +77,9 @@ Entity annotations control how the framework interprets a POJO class for storage
 | `@EntityUuid` | Business UUID field — used as the canonical external identifier. |
 | `@EntityTenantId` | Field that stores the tenant identifier. |
 | `@EntityOwnerId` | Field that stores the owner identifier. |
-| `@EntityMandatory` / `@EntityMandatories` | Field(s) that must be non-null on create and update. |
-| `@EntityUnicity` / `@EntityUnicities` | Field(s) with a uniqueness constraint. `scope()` is `UnicityScope.tenant` (unique per tenant) or `UnicityScope.system` (globally unique). |
+| `@EntityMandatory` | Field that must be valorized on create and update. `value()` is `MandatoryPolicy.anyValue` (non-null) or `MandatoryPolicy.nonBlank` (also refuses `""` and whitespace). |
+| `@EntityUnicity` | Field with a uniqueness constraint **checked by the framework** (read, then write). `scope()` is `UnicityScope.tenant` (unique per tenant — the default) or `UnicityScope.system` (globally unique). |
+| `@EntityIndexed` | Index the **store** must carry on the field: `unique()`, `scope()` (`tenant` composes the index with the tenant identifier), `kind()` (`standard` / `geo` / `text`), `name()` (empty derives a stable name). A `@EntityUnicity` without a matching unique `@EntityIndexed` is reported at startup — the framework check alone does not stop two concurrent writes. |
 
 #### Method-level — lifecycle hooks
 

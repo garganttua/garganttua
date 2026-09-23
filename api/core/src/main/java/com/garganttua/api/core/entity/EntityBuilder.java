@@ -18,9 +18,7 @@ import com.garganttua.api.commons.context.IEntityContext;
 import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.context.dsl.IEntityBuilder;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
-import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IObjectQuery;
 import com.garganttua.core.reflection.IReflectionProvider;
@@ -34,7 +32,7 @@ import com.garganttua.core.observability.Logger;
 @Reflected
 @SuppressFBWarnings(value = {"CT_CONSTRUCTOR_THROW", "EI_EXPOSE_REP2", "IS2_INCONSISTENT_SYNC"}, justification = "Immutable-by-contract value/definition carrier; collections & arrays carried by reference as a snapshot (framework-internal, built once).")
 @SuppressWarnings({"PMD.AvoidFieldNameMatchingMethodName", "PMD.AvoidDuplicateLiterals"})
-public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
+public class EntityBuilder<E> extends AbstractEntityConstraintBuilder<E> {
 	private static final Logger log = Logger.getLogger(EntityBuilder.class);
 
     // Reflection provider is whatever the user installed via IClass.setReflection().
@@ -52,8 +50,6 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
     private boolean overwriteUuid = false;
     private com.garganttua.api.commons.entity.IUuidGenerator uuidGenerator;
     private ObjectAddress tenantId;
-    private List<Pair<ObjectAddress, MandatoryPolicy>> mandatories = new ArrayList<>();
-    private List<Pair<ObjectAddress, UnicityScope>> unicities = new ArrayList<>();
     private List<Pair<ObjectAddress, String>> creates = new ArrayList<>();
     private List<EntityUpdateRule> updates = new ArrayList<>();
     private List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedFields = new ArrayList<>();
@@ -165,96 +161,6 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
     public IEntityBuilder<E> tenantId(ObjectAddress fieldAddress) throws ApiException {
         Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
         this.tenantId = FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, IClass.getClass(String.class)).address();
-        return this;
-    }
-
-    @Override
-    public IEntityBuilder<E> mandatory(IField field) throws ApiException {
-        return mandatory(field, MandatoryPolicy.anyValue);
-    }
-
-    @Override
-    public IEntityBuilder<E> mandatory(String fieldName) throws ApiException {
-        return mandatory(fieldName, MandatoryPolicy.anyValue);
-    }
-
-    @Override
-    public IEntityBuilder<E> mandatory(ObjectAddress fieldAddress) throws ApiException {
-        return mandatory(fieldAddress, MandatoryPolicy.anyValue);
-    }
-
-    @Override
-    public IEntityBuilder<E> mandatory(IField field, MandatoryPolicy policy) throws ApiException {
-        Objects.requireNonNull(field, "Field cannot be null");
-
-        return addMandatory(
-                FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(), policy);
-    }
-
-    @Override
-    public IEntityBuilder<E> mandatory(String fieldName, MandatoryPolicy policy) throws ApiException {
-        Objects.requireNonNull(fieldName, "Field name cannot be null");
-
-        return addMandatory(
-                FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address(), policy);
-    }
-
-    @Override
-    public IEntityBuilder<E> mandatory(ObjectAddress fieldAddress, MandatoryPolicy policy) throws ApiException {
-        Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
-
-        return addMandatory(
-                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(), policy);
-    }
-
-    /** Records one resolved mandatory field; a null policy reads as the historical {@code anyValue}. */
-    private IEntityBuilder<E> addMandatory(ObjectAddress address, MandatoryPolicy policy) {
-        this.mandatories.add(new Pair<>(address, policy == null ? MandatoryPolicy.anyValue : policy));
-        return this;
-    }
-
-    @Override
-    public IEntityBuilder<E> unicity(IField field) throws ApiException {
-        return unicity(field, UnicityScope.system);
-    }
-
-    @Override
-    public IEntityBuilder<E> unicity(String fieldName) throws ApiException {
-        return unicity(fieldName, UnicityScope.system);
-    }
-
-    @Override
-    public IEntityBuilder<E> unicity(ObjectAddress fieldAddress) throws ApiException {
-        return unicity(fieldAddress, UnicityScope.system);
-    }
-
-    @Override
-    public IEntityBuilder<E> unicity(String fieldName, UnicityScope scope) throws ApiException {
-        Objects.requireNonNull(fieldName, "Field name cannot be null");
-
-        this.unicities.add(new Pair<ObjectAddress, UnicityScope>(
-                FieldResolver.fieldByFieldName(this.entityClass, provider(), fieldName, null).address(), scope));
-
-        return this;
-    }
-
-    @Override
-    public IEntityBuilder<E> unicity(IField field, UnicityScope scope) throws ApiException {
-        Objects.requireNonNull(field, "Field cannot be null");
-
-        this.unicities.add(
-                new Pair<ObjectAddress, UnicityScope>(FieldResolver.fieldByFieldName(this.entityClass, provider(), field.getName(), null).address(), scope));
-
-        return this;
-    }
-
-    @Override
-    public IEntityBuilder<E> unicity(ObjectAddress fieldAddress, UnicityScope scope) throws ApiException {
-        Objects.requireNonNull(fieldAddress, "Field address name cannot be null");
-
-        this.unicities.add(new Pair<ObjectAddress, UnicityScope>(
-                FieldResolver.fieldByAddress(this.entityClass, provider(), fieldAddress, null).address(), scope));
-
         return this;
     }
 
@@ -435,6 +341,7 @@ public class EntityBuilder<E> extends AbstractEntityHookBuilder<E> {
                 this.tenantId,
                 new ArrayList<>(this.mandatories),
                 new ArrayList<>(this.unicities),
+                new ArrayList<>(this.indexes),
                 new ArrayList<>(this.creates),
                 new ArrayList<>(this.updates),
                 new ArrayList<>(this.annotatedFields),
