@@ -12,10 +12,23 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 
 /**
- * Generates a typed subclass of {@code AOTField} for one declared field,
- * with {@code get} / {@code set} (and the typed primitive variants when
- * applicable) implemented as direct field access — no {@link java.lang.reflect.Field}
- * involved at runtime.
+ * Generates a typed subclass of {@code AOTField} for one declared field.
+ *
+ * <p>For a non-{@code private} field, {@code get} / {@code set} (and the typed
+ * primitive variants when applicable) are implemented as direct field access —
+ * no {@link java.lang.reflect.Field} involved at runtime. That is the whole
+ * point of a direct binder.</p>
+ *
+ * <p>A {@code private} field gets a <em>reflective</em> descriptor instead: the
+ * metadata and the real annotations are still baked in, but the accessors are
+ * left to {@code AOTField}, which resolves the {@link java.lang.reflect.Field}
+ * once, calls {@code trySetAccessible()} and memoises it. A descriptor
+ * generated beside the class cannot read a private field directly, so the
+ * processor used to simply drop those fields — and a class with even one
+ * non-private field then reported an <em>incomplete</em>
+ * {@code getDeclaredFields()} without falling back to the live class, because
+ * the array was no longer empty. One {@code public static final} constant on an
+ * entity was enough to hide every private field of it.</p>
  */
 final class AOTFieldSourceGenerator {
 
@@ -23,16 +36,17 @@ final class AOTFieldSourceGenerator {
     private final String packageName;
     private final String enclosingSimpleName;
     private final String enclosingSourceName;
-    private final String enclosingQualifiedName;
+    private final String enclosingBinaryName;
     private final String generatedSimpleName;
     private final String fieldTypeName;
     private final String primitiveKind;
     private final boolean isStatic;
     private final boolean isFinal;
+    private final boolean reflective;
 
     AOTFieldSourceGenerator(Types types, TypeElement enclosing, String packageName, VariableElement field) {
         this.field = field;
-        this.enclosingQualifiedName = enclosing.getQualifiedName().toString();
+        this.enclosingBinaryName = AOTNaming.binaryName(enclosing, packageName);
         this.enclosingSimpleName = enclosing.getSimpleName().toString();
         this.packageName = packageName;
         // Source-form reference to the enclosing type from its own package.
@@ -43,6 +57,7 @@ final class AOTFieldSourceGenerator {
         this.primitiveKind = TypeNames.primitiveKind(type);
         this.isStatic = field.getModifiers().contains(Modifier.STATIC);
         this.isFinal = field.getModifiers().contains(Modifier.FINAL);
+        this.reflective = field.getModifiers().contains(Modifier.PRIVATE);
     }
 
     String getGeneratedQualifiedName() {
@@ -58,15 +73,19 @@ final class AOTFieldSourceGenerator {
         src.append("import java.lang.annotation.Annotation;\n\n");
 
         src.append("/** AOT field descriptor for {@code ").append(enclosingSimpleName)
-           .append('.').append(field.getSimpleName()).append("} — generated, do not edit. */\n");
+           .append('.').append(field.getSimpleName()).append("} (")
+           .append(reflective ? "reflective access — the field is private" : "direct access")
+           .append(") — generated, do not edit. */\n");
         src.append("@SuppressWarnings(\"all\")\n");
         src.append("public final class ").append(generatedSimpleName).append(" extends AOTField {\n\n");
         src.append("    public static final ").append(generatedSimpleName)
            .append(" INSTANCE = new ").append(generatedSimpleName).append("();\n\n");
 
         appendConstructor(src);
-        appendGetAndSet(src);
-        appendPrimitiveVariants(src);
+        if (!reflective) {
+            appendGetAndSet(src);
+            appendPrimitiveVariants(src);
+        }
 
         src.append("}\n");
         return src.toString();
@@ -76,7 +95,7 @@ final class AOTFieldSourceGenerator {
     private void appendConstructor(StringBuilder src) {
         src.append("    private ").append(generatedSimpleName).append("() {\n");
         src.append("        super(\"").append(field.getSimpleName()).append("\", \"")
-           .append(enclosingQualifiedName).append("\", \"")
+           .append(enclosingBinaryName).append("\", \"")
            .append(fieldTypeName).append("\", ")
            .append(TypeNames.toReflectModifiers(field.getModifiers())).append(", ")
            .append(buildAnnotationsExpr()).append(", ").append(buildGenericTypeExpr()).append(");\n");
@@ -129,7 +148,7 @@ final class AOTFieldSourceGenerator {
     /** Appends the {@code throw new UnsupportedOperationException(...)} body used for final fields. */
     private void appendFinalFieldThrow(StringBuilder src) {
         src.append("        throw new UnsupportedOperationException(\"Cannot set final field ")
-           .append(enclosingQualifiedName).append('.').append(field.getSimpleName())
+           .append(enclosingBinaryName).append('.').append(field.getSimpleName())
            .append(" in AOT mode\");\n");
     }
 
@@ -175,14 +194,14 @@ final class AOTFieldSourceGenerator {
             return "null";
         }
         String raw = rawClassLiteral(declared);
-        if (raw == null) {
+        if (raw == null || !TypeNames.isReferenceableFrom(declared, packageName)) {
             return "null";
         }
         StringBuilder sb = new StringBuilder(
                 "com.garganttua.core.aot.reflection.AOTParameterizedType.of(").append(raw);
         for (TypeMirror arg : args) {
             String argLiteral = plainClassLiteral(arg);
-            if (argLiteral == null) {
+            if (argLiteral == null || !TypeNames.isReferenceableFrom(arg, packageName)) {
                 return "null";
             }
             sb.append(", ").append(argLiteral);

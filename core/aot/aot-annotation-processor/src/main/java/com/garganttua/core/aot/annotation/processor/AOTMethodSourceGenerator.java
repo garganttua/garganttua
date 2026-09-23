@@ -11,9 +11,17 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 
 /**
- * Generates a typed subclass of {@code AOTMethod} for one declared method,
- * with {@code invoke} implemented as a direct call — no {@link java.lang.reflect.Method}
- * involved at runtime.
+ * Generates a typed subclass of {@code AOTMethod} for one declared method.
+ *
+ * <p>For a non-{@code private} method, {@code invoke} is implemented as a
+ * direct call — no {@link java.lang.reflect.Method} involved at runtime.</p>
+ *
+ * <p>A {@code private} method gets a <em>reflective</em> descriptor: metadata
+ * and real annotations baked in, invocation left to {@code AOTMethod}, which
+ * resolves the {@link java.lang.reflect.Method} once, calls
+ * {@code trySetAccessible()} and memoises it. A descriptor generated beside the
+ * class cannot call a private method directly, so those methods used to be
+ * dropped from the descriptor altogether.</p>
  */
 final class AOTMethodSourceGenerator {
 
@@ -22,23 +30,25 @@ final class AOTMethodSourceGenerator {
     private final String packageName;
     private final String enclosingSimpleName;
     private final String enclosingSourceName;
-    private final String enclosingQualifiedName;
+    private final String enclosingBinaryName;
     private final String generatedSimpleName;
     private final boolean isStatic;
     private final boolean isVoid;
+    private final boolean reflective;
 
     AOTMethodSourceGenerator(Types types, TypeElement enclosing, String packageName,
             ExecutableElement method, String generatedSimpleName) {
         this.types = types;
         this.method = method;
         this.generatedSimpleName = generatedSimpleName;
-        this.enclosingQualifiedName = enclosing.getQualifiedName().toString();
+        this.enclosingBinaryName = AOTNaming.binaryName(enclosing, packageName);
         this.enclosingSimpleName = enclosing.getSimpleName().toString();
         this.packageName = packageName;
         // Source-form reference to the enclosing type from its own package.
         this.enclosingSourceName = AOTNaming.sourceName(enclosing, packageName);
         this.isStatic = method.getModifiers().contains(Modifier.STATIC);
         this.isVoid = method.getReturnType().getKind() == TypeKind.VOID;
+        this.reflective = method.getModifiers().contains(Modifier.PRIVATE);
     }
 
     String getGeneratedQualifiedName() {
@@ -55,17 +65,21 @@ final class AOTMethodSourceGenerator {
         src.append("import java.lang.annotation.Annotation;\n\n");
 
         src.append("/** AOT method descriptor for {@code ").append(enclosingSimpleName)
-           .append('.').append(method.getSimpleName()).append("(...)} — generated, do not edit. */\n");
+           .append('.').append(method.getSimpleName()).append("(...)} (")
+           .append(reflective ? "reflective access — the method is private" : "direct access")
+           .append(") — generated, do not edit. */\n");
         src.append("@SuppressWarnings(\"all\")\n");
         src.append("public final class ").append(generatedSimpleName).append(" extends AOTMethod {\n\n");
         src.append("    public static final ").append(generatedSimpleName)
            .append(" INSTANCE = new ").append(generatedSimpleName).append("();\n\n");
 
         appendConstructor(src, params);
-        boolean hasChecked = !method.getThrownTypes().isEmpty();
-        appendInvoke(src, params, hasChecked);
-        if (hasChecked) {
-            appendSneakyThrow(src);
+        if (!reflective) {
+            boolean hasChecked = !method.getThrownTypes().isEmpty();
+            appendInvoke(src, params, hasChecked);
+            if (hasChecked) {
+                appendSneakyThrow(src);
+            }
         }
 
         src.append("}\n");
@@ -76,7 +90,7 @@ final class AOTMethodSourceGenerator {
     private void appendConstructor(StringBuilder src, List<? extends VariableElement> params) {
         src.append("    private ").append(generatedSimpleName).append("() {\n");
         src.append("        super(\"").append(method.getSimpleName()).append("\", \"")
-           .append(enclosingQualifiedName).append("\", \"")
+           .append(enclosingBinaryName).append("\", \"")
            .append(TypeNames.getTypeName(types, method.getReturnType())).append("\", ")
            .append(buildStringArray(typeNames(params))).append(", ")
            .append(buildStringArray(paramNames(params))).append(", ")
@@ -98,6 +112,13 @@ final class AOTMethodSourceGenerator {
      * exactly the runtime signature {@code getDeclaredMethod} expects.</p>
      */
     private String buildAnnotationsExpr(List<? extends VariableElement> params) {
+        if (!parameterTypesAreReferenceable(params)) {
+            // A parameter type the descriptor cannot name from its own package —
+            // a private nested class, say. Emitting its class literal would
+            // produce a descriptor that does not compile, so this one member
+            // keeps the previous annotation-less behaviour.
+            return "new Annotation[0]";
+        }
         StringBuilder sb = new StringBuilder(
                 "com.garganttua.core.aot.reflection.AOTAnnotations.ofMethod(")
                 .append(enclosingSourceName).append(".class, \"")
@@ -153,6 +174,16 @@ final class AOTMethodSourceGenerator {
         src.append("    private static <E extends Throwable> RuntimeException __sneakyThrow(Throwable t) throws E {\n");
         src.append("        throw (E) t;\n");
         src.append("    }\n");
+    }
+
+    /** Whether every parameter type can be named from the descriptor's package. */
+    private boolean parameterTypesAreReferenceable(List<? extends VariableElement> params) {
+        for (VariableElement param : params) {
+            if (!TypeNames.isReferenceableFrom(param.asType(), packageName)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String[] typeNames(List<? extends VariableElement> params) {

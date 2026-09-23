@@ -37,6 +37,7 @@ public final class AOTClassSourceGenerator {
     private final String simpleName;
     private final String typeSourceName;
     private final String qualifiedName;
+    private final String binaryName;
     private final String generatedSimpleName;
 
     private final List<VariableElement> fields;
@@ -75,6 +76,10 @@ public final class AOTClassSourceGenerator {
         // Source-form reference to the described type from its own package:
         // "Bar" for a top-level type, "Outer.Inner" for a nested one.
         this.typeSourceName = AOTNaming.sourceName(typeElement, packageName);
+        // Binary name ("com.foo.Outer$Inner"), NOT the dotted qualified name:
+        // this is the AOTRegistry key and the AOTClass#getName() value, both of
+        // which are matched against Class.getName() at lookup time.
+        this.binaryName = AOTNaming.binaryName(typeElement, packageName);
         this.generatedSimpleName = AOTNaming.classDescriptorName(typeElement, packageName);
 
         // Defensive copies — the generator must not be affected by, nor mutate,
@@ -137,7 +142,7 @@ public final class AOTClassSourceGenerator {
         src.append("    public static final ").append(generatedSimpleName)
            .append(" INSTANCE = new ").append(generatedSimpleName).append("();\n\n");
         src.append("    static {\n");
-        src.append("        AOTRegistry.getInstance().register(\"").append(qualifiedName)
+        src.append("        AOTRegistry.getInstance().register(\"").append(binaryName)
            .append("\", INSTANCE);\n");
         src.append("    }\n\n");
     }
@@ -148,7 +153,9 @@ public final class AOTClassSourceGenerator {
         // instantiates AOT descriptors via reflection and rejects non-public ctors.
         src.append("    public ").append(generatedSimpleName).append("() {\n");
         src.append("        super(\n");
-        src.append("            \"").append(qualifiedName).append("\",\n");
+        // name = binary ("Outer$Inner"): AOTLiveClassFallback feeds it straight
+        // to Class.forName. canonicalName (3rd arg) stays the dotted form.
+        src.append("            \"").append(binaryName).append("\",\n");
         src.append("            \"").append(simpleName).append("\",\n");
         src.append("            \"").append(qualifiedName).append("\",\n");
         src.append("            \"").append(packageName).append("\",\n");

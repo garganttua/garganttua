@@ -3,6 +3,7 @@ package com.garganttua.core.aot.annotation.processor;
 import java.util.List;
 
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
@@ -10,8 +11,20 @@ import javax.lang.model.util.Types;
 
 /**
  * Generates a typed subclass of {@code AOTConstructor} for one declared
- * constructor, with {@code newInstance} implemented as a direct {@code new}
- * expression — no {@link java.lang.reflect.Constructor} involved at runtime.
+ * constructor.
+ *
+ * <p>For a non-{@code private} constructor, {@code newInstance} is implemented
+ * as a direct {@code new} expression — no {@link java.lang.reflect.Constructor}
+ * involved at runtime.</p>
+ *
+ * <p>A {@code private} constructor gets a <em>reflective</em> descriptor:
+ * metadata and real annotations baked in, instantiation left to
+ * {@code AOTConstructor}, which resolves the
+ * {@link java.lang.reflect.Constructor} once, calls {@code trySetAccessible()}
+ * and memoises it. A descriptor generated beside the class cannot call a
+ * private constructor directly, so those used to be dropped from the
+ * descriptor altogether — which is how a singleton or a builder-only type lost
+ * its declared constructors under AOT.</p>
  */
 final class AOTConstructorSourceGenerator {
 
@@ -20,20 +33,22 @@ final class AOTConstructorSourceGenerator {
     private final String packageName;
     private final String enclosingSimpleName;
     private final String enclosingSourceName;
-    private final String enclosingQualifiedName;
+    private final String enclosingBinaryName;
     private final String generatedSimpleName;
+    private final boolean reflective;
 
     AOTConstructorSourceGenerator(Types types, TypeElement enclosing, String packageName,
             ExecutableElement constructor, String generatedSimpleName) {
         this.types = types;
         this.constructor = constructor;
         this.generatedSimpleName = generatedSimpleName;
-        this.enclosingQualifiedName = enclosing.getQualifiedName().toString();
+        this.enclosingBinaryName = AOTNaming.binaryName(enclosing, packageName);
         this.enclosingSimpleName = enclosing.getSimpleName().toString();
         this.packageName = packageName;
         // Source-form reference to the enclosing type from its own package:
         // "Bar" for top-level, "Outer.Inner" for nested.
         this.enclosingSourceName = AOTNaming.sourceName(enclosing, packageName);
+        this.reflective = constructor.getModifiers().contains(Modifier.PRIVATE);
     }
 
     String getGeneratedQualifiedName() {
@@ -50,15 +65,26 @@ final class AOTConstructorSourceGenerator {
         src.append("import java.lang.annotation.Annotation;\n\n");
 
         src.append("/** AOT constructor descriptor for {@code ").append(enclosingSimpleName)
-           .append("(...)} — generated, do not edit. */\n");
+           .append("(...)} (")
+           .append(reflective ? "reflective access — the constructor is private" : "direct access")
+           .append(") — generated, do not edit. */\n");
         src.append("@SuppressWarnings(\"all\")\n");
         src.append("public final class ").append(generatedSimpleName)
            .append(" extends AOTConstructor<").append(enclosingSourceName).append("> {\n\n");
         src.append("    public static final ").append(generatedSimpleName)
            .append(" INSTANCE = new ").append(generatedSimpleName).append("();\n\n");
 
+        appendConstructor(src, params);
+        appendNewInstance(src, params);
+
+        src.append("}\n");
+        return src.toString();
+    }
+
+    /** Appends the private no-arg ctor that forwards the constructor metadata to {@code super(...)}. */
+    private void appendConstructor(StringBuilder src, List<? extends VariableElement> params) {
         src.append("    private ").append(generatedSimpleName).append("() {\n");
-        src.append("        super(\"").append(enclosingQualifiedName).append("\", ")
+        src.append("        super(\"").append(enclosingBinaryName).append("\", ")
            .append(AOTMethodSourceGenerator.buildStringArray(typeNames(params))).append(", ")
            .append(AOTMethodSourceGenerator.buildStringArray(paramNames(params))).append(", ")
            .append(TypeNames.toReflectModifiers(constructor.getModifiers())).append(", ")
@@ -66,16 +92,22 @@ final class AOTConstructorSourceGenerator {
            .append(constructor.isVarArgs()).append(", ")
            .append(AOTMethodSourceGenerator.buildStringArray(exceptionTypeNames())).append(");\n");
         src.append("    }\n\n");
+    }
 
-        // newInstance(Object...)
+    /**
+     * Appends the direct {@code newInstance(Object...)} override — but only when
+     * the constructor is reachable from the generated class. A private one keeps
+     * {@code AOTConstructor}'s memoised reflective path.
+     */
+    private void appendNewInstance(StringBuilder src, List<? extends VariableElement> params) {
+        if (reflective) {
+            return;
+        }
         src.append("    @Override\n");
         src.append("    public ").append(enclosingSourceName).append(" newInstance(Object... args) {\n");
         src.append("        return new ").append(enclosingSourceName)
            .append("(").append(buildArgCasts(params)).append(");\n");
         src.append("    }\n");
-
-        src.append("}\n");
-        return src.toString();
     }
 
     /**
@@ -90,6 +122,14 @@ final class AOTConstructorSourceGenerator {
      * {@code getDeclaredConstructor} expects.</p>
      */
     private String buildAnnotationsExpr(List<? extends VariableElement> params) {
+        for (VariableElement param : params) {
+            if (!TypeNames.isReferenceableFrom(param.asType(), packageName)) {
+                // A parameter type the descriptor cannot name from its own
+                // package — a private nested class, say. Emitting its class
+                // literal would produce a descriptor that does not compile.
+                return "new Annotation[0]";
+            }
+        }
         StringBuilder sb = new StringBuilder(
                 "com.garganttua.core.aot.reflection.AOTAnnotations.ofConstructor(")
                 .append(enclosingSourceName).append(".class");

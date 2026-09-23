@@ -85,6 +85,60 @@ final class TypeNames {
         return flags;
     }
 
+    /**
+     * Whether {@code typeMirror} can be named from a <em>separate top-level
+     * class</em> sitting in {@code packageName} — which is exactly what every
+     * generated descriptor is.
+     *
+     * <p>A member's signature is, by construction, nameable from the source
+     * file that declares it; it is not necessarily nameable from the generated
+     * descriptor beside it. A {@code private} nested type is the common case:
+     * {@code private void feed(Inner i)} compiles in {@code Outer}, while
+     * {@code AOTMethod_Outer_feed_0} cannot so much as write {@code Inner.class}.
+     * Descriptors now cover {@code private} members too, so such signatures
+     * actually reach the generators; emitting a class literal for one would
+     * produce a descriptor that does not compile — a hard build break for the
+     * consumer. Callers degrade to the annotation-less / raw-type form instead.</p>
+     *
+     * <p>Primitives, {@code void} and type variables are always nameable;
+     * arrays defer to their component type; a declared type must have every
+     * type in its enclosing chain either {@code public} or declared in
+     * {@code packageName}.</p>
+     */
+    static boolean isReferenceableFrom(TypeMirror typeMirror, String packageName) {
+        return switch (typeMirror.getKind()) {
+            case ARRAY -> isReferenceableFrom(((ArrayType) typeMirror).getComponentType(), packageName);
+            case DECLARED -> isDeclaredTypeReferenceable((DeclaredType) typeMirror, packageName);
+            default -> true;
+        };
+    }
+
+    /** Walks the enclosing-type chain of a declared type checking each link's visibility. */
+    private static boolean isDeclaredTypeReferenceable(DeclaredType declaredType, String packageName) {
+        javax.lang.model.element.Element element = declaredType.asElement();
+        while (element instanceof javax.lang.model.element.TypeElement type) {
+            Set<Modifier> mods = type.getModifiers();
+            if (mods.contains(Modifier.PRIVATE)) {
+                return false;
+            }
+            if (!mods.contains(Modifier.PUBLIC) && !packageName.equals(packageOf(type))) {
+                return false;
+            }
+            element = type.getEnclosingElement();
+        }
+        return true;
+    }
+
+    /** The package of {@code type}, read off its enclosing-element chain (no {@code Elements} needed). */
+    private static String packageOf(javax.lang.model.element.TypeElement type) {
+        javax.lang.model.element.Element element = type;
+        while (element != null && !(element instanceof javax.lang.model.element.PackageElement)) {
+            element = element.getEnclosingElement();
+        }
+        return element == null ? ""
+                : ((javax.lang.model.element.PackageElement) element).getQualifiedName().toString();
+    }
+
     /** Java keyword for primitive type names, or {@code null} if not a primitive. */
     static String primitiveKind(TypeMirror type) {
         return switch (type.getKind()) {
