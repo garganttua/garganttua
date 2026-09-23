@@ -57,6 +57,25 @@
 			<artifactId>junit-jupiter-engine</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- TEST ONLY. The declared-index feature spans annotation -> ApiBuilder -> entity
+		     definition -> DAO -> database, and every unit on that path was already covered on
+		     its own while the joint was not: the one measurement the consumer reported (two
+		     concurrent writes producing a duplicate) can only be reproduced by driving the REAL
+		     api engine against the REAL MongoDB. The engine lives in api-core; api-core does not
+		     depend on this module, so the edge is acyclic, and the reactor already builds core
+		     before dao. Nothing in src/main gains a dependency. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- ScriptGenerator emits observe("start"|"end", ...) markers when workflow timing is on;
+		     those resolve against ObservabilityExpressions, which live here. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-observability</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- A reflection stack for IClass.getClass(...) in tests (ServiceLoader cold-start via Bootstrap.builder()). -->
 		<dependency>
 			<groupId>com.garganttua.core</groupId>
