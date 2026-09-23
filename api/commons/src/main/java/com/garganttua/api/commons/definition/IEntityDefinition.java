@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.javatuples.Pair;
 
+import com.garganttua.api.commons.entity.EntityIndexRule;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.IUuidGenerator;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
@@ -41,6 +42,27 @@ public interface IEntityDefinition<E> {
     List<Pair<ObjectAddress, MandatoryPolicy>> mandatories();
 
     List<Pair<ObjectAddress, UnicityScope>> unicities();
+
+    /**
+     * The indexes the entity declares on the store, via {@code entity().index(...)} or
+     * {@link com.garganttua.api.commons.entity.annotations.EntityIndexed}.
+     *
+     * <p>
+     * Separate from {@link #unicities()} on purpose. A unicity is a check the framework runs — a
+     * read, then a write, with a gap two concurrent requests walk through. An index is what the
+     * <em>store</em> holds, and it is the only thing that actually keeps a duplicate out. Declaring
+     * one does not declare the other; a unicity left without a matching index is reported at
+     * startup rather than silently trusted.
+     * </p>
+     *
+     * <p>
+     * Defaults to empty so an implementation predating 3.0.0-ALPHA23 keeps compiling — it then
+     * declares no index, which is what it did before.
+     * </p>
+     */
+    default List<EntityIndexRule> indexes() {
+        return List.of();
+    }
 
     /**
      * CREATE-time field whitelist: each pair binds a field a caller may valorize at creation to the

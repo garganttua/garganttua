@@ -14,6 +14,7 @@ import com.garganttua.api.commons.dao.IDao;
 import com.garganttua.api.commons.definition.DtoComposition;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
+import com.garganttua.api.commons.definition.IEntityDefinition;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.sort.ISort;
@@ -54,11 +55,23 @@ public class MongoDao implements IDao {
 	private final MongoDaoConfig config = new MongoDaoConfig();
 	private final MongoDocumentWriter writer = new MongoDocumentWriter(this.config);
 	private final MongoDocumentReader reader;
+	private final MongoIndexManager indexes;
 
+	/** A DAO that creates the indexes its domain declares ({@link MongoIndexMode#CREATE}). */
 	public MongoDao(MongoDatabase database, String collectionName) {
+		this(database, collectionName, MongoIndexMode.CREATE);
+	}
+
+	/**
+	 * @param database       the database
+	 * @param collectionName the collection backing this domain
+	 * @param indexMode      who creates the declared indexes, and what a failure costs
+	 */
+	public MongoDao(MongoDatabase database, String collectionName, MongoIndexMode indexMode) {
 		this.database = database;
 		this.collectionName = collectionName;
 		this.reader = new MongoDocumentReader(database, this.config);
+		this.indexes = new MongoIndexManager(indexMode);
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -74,6 +87,29 @@ public class MongoDao implements IDao {
 			for (DtoComposition composition : dtoDefinition.compositions()) {
 				this.config.compositions().put(composition.field().getLastElement(), composition.collection());
 			}
+			ensureIndexes(domainDefinition, dtoDefinition);
+		}
+	}
+
+	/**
+	 * Asks the store for the indexes the ENTITY declares, translated to document field names — an
+	 * index laid on the entity's own field name would be one the queries never use, since every
+	 * query this DAO emits speaks in document fields.
+	 */
+	@SuppressWarnings("rawtypes")
+	private void ensureIndexes(IDomainDefinition domainDefinition, IDtoDefinition<?> dtoDefinition) {
+		IEntityDefinition<?> entityDefinition = domainDefinition.entityDefinition();
+		if (entityDefinition == null || entityDefinition.indexes().isEmpty()) {
+			return;
+		}
+		String tenantField = dtoDefinition.tenantId() == null ? null : dtoDefinition.tenantId().toString();
+		List<MongoIndexSpec> specs = MongoIndexSpec.plan(entityDefinition.indexes(),
+				this::translateToDocumentPath, tenantField);
+		try {
+			this.indexes.ensure(getCollection(), String.valueOf(domainDefinition.domainName()), specs);
+		} catch (ApiException e) {
+			// registerDomain cannot throw a checked exception; only STRICT mode ever gets here.
+			throw new IllegalStateException(e.getMessage(), e);
 		}
 	}
 
@@ -180,6 +216,20 @@ public class MongoDao implements IDao {
 	 * on the DTO fields ({@code sourceFieldAddress} = the entity field). Falls back to the same name when
 	 * no rule maps it (DTO field name == entity field name).
 	 */
+	/**
+	 * Translates a possibly dotted ENTITY path to its document path. Only the head is mapped — the
+	 * mapping rules are declared on the root DTO's own fields, so nothing below the first hop is
+	 * known here — and the rest of the path is carried over unchanged, which is what MongoDB indexes
+	 * and queries a nested field by.
+	 */
+	private String translateToDocumentPath(String entityPath) {
+		int dot = entityPath.indexOf('.');
+		if (dot < 0) {
+			return translateToDtoField(entityPath);
+		}
+		return translateToDtoField(entityPath.substring(0, dot)) + entityPath.substring(dot);
+	}
+
 	private String translateToDtoField(String entityField) {
 		if (this.config.dtoClass() == null) {
 			return entityField;

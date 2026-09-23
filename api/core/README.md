@@ -94,13 +94,28 @@ A **definition** is an immutable record frozen at the end of `build()`. Key defi
 
 | Definition class | Content |
 |---|---|
-| `EntityDefinition` | Field addresses for `id`, `uuid`, `tenantId`; mandatory and unicity rules; lifecycle hook binders |
+| `EntityDefinition` | Field addresses for `id`, `uuid`, `tenantId`; mandatory, unicity and index rules; lifecycle hook binders |
 | `DomainDefinition` | Entity + DTO definitions, access rules, role flags (`tenant`, `owner`, `owned`), characteristics (`publik`, `hiddenable`, `shared`, `geolocalized`) |
 | `DomainSecurityDefinition` | `AuthenticatorDefintion`, `DomainAuthorizationDefinition`, disabled flag |
 | `AuthenticatorDefintion` | Login field, account status fields, scope, linked `DomainAuthenticatorAuthorizationDefinition` |
 | `DomainAuthorizationDefinition` | `type`, `authorities`, `expiration`, `revoked`, `signable`, `storable`, `refreshable`, encode/sign method addresses |
 | `DomainKeyDefinition` | `name`, `algorithm`, `signatureAlgorithm`, `keyForSigning`, `keyForSignatureVerification`, `expiration`, `revoked` field addresses |
 | `UseCaseDefinition` / `WorkflowDefinition` | Business operation label, script path, access level |
+
+#### Unicity is a check, an index is a guarantee
+
+`entity().unicity(field[, scope])` / `@EntityUnicity` declare a constraint **the framework**
+enforces: it reads the collection, then writes. Two concurrent requests both read "no duplicate"
+and both write one. `entity().index(field[, unique, scope, kind, name])` / `@EntityIndexed` declare
+what the **store** must hold, which is the only thing that refuses the second write. The two are
+independent declarations, and `ApiSummary` emits a `WARN` at assembly for every field under unicity
+that carries no matching unique index — naming the domain, the field and the scope.
+
+Scopes do not mean the same thing on both sides of the DSL: the scope-less `unicity(field)`
+overload means `UnicityScope.system` (historical, and depended upon), while `@EntityUnicity` and
+`index(field)` default to `UnicityScope.tenant`. `EntityAnnotationScanner` reads the annotated scope
+and passes it on — it used to call the scope-less overload and silently promote every per-tenant
+constraint to a global one.
 
 A **context** holds the live objects. `Domain<E>` aggregates its `DomainDefinition`, `EntityContext`, `List<DtoContext>`, `IRepository`, `IDomainSecurityContext`, and the assembled `IWorkflow`. `Api` holds the map of domains, super-tenant config, serializers, protocols, and authorization protocols. After `ApiBuilder.build()` completes, `Api` and each `Domain` are registered as named singleton beans in the `IInjectionContext` (`"Api"`, `"domain.<name>"`, `"tenantDomain"`).
 

@@ -41,7 +41,9 @@ import com.garganttua.api.commons.entity.annotations.EntitySuperOwner;
 import com.garganttua.api.commons.entity.annotations.EntitySuperTenant;
 import com.garganttua.api.commons.entity.annotations.EntityTenant;
 import com.garganttua.api.commons.entity.annotations.EntityTenantId;
+import com.garganttua.api.commons.entity.annotations.EntityIndexed;
 import com.garganttua.api.commons.entity.annotations.EntityUnicity;
+import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.entity.annotations.EntityUuid;
 import com.garganttua.api.commons.security.annotations.Key;
 import com.garganttua.api.commons.security.annotations.KeyAlgorithm;
@@ -77,7 +79,7 @@ import com.garganttua.core.observability.Logger;
  *       {@link EntityHiddenable}, {@link EntityGeolocalized}).</li>
  *   <li>Applies field-level markers ({@link EntityId}, {@link EntityUuid},
  *       {@link EntityTenantId}, {@link EntitySuperOwner}, {@link EntitySuperTenant},
- *       {@link EntityMandatory}, {@link EntityUnicity}).</li>
+ *       {@link EntityMandatory}, {@link EntityUnicity}, {@link EntityIndexed}).</li>
  *   <li>Applies method-level lifecycle hooks
  *       ({@link EntityBeforeCreate}, {@link EntityAfterCreate}, ...).</li>
  *   <li>Wires the paired DTO with its {@link DtoId}, {@link DtoUuid},
@@ -283,7 +285,10 @@ public final class EntityAnnotationScanner {
             entity.mandatory(addr, declaredMandatoryPolicy(reflection, entityClass, addr));
         }
         for (String addr : reflection.findFieldAddressesWithAnnotation(entityClass, IClass.getClass(EntityUnicity.class), true)) {
-            entity.unicity(addr);
+            entity.unicity(addr, declaredUnicityScope(reflection, entityClass, addr));
+        }
+        for (String addr : reflection.findFieldAddressesWithAnnotation(entityClass, IClass.getClass(EntityIndexed.class), true)) {
+            applyDeclaredIndex(reflection, entity, entityClass, addr);
         }
         applyWriteWhitelists(entity, entityClass);
     }
@@ -299,6 +304,49 @@ public final class EntityAnnotationScanner {
                 .map(field -> field.getAnnotation(IClass.getClass(EntityMandatory.class)))
                 .map(EntityMandatory::value)
                 .orElse(MandatoryPolicy.anyValue);
+    }
+
+    /**
+     * The scope a field's {@code @EntityUnicity} declares.
+     *
+     * <p>
+     * It has to be read and passed on: {@code entity.unicity(address)} — the scope-less DSL
+     * overload — means {@link UnicityScope#system}, while the annotation means
+     * {@link UnicityScope#tenant} unless it says otherwise. Calling that overload from here threw
+     * away every declared scope and silently promoted a per-tenant constraint into a global one,
+     * so two tenants could no longer hold the same value.
+     * </p>
+     *
+     * <p>
+     * Falls back to {@link UnicityScope#tenant} — the ANNOTATION's default, not the DSL's — when
+     * the field cannot be resolved by its address, which happens for a nested address the
+     * annotation scan reports but this flat lookup does not reach. The annotation is what the
+     * author wrote, so an unreadable one is read as what it would have said by default.
+     * </p>
+     */
+    private static UnicityScope declaredUnicityScope(IReflection reflection, IClass<?> entityClass, String address) {
+        return reflection.findField(entityClass, address)
+                .map(field -> field.getAnnotation(IClass.getClass(EntityUnicity.class)))
+                .map(EntityUnicity::scope)
+                .orElse(UnicityScope.tenant);
+    }
+
+    /**
+     * Wires one {@code @EntityIndexed} field onto the entity DSL. When the field cannot be resolved
+     * by its address — same flat-lookup limit as {@link #declaredUnicityScope} — the bare
+     * {@code index(address)} overload is used, which carries the annotation's own defaults
+     * (non-unique, tenant-scoped, standard, derived name).
+     */
+    private static void applyDeclaredIndex(IReflection reflection, IEntityBuilder<Object> entity,
+            IClass<?> entityClass, String address) throws ApiException {
+        EntityIndexed declared = reflection.findField(entityClass, address)
+                .map(field -> field.getAnnotation(IClass.getClass(EntityIndexed.class)))
+                .orElse(null);
+        if (declared == null) {
+            entity.index(address);
+        } else {
+            entity.index(address, declared.unique(), declared.scope(), declared.kind(), declared.name());
+        }
     }
 
     /**

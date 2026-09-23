@@ -9,6 +9,7 @@ import java.util.Map;
 import org.javatuples.Pair;
 
 import com.garganttua.api.commons.definition.IEntityDefinition;
+import com.garganttua.api.commons.entity.EntityIndexRule;
 import com.garganttua.api.commons.entity.EntityUpdateRule;
 import com.garganttua.api.commons.entity.MandatoryPolicy;
 import com.garganttua.api.commons.entity.IUuidGenerator;
@@ -25,6 +26,8 @@ public record EntityDefinition<E>(
     ObjectAddress tenantId,
     List<Pair<ObjectAddress, MandatoryPolicy>> mandatories,
     List<Pair<ObjectAddress, UnicityScope>> unicities,
+    /** The indexes the store must carry — see {@link IEntityDefinition#indexes()}. */
+    List<EntityIndexRule> indexes,
     List<Pair<ObjectAddress, String>> creates,
     List<EntityUpdateRule> updates,
     List<Pair<ObjectAddress, IClass<? extends Annotation>>> annotatedFields,

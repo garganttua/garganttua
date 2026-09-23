@@ -6,6 +6,7 @@ import com.garganttua.core.reflection.IMethod;
 
 import com.garganttua.api.commons.context.IEntityContext;
 import com.garganttua.api.commons.entity.IUuidGenerator;
+import com.garganttua.api.commons.entity.annotations.IndexKind;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.entity.MandatoryPolicy;
@@ -87,6 +88,71 @@ public interface IEntityBuilder<E> extends IAutomaticLinkedBuilder<IEntityBuilde
     IEntityBuilder<E> unicity(IField field, UnicityScope system) throws ApiException;
 
     IEntityBuilder<E> unicity(ObjectAddress fieldAddress, UnicityScope system) throws ApiException;
+
+    /**
+     * Declares an index the STORE must carry on the field — the DSL counterpart of
+     * {@link com.garganttua.api.commons.entity.annotations.EntityIndexed}, and the only form of
+     * uniqueness a concurrent write cannot walk through.
+     *
+     * <p>
+     * The bare form mirrors the annotation's defaults: a non-unique, {@link UnicityScope#tenant}
+     * scoped {@link IndexKind#standard} index, named by derivation. Note that this differs from
+     * {@link #unicity(String)}, whose scope-less form means {@link UnicityScope#system} — a
+     * historical default kept as-is because callers depend on it.
+     * </p>
+     *
+     * @param string the field on the entity
+     * @return this builder
+     * @throws ApiException if the field cannot be resolved on the entity
+     */
+    IEntityBuilder<E> index(String string) throws ApiException;
+
+    /** @see #index(String) */
+    IEntityBuilder<E> index(IField field) throws ApiException;
+
+    /** @see #index(String) */
+    IEntityBuilder<E> index(ObjectAddress fieldAddress) throws ApiException;
+
+    /**
+     * Declares a {@link IndexKind#standard} index with an explicit uniqueness and scope, named by
+     * derivation.
+     *
+     * @param string the field on the entity
+     * @param unique {@code true} to have the store refuse a duplicate value
+     * @param scope  {@link UnicityScope#tenant} to compose the index with the tenant identifier,
+     *               {@link UnicityScope#system} to index the field alone
+     * @return this builder
+     * @throws ApiException if the field cannot be resolved on the entity
+     */
+    IEntityBuilder<E> index(String string, boolean unique, UnicityScope scope) throws ApiException;
+
+    /** @see #index(String, boolean, UnicityScope) */
+    IEntityBuilder<E> index(IField field, boolean unique, UnicityScope scope) throws ApiException;
+
+    /** @see #index(String, boolean, UnicityScope) */
+    IEntityBuilder<E> index(ObjectAddress fieldAddress, boolean unique, UnicityScope scope) throws ApiException;
+
+    /**
+     * Full form: uniqueness, scope, kind, and the name the index is created under.
+     *
+     * @param string the field on the entity
+     * @param unique {@code true} to have the store refuse a duplicate value
+     * @param scope  the scope the index spans
+     * @param kind   what kind of index the store must build
+     * @param name   the index name, or {@code null}/empty to derive a stable one from the declaration
+     * @return this builder
+     * @throws ApiException if the field cannot be resolved on the entity
+     */
+    IEntityBuilder<E> index(String string, boolean unique, UnicityScope scope, IndexKind kind, String name)
+            throws ApiException;
+
+    /** @see #index(String, boolean, UnicityScope, IndexKind, String) */
+    IEntityBuilder<E> index(IField field, boolean unique, UnicityScope scope, IndexKind kind, String name)
+            throws ApiException;
+
+    /** @see #index(String, boolean, UnicityScope, IndexKind, String) */
+    IEntityBuilder<E> index(ObjectAddress fieldAddress, boolean unique, UnicityScope scope, IndexKind kind,
+            String name) throws ApiException;
 
     /**
      * Declares a field a caller may valorize at CREATION (no authority required). Declaring any

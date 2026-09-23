@@ -11,8 +11,16 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.lang.annotation.Annotation;
+import java.util.List;
+
+import org.javatuples.Pair;
 
 import com.garganttua.api.commons.context.IEntityContext;
+import com.garganttua.api.commons.definition.IEntityDefinition;
+import com.garganttua.api.commons.entity.EntityIndexRule;
+import com.garganttua.api.commons.entity.annotations.IndexKind;
+import com.garganttua.api.commons.entity.annotations.UnicityScope;
+import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.context.dsl.IEntityBuilder;
 import com.garganttua.api.commons.ApiException;
@@ -151,6 +159,84 @@ class EntityBuilderTest {
         void unicityCanBeCalledMultipleTimes() throws ApiException {
             entityBuilder.unicity("name");
             assertDoesNotThrow(() -> entityBuilder.unicity("uuid"));
+        }
+
+        @SuppressWarnings("unchecked")
+        private IEntityDefinition<TestEntity> definition() throws ApiException {
+            entityBuilder.id("id").uuid("uuid").tenantId("tenantId");
+            return ((EntityContext<TestEntity>) entityBuilder.build()).getEntityDefinition();
+        }
+
+        @Test
+        @DisplayName("unicity(field) without a scope still means system — callers depend on it")
+        void unicityWithoutScopeIsSystem() throws ApiException {
+            entityBuilder.unicity("name");
+
+            List<Pair<ObjectAddress, UnicityScope>> unicities = definition().unicities();
+            assertEquals(1, unicities.size());
+            assertEquals("name", unicities.get(0).getValue0().toString());
+            assertEquals(UnicityScope.system, unicities.get(0).getValue1());
+        }
+
+        @Test
+        @DisplayName("unicity(field, scope) records the scope it was given")
+        void unicityKeepsTheDeclaredScope() throws ApiException {
+            entityBuilder.unicity("name", UnicityScope.tenant);
+
+            assertEquals(UnicityScope.tenant, definition().unicities().get(0).getValue1());
+        }
+    }
+
+    @Nested
+    @DisplayName("Index Declarations")
+    class IndexDeclarations {
+
+        @SuppressWarnings("unchecked")
+        private List<EntityIndexRule> indexes() throws ApiException {
+            entityBuilder.id("id").uuid("uuid").tenantId("tenantId");
+            return ((EntityContext<TestEntity>) entityBuilder.build()).getEntityDefinition().indexes();
+        }
+
+        @Test
+        @DisplayName("index(field) carries the annotation defaults and a derived name")
+        void bareIndexUsesAnnotationDefaults() throws ApiException {
+            entityBuilder.index("name");
+
+            List<EntityIndexRule> declared = indexes();
+            assertEquals(1, declared.size());
+            EntityIndexRule rule = declared.get(0);
+            assertEquals("name", rule.field().toString());
+            assertFalse(rule.unique());
+            assertEquals(UnicityScope.tenant, rule.scope());
+            assertEquals(IndexKind.standard, rule.kind());
+            assertEquals("gg_name_tenant_standard_idx", rule.name());
+        }
+
+        @Test
+        @DisplayName("index(field, unique, scope) reaches the definition — no annotation needed")
+        void dslDeclaredUniqueIndex() throws ApiException {
+            entityBuilder.index("name", true, UnicityScope.system);
+
+            EntityIndexRule rule = indexes().get(0);
+            assertTrue(rule.unique());
+            assertEquals(UnicityScope.system, rule.scope());
+            assertEquals("gg_name_system_standard_unique", rule.name());
+        }
+
+        @Test
+        @DisplayName("index(field, unique, scope, kind, name) keeps the name it was given")
+        void dslDeclaredNamedIndex() throws ApiException {
+            entityBuilder.index("name", false, UnicityScope.system, IndexKind.text, "contacts_fulltext");
+
+            EntityIndexRule rule = indexes().get(0);
+            assertEquals(IndexKind.text, rule.kind());
+            assertEquals("contacts_fulltext", rule.name());
+        }
+
+        @Test
+        @DisplayName("index() rejects an unknown field")
+        void indexRejectsUnknownField() {
+            assertThrows(Exception.class, () -> entityBuilder.index("noSuchField"));
         }
     }
 

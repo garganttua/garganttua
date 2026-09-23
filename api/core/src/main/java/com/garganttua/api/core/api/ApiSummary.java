@@ -5,9 +5,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.javatuples.Pair;
+
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.definition.IDomainDefinition;
+import com.garganttua.api.commons.definition.IEntityDefinition;
+import com.garganttua.api.commons.entity.EntityIndexRule;
+import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.core.domain.Domain;
+import com.garganttua.core.observability.Logger;
+import com.garganttua.core.reflection.ObjectAddress;
 
 /**
  * Builds the human-readable startup summary ({@code ISummaryContributor} items) for an {@link Api}.
@@ -15,6 +22,8 @@ import com.garganttua.api.core.domain.Domain;
  * formatting of the already-built domain contexts.
  */
 final class ApiSummary {
+
+	private static final Logger log = Logger.getLogger(ApiSummary.class);
 
 	private ApiSummary() {
 	}
@@ -78,6 +87,42 @@ final class ApiSummary {
 			if (dc.getInterfaces() != null) counters[0] += dc.getInterfaces().size();
 			if (dc.getEvents() != null) counters[1] += dc.getEvents().size();
 		}
+
+		warnUnicitiesWithoutIndex(name, def);
+	}
+
+	/**
+	 * Names, at assembly, every field the domain declares unique without a matching unique index.
+	 *
+	 * <p>
+	 * Such a constraint is enforced by the framework alone — it reads the collection, then writes.
+	 * Two concurrent requests both read "no duplicate" and both write one; nothing in the store
+	 * refuses the second. The declaration reads as a guarantee and is not one, which is exactly the
+	 * kind of gap that only shows in production, so it is said out loud here rather than trusted.
+	 * </p>
+	 */
+	private static void warnUnicitiesWithoutIndex(String name, IDomainDefinition<?> def) {
+		IEntityDefinition<?> entity = def.entityDefinition();
+		if (entity == null || entity.unicities() == null) {
+			return;
+		}
+		List<EntityIndexRule> declared = entity.indexes() == null ? List.of() : entity.indexes();
+		for (Pair<ObjectAddress, UnicityScope> unicity : entity.unicities()) {
+			if (!isBackedByUniqueIndex(declared, unicity)) {
+				log.warn("Domain '{}': field '{}' is declared unique with scope {} but carries no matching "
+						+ "unique @EntityIndexed — the uniqueness is checked by the framework only (a read, "
+						+ "then a write), so two concurrent writes both pass and the database keeps both.",
+						name, unicity.getValue0(), unicity.getValue1());
+			}
+		}
+	}
+
+	/** Whether one declared index makes the store itself refuse a duplicate for that unicity. */
+	private static boolean isBackedByUniqueIndex(List<EntityIndexRule> declared,
+			Pair<ObjectAddress, UnicityScope> unicity) {
+		return declared.stream().anyMatch(index -> index.unique()
+				&& index.field().equals(unicity.getValue0())
+				&& index.scope() == unicity.getValue1());
 	}
 
 	private static void appendGlobalSummaries(Map<String, String> items, java.util.Set<String> daoTypes,
