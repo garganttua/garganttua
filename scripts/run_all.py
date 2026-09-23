@@ -6,12 +6,18 @@ README generators — notably `quality-gate.py`, which is a standalone release-o
 requires `-Pquality` reports absent from a normal build — are excluded; running them here would
 fail every doc-generation build.
 """
-import subprocess
 import glob
+import os
+import subprocess
 
 # Scripts in this directory that are not README generators and must not run during doc generation.
 NOT_DOC_GENERATORS = {"run_all.py", "quality-gate.py"}
 
-for script in glob.glob("*.py"):
-    if script not in NOT_DOC_GENERATORS:
-        subprocess.run(["python3", script], check=True)
+# Resolved from THIS file, not the current directory: the documented command
+# (`python3 scripts/run_all.py`, run from the repository root) used to glob an empty
+# directory and silently regenerate nothing.
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+for script in sorted(glob.glob(os.path.join(HERE, "*.py"))):
+    if os.path.basename(script) not in NOT_DOC_GENERATORS:
+        subprocess.run(["python3", script], check=True, cwd=HERE)

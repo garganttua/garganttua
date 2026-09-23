@@ -49,6 +49,12 @@ def format_module_name(name: str, depth: int) -> str:
         prefix = prefix.replace("|", "\\|")
         return prefix + name
 
+# Repertoires qui ne portent jamais de module, meme quand ils contiennent un pom.xml : sorties de
+# build (target/, et bin/ que le serveur Java de VS Code remplit) et arbres de sources, ou un
+# pom.xml de fixture de test passerait pour un module.
+NOT_MODULES = {"target", "bin", "src", "node_modules", "out", "build"}
+
+
 def generate_modules_table(root_dir: str) -> str:
     """
     Parcourt les modules et crée une table Markdown avec hiérarchie.
@@ -73,7 +79,7 @@ def generate_modules_table(root_dir: str) -> str:
         # Parcours les sous-modules
         for subdir in sorted(os.listdir(dir_path)):
             sub_path = os.path.join(dir_path, subdir)
-            if os.path.isdir(sub_path):
+            if os.path.isdir(sub_path) and subdir not in NOT_MODULES and not subdir.startswith("."):
                 walk_dir(sub_path, depth + 1)
 
     walk_dir(root_dir)
