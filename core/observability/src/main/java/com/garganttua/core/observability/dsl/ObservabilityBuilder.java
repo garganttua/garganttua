@@ -94,16 +94,26 @@ public final class ObservabilityBuilder
 
     private static final Logger log = Logger.getLogger(ObservabilityBuilder.class);
 
-    private static final Set<DependencySpec> DEPENDENCIES = Set.of(
-            // CONFIGURATION stage: receive the IInjectionContextBuilder BEFORE
-            // its build, register @Observer as a qualifier so the bean
-            // provider auto-discovers user-annotated observer classes.
-            DependencySpec.configure(IClass.getClass(IInjectionContextBuilder.class)),
-            // BUILD stage: receive the built IInjectionContext post-build to
-            // (1) query @Observer beans during our autodetect, and (2)
-            // publish the binding as a singleton bean for downstream
-            // consumers.
-            DependencySpec.use(IClass.getClass(IInjectionContextBuilder.class)));
+    /**
+     * The build dependencies, resolved on FIRST USE and not in a static initialiser:
+     * {@link IClass#getClass} needs a reflection provider, which the bootstrap installs. Computing
+     * them at class-initialisation made this class unusable for the whole JVM as soon as anything
+     * touched it before the bootstrap ran — and a failed initialiser never retries.
+     *
+     * @return the dependency set, never null
+     */
+    private static Set<DependencySpec> declaredDependencies() {
+        return Set.of(
+                // CONFIGURATION stage: receive the IInjectionContextBuilder BEFORE
+                // its build, register @Observer as a qualifier so the bean
+                // provider auto-discovers user-annotated observer classes.
+                DependencySpec.configure(IClass.getClass(IInjectionContextBuilder.class)),
+                // BUILD stage: receive the built IInjectionContext post-build to
+                // (1) query @Observer beans during our autodetect, and (2)
+                // publish the binding as a singleton bean for downstream
+                // consumers.
+                DependencySpec.use(IClass.getClass(IInjectionContextBuilder.class)));
+    }
 
     private static final String SOURCE_MANUAL = "manual";
     private static final String SOURCE_AUTO_DETECTED = "auto-detected";
@@ -137,7 +147,7 @@ public final class ObservabilityBuilder
     private volatile ObservabilityBinding built;
 
     private ObservabilityBuilder() {
-        super(DEPENDENCIES);
+        super(declaredDependencies());
     }
 
     /**
