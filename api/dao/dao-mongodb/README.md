@@ -6,6 +6,7 @@
 
 **Key Features:**
 - **`IDao` implementation** — `MongoDao` fulfills the full `IDao` contract: `find`, `save`, `delete`, `count`, and `registerDomain`
+- **Declared indexes, created at startup** — `MongoIndexManager` reads the indexes the entity declares (`@EntityIndexed` / `entity().index(...)`) and asks MongoDB for them at `registerDomain`, so a declared uniqueness is held by the *database* instead of by a read-then-write check two concurrent requests walk through
 - **Filter translation** — `MongoFilterConverter` maps the framework's `IFilter` tree (logical operators `$and` / `$or` / `$nor`, field comparisons `$eq` / `$ne` / `$gt` / `$gte` / `$lt` / `$lte` / `$regex` / `$empty` / `$in` / `$nin` / `$text`, and geospatial `$geoWithin` / `$geoWithinSphere`) to native MongoDB `Bson` predicates via `com.mongodb.client.model.Filters`
 - **Sorting and pagination** — `ISort` translates to `Sorts.ascending` / `Sorts.descending`; `IPageable` applies `skip` and `limit` on the `FindIterable`
 - **Upsert-based save** — `save()` performs a `replaceOne` with `upsert(true)` when `_id` is present, and an `insertOne` otherwise. The domain uuid is projected onto `_id` on write (kept under its own field name too, so uuid filters still match), so saves upsert by uuid instead of inserting duplicates, and `delete()` always has a key
@@ -157,6 +158,48 @@ The raw material round-trips through core's `KeySerializer.exportRawKey` / `impo
 
 > **Limitation:** `IKey` does not expose its IV size, so encryption keys round-trip with `ivSize = 0`. Signing keys — the key-store mint path — do not use it, so they are unaffected.
 
+### Declared indexes (`MongoIndexManager`)
+
+At `registerDomain`, the DAO reads `domainDefinition.entityDefinition().indexes()` — what the entity declared through `@EntityIndexed` on a field, or `entity().index(...)` on the DSL — and asks MongoDB for those indexes. This is what makes a declared uniqueness real: the framework's own `validateUnicity` is a read followed, some way later, by a write, and two concurrent requests walk straight through the gap between them. Only the store can hold a constraint, and a store holds it with a unique index.
+
+The setting `mongodb.index.auto` (see the [MongoDB starter](../../starters/starter-mongodb)) decides who creates them: `create` (default), `none`, or `strict`.
+
+**What a declaration becomes.**
+
+| Declaration | MongoDB index |
+|---|---|
+| `kind = standard` | `{field: 1}` |
+| `kind = geo` | `{field: "2dsphere"}` |
+| `kind = text` | `{field: "text"}` |
+| `scope = tenant` | compound, **tenant field first**: `{tenantId: 1, field: …}` |
+| `scope = system` | the field alone |
+| `unique = true` | `unique: true` plus a `partialFilterExpression` (below) |
+
+Two translations matter:
+
+- **The index lands on the DOCUMENT field name**, not the entity field name — `MongoDao` maps it through the same `@FieldMappingRule` route every query uses. An index built on the entity name would be an index no query this DAO emits could ever use.
+- **A tenant-scoped index puts the tenant field first** (`IDtoDefinition.tenantId()`), so the one index both enforces per-tenant uniqueness and serves the tenant-filtered reads.
+
+An index whose declaration names nothing gets a **stable derived name** — `gg_<field>_<scope>_<kind>_<unique|idx>`, e.g. `gg_email_tenant_standard_unique`. It is a pure function of the declaration, so a restart recognises the index it created last time instead of building a second one.
+
+**Uniqueness ignores a null, deliberately.** A unique index is created with:
+
+```js
+partialFilterExpression: { <field>: { $type: [ /* every BSON type but null */ ] } }
+```
+
+which restricts the uniqueness to documents where the field is present and not null — exactly what `validateUnicity` did, since it returns early on a null value. Without it, the index would additionally refuse a *second* document with no value, which no application relying on the framework check ever had to satisfy: that would be a contract change, not a fix.
+
+> The obvious spelling, `{$exists: true, $ne: null}`, is **refused** by MongoDB — a partial-index filter admits only a closed set of operators, and `$ne` compiles to `$not`. Two other spellings look right and are not: `{$exists: true}` alone still indexes an explicit null, so the second null document is refused; and `{$gt: null}` is accepted but matches *nothing*, because a comparison against null is bracketed to the null type — leaving an empty index that enforces nothing at all, silently. The explicit type list is the spelling that behaves.
+
+**Purely additive.** Nothing is ever dropped, renamed or re-created — not even an index whose stored definition differs from the declared one, nor one that already covers the declared keys under another name. Both are a `WARN` naming the gap, and nothing else. Dropping a live index takes a production query plan away without warning; that is a human's call.
+
+**A failure does not keep the application down.** A collection that already holds duplicates refuses a unique index — and that is precisely the database this feature exists for. In `create` mode the failure is a `WARN` naming the domain, the field, and a ready-to-paste aggregation listing the offending documents; the application starts. Only `strict` refuses to start. (The PostgreSQL DAO does let its schema failure out, because a missing *table* means no query runs at all; a missing index means every query still runs, just without a constraint the database never held.)
+
+**A domain that declares no index costs nothing** — not one command is sent, so an application that never asked for an index starts exactly as it did before this existed.
+
+**No lock between instances**, deliberately. PostgreSQL needs one because `CREATE TABLE IF NOT EXISTS` is not atomic against a concurrent create and can fail on its own catalog. MongoDB's `createIndex` has no such flaw: the server serialises index builds per collection and an identical request is a no-op, so two instances starting together both end up with the one index.
+
 ### AOT and Native-Image Readiness
 
 `MongoDao` bears the `@Reflected` annotation. At compile time, the Garganttua AOT annotation processor generates `AOTClass_MongoDao` — a static `AOTClass<MongoDao>` descriptor that self-registers into `AOTRegistry` via its `static` initializer block.
@@ -214,7 +257,9 @@ A single `MongoDao` instance handles one collection. To back multiple domains, c
 - Pass a `MongoDatabase` obtained from a shared `MongoClient` — never create a `MongoClient` per `MongoDao` instance, as each client maintains its own connection pool.
 - Collection names are passed as plain strings at construction time; they are used as-is in `database.getCollection(collectionName)`. Use the same name as the domain's logical resource (e.g. `"users"`, `"products"`).
 - The current DTO-to-document mapping excludes `null` field values. Ensure fields that must be stored as explicit `null` are handled upstream or via a custom DAO wrapper.
-- Index creation is not managed by `MongoDao`. Create indexes (unique, TTL, text, geospatial) independently — via `MongoCollection.createIndex(...)`, a migration tool, or your Spring configuration.
+- **Declare a uniqueness AND its index.** `@EntityUnicity` alone is a read-then-write check; only `@EntityIndexed(unique = true)` makes the database refuse a concurrent duplicate. `ApiSummary` warns at startup about a unicity left without a matching index.
+- Indexes this DAO does not create — TTL, partial indexes of your own, compound indexes spanning several fields — are still yours to create, via `MongoCollection.createIndex(...)` or a migration tool. Nothing here ever drops or alters them.
+- Set `mongodb.index.auto: strict` once the database is known to be free of duplicates, so a declared uniqueness the database does not hold stops the deployment instead of passing as a WARN.
 - For native-image builds, confirm that `garganttua-aot-reflection` and `garganttua-aot-commons` are on the compile and runtime classpath. The `AOTClass_MongoDao` descriptor is emitted into `target/generated-sources/annotations` and must be compiled into the artifact.
 - `MongoFilterConverter.convert()` throws `ApiException` on unsupported operators. Extend it by adding cases to the `switch` expression in `convertField` if your domain requires additional MongoDB operators.
 - **Composition is not cascade persistence.** Writing a DTO with a `@Composed` field stores only the reference — the composed targets must be saved through their own domains/DAOs. Reading resolves them, but writing does not create them.
