@@ -24,12 +24,12 @@
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-dao-mongodb</artifactId>
-    <version>3.0.0-ALPHA22</version>
+    <version>3.0.0-ALPHA23</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA22
+3.0.0-ALPHA23
 
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`
@@ -39,6 +39,8 @@
  - `com.garganttua.core:garganttua-aot-reflection`
  - `com.garganttua.core:garganttua-aot-commons`
  - `org.junit.jupiter:junit-jupiter-engine:test`
+ - `com.garganttua:garganttua-api-core:test`
+ - `com.garganttua.core:garganttua-observability:test`
  - `com.garganttua.core:garganttua-bootstrap:test`
  - `com.garganttua.core:garganttua-runtime-reflection:test`
  - `com.garganttua.core:garganttua-reflections:test`
