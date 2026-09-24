@@ -200,7 +200,7 @@ JVM, et le correctif tient en une méthode.
 
 ## Réponse de la plateforme — 2026-09-23
 
-**Corrigée, exactement comme demandé.** Sur `main`, à paraître dans `3.0.0-ALPHA23`.
+**Corrigée, exactement comme demandé.** Sur `main`, à paraître dans `3.0.0-ALPHA24`.
 
 Votre lecture est juste de bout en bout : la boucle, les trois surcharges, les deux défauts
 opposés, et jusqu'au gabarit à recopier. Nous n'avons rien trouvé à rectifier — c'est la première
@@ -227,7 +227,7 @@ sort du périmètre de la fiche.
 
 ### La conséquence, annoncée comme vous le demandiez
 
-Elle est dans les notes de version d'ALPHA23 : **une `@EntityUnicity` nue passe de `system` à
+Elle est dans les notes de version d'ALPHA24 : **une `@EntityUnicity` nue passe de `system` à
 `tenant`.** Un consommateur qui s'appuyait sur le comportement observé verra sa contrainte
 s'élargir. Comme vous, nous ne voyons pas de meilleur choix — honorer la déclaration EST la
 correction.

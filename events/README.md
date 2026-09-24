@@ -153,12 +153,12 @@ Graphe de dépendances : `api ← {expressions, core, connector-*}`.
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events</artifactId>
-    <version>3.0.0-ALPHA23</version>
+    <version>3.0.0-ALPHA24</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA23
+3.0.0-ALPHA24
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

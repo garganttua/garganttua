@@ -471,7 +471,7 @@ définition. Elles sont pourtant documentées comme actives dans `api/commons/RE
 
 ## Réponse de la plateforme — 2026-09-23
 
-**Traitée en entier, préalable compris.** Sur `main`, à paraître dans `3.0.0-ALPHA23`.
+**Traitée en entier, préalable compris.** Sur `main`, à paraître dans `3.0.0-ALPHA24`.
 
 Vous demandiez d'abord qu'on vous confirme ou qu'on vous démente sur le §3.0. **Nous vous
 confirmons, et le défaut est plus large que votre fiche.** Voici d'abord cela, parce que c'est ce
@@ -510,7 +510,7 @@ ne peuvent pas contourner la visibilité). Les vues d'ensemble redeviennent donc
 les annotations des champs privés sont enfin portées par le chemin AOT, plus par le repli.
 
 **Conséquence pour vous :** votre règle interne « aucune constante dans une entité mappée » n'a plus
-lieu d'être. Nous vous suggérons de la lever après une montée en ALPHA23, pas avant.
+lieu d'être. Nous vous suggérons de la lever après une montée en ALPHA24, pas avant.
 
 **Un défaut que vous n'aviez pas vu, trouvé en vérifiant le vôtre.** Une classe imbriquée
 `@Reflected` s'enregistrait sous son nom **pointé** (`Outer.Inner`) alors que la recherche utilise
