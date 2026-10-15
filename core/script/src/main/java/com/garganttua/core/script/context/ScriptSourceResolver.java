@@ -5,7 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.garganttua.core.script.ScriptException;
 
@@ -27,6 +31,17 @@ public final class ScriptSourceResolver {
 
     /** Prefix marking a path as a classpath resource rather than a filesystem path. */
     public static final String CLASSPATH_PREFIX = "classpath:";
+
+    /**
+     * Classpath script sources already read, per context class loader. A classpath resource does
+     * not change while its loader lives, and {@code include("classpath:…")} sits on per-request
+     * paths: the api's pipeline includes its stage scripts on every request, which re-opened and
+     * re-read each of them from disk (or inflated it from its jar) every time — the compilation was
+     * cached, the read that feeds it was not. Weak keys, so an undeployed application's loader is
+     * not retained.
+     */
+    private static final Map<ClassLoader, Map<String, String>> CLASSPATH_SOURCES =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private static final String SCRIPT_SUFFIX = "\\.gs$";
 
@@ -72,15 +87,28 @@ public final class ScriptSourceResolver {
 
     /**
      * Reads a classpath resource, trying the thread-context class loader first and falling back to
-     * this class's own loader.
+     * this class's own loader. Read once per context class loader, then served from memory.
      *
      * @param resource the resource path, without the {@code classpath:} prefix
      * @return its source text, or empty when no such resource exists
      * @throws ScriptException if the resource exists but cannot be read
      */
+    public static Optional<String> readClasspathResource(String resource) throws ScriptException {
+        Map<String, String> sources = CLASSPATH_SOURCES.computeIfAbsent(
+                Thread.currentThread().getContextClassLoader(), loader -> new ConcurrentHashMap<>());
+        String cached = sources.get(resource);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        Optional<String> read = readClasspathResourceUncached(resource);
+        // A missing resource is not remembered: it fails the include, which is no hot path.
+        read.ifPresent(source -> sources.put(resource, source));
+        return read;
+    }
+
     // Deliberate fallback to this class's loader after the context loader misses
     @SuppressWarnings("PMD.UseProperClassLoader")
-    public static Optional<String> readClasspathResource(String resource) throws ScriptException {
+    private static Optional<String> readClasspathResourceUncached(String resource) throws ScriptException {
         InputStream fromContext = Thread.currentThread().getContextClassLoader().getResourceAsStream(resource);
         final InputStream is = fromContext != null
                 ? fromContext
