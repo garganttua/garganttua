@@ -51,11 +51,11 @@ import com.garganttua.core.reflection.IClass;
  * </ul>
  *
  * <pre>{@code
- * mvn -o test -pl :garganttua-api-core -Dtest='ReadQueryPerfTest' -Dgarganttua.perf=true
+ * mvn -o test -pl :garganttua-api-core -Dtest='ReadQueryPerfTest' -Dgarganttua.perf=true -Djacoco.skip=true
  * }</pre>
  */
 @EnabledIfSystemProperty(named = "garganttua.perf", matches = "true",
-        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true")
+        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true -Djacoco.skip=true")
 @DisplayName("Read cost as the query grows (mocked repository)")
 class ReadQueryPerfTest extends AbstractCrudIntegrationTest {
 

@@ -2,6 +2,7 @@ package com.garganttua.events.core.perfs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -77,11 +78,11 @@ import com.garganttua.events.core.Events;
  * </p>
  *
  * <pre>{@code
- * mvn -o test -pl :garganttua-events-core -Dtest='RoutePerfTest' -Dgarganttua.perf=true
+ * mvn -o test -pl :garganttua-events-core -Dtest='RoutePerfTest' -Dgarganttua.perf=true -Djacoco.skip=true
  * }</pre>
  */
 @EnabledIfSystemProperty(named = "garganttua.perf", matches = "true",
-		disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true")
+		disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true -Djacoco.skip=true")
 @DisplayName("Route cost (mocked bus)")
 class RoutePerfTest {
 
@@ -372,6 +373,9 @@ class RoutePerfTest {
 		this.notes.add(String.format(Locale.ROOT,
 				"%d messages: sequential %.0f msg/s, %d workers %.0f msg/s (%.2fx, %d cores)",
 				VOLUME, VOLUME / sequentialSeconds, WORKERS, VOLUME / parallelSeconds, speedup, CORES));
+		assumeFalse(PerfHarness.coverageAgentAttached(),
+				"JaCoCo instruments this JVM: its shared probes make workers contend, the speedup "
+						+ "would measure the agent — rerun with -Djacoco.skip=true");
 		if (CORES >= 2) {
 			assertTrue(speedup >= 1.0, () -> String.format(Locale.ROOT,
 					"%d workers route %.2fx as fast as one thread — the workers queue on something shared.%s",

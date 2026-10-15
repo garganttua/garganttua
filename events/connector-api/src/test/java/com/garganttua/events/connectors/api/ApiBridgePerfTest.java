@@ -41,11 +41,11 @@ import com.garganttua.events.api.exceptions.ConnectorException;
  * </p>
  *
  * <pre>{@code
- * mvn -o test -pl :garganttua-events-connector-api -Dtest='ApiBridgePerfTest' -Dgarganttua.perf=true
+ * mvn -o test -pl :garganttua-events-connector-api -Dtest='ApiBridgePerfTest' -Dgarganttua.perf=true -Djacoco.skip=true
  * }</pre>
  */
 @EnabledIfSystemProperty(named = "garganttua.perf", matches = "true",
-		disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true")
+		disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true -Djacoco.skip=true")
 @DisplayName("api → events bridge cost (mocked bus)")
 class ApiBridgePerfTest {
 

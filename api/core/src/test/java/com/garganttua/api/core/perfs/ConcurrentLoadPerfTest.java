@@ -2,6 +2,7 @@ package com.garganttua.api.core.perfs;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,11 +51,11 @@ import com.garganttua.core.reflection.IClass;
  * </p>
  *
  * <pre>{@code
- * mvn -o test -pl :garganttua-api-core -Dtest='ConcurrentLoadPerfTest' -Dgarganttua.perf=true
+ * mvn -o test -pl :garganttua-api-core -Dtest='ConcurrentLoadPerfTest' -Dgarganttua.perf=true -Djacoco.skip=true
  * }</pre>
  */
 @EnabledIfSystemProperty(named = "garganttua.perf", matches = "true",
-        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true")
+        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true -Djacoco.skip=true")
 @DisplayName("Concurrent load (mocked repository)")
 class ConcurrentLoadPerfTest extends AbstractCrudIntegrationTest {
 
@@ -173,6 +174,9 @@ class ConcurrentLoadPerfTest extends AbstractCrudIntegrationTest {
         double scaling = parallel.perSecond() / single.perSecond();
         System.out.printf(Locale.ROOT, "%nreadOne: %d threads serve %.2fx one thread (%d cores).%n",
                 THREADS, scaling, CORES);
+        assumeFalse(PerfHarness.coverageAgentAttached(),
+                "JaCoCo instruments this JVM: its shared probes make threads contend, the scaling "
+                        + "would measure the agent — rerun with -Djacoco.skip=true");
         if (CORES >= 2) {
             // A lock every request queues on keeps this at or below 1; a pipeline that runs requests
             // side by side lands well above. 1.0 is the line between the two, with no margin taken

@@ -63,6 +63,17 @@ final class PerfHarness {
 		}
 	}
 
+	/**
+	* {@return whether a coverage agent (JaCoCo) instruments this JVM} Its probes are arrays every
+	* thread writes on each executed line: under parallel load the cores fight over those cache
+	* lines, and N threads end up SLOWER than one. A scaling figure measured under it measures the
+	* agent. The reactor attaches it to every test run; pass {@code -Djacoco.skip=true}.
+	*/
+	static boolean coverageAgentAttached() {
+		return java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
+				.anyMatch(arg -> arg.startsWith("-javaagent") && arg.contains("jacoco"));
+	}
+
 	static String header() {
 		return String.format(Locale.ROOT, "%-34s %8s %11s %11s %11s %10s",
 				"operation", "runs", "median(us)", "p95(us)", "min(us)", "drift");

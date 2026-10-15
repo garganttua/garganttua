@@ -40,11 +40,11 @@ import com.garganttua.core.reflection.IClass;
  * </p>
  *
  * <pre>{@code
- * mvn -o test -pl :garganttua-api-core -Dtest='EventEmissionPerfTest' -Dgarganttua.perf=true
+ * mvn -o test -pl :garganttua-api-core -Dtest='EventEmissionPerfTest' -Dgarganttua.perf=true -Djacoco.skip=true
  * }</pre>
  */
 @EnabledIfSystemProperty(named = "garganttua.perf", matches = "true",
-        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true")
+        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true -Djacoco.skip=true")
 @DisplayName("Cost of a firehose listener on every request (mocked repository)")
 class EventEmissionPerfTest extends AbstractCrudIntegrationTest {
 
