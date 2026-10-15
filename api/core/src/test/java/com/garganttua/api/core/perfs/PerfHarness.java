@@ -22,6 +22,12 @@ import java.util.function.IntConsumer;
  * No dependency beyond the JDK, deliberately: a performance harness that drags in a charting
  * library is a harness nobody runs.
  * </p>
+ *
+ * <p>
+ * events-core and the events api connector carry copies of this class, since test sources are not
+ * shared between modules and the suites must report in the same shape. Change one, change the
+ * others.
+ * </p>
  */
 final class PerfHarness {
 
@@ -54,6 +60,17 @@ final class PerfHarness {
             return String.format(Locale.ROOT, "%-34s %8d %11.1f %11.1f %11.1f %10.2f",
                     label, iterations, medianUs, p95Us, minUs, driftRatio());
         }
+    }
+
+    /**
+     * {@return whether a coverage agent (JaCoCo) instruments this JVM} Its probes are arrays every
+     * thread writes on each executed line: under parallel load the cores fight over those cache
+     * lines, and N threads end up SLOWER than one. A scaling figure measured under it measures the
+     * agent. The reactor attaches it to every test run; pass {@code -Djacoco.skip=true}.
+     */
+    static boolean coverageAgentAttached() {
+        return java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
+                .anyMatch(arg -> arg.startsWith("-javaagent") && arg.contains("jacoco"));
     }
 
     static String header() {

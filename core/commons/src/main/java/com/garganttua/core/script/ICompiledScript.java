@@ -28,6 +28,23 @@ public interface ICompiledScript {
     IScriptExecutionResult execute(Object... args) throws ScriptException;
 
     /**
+     * Execute the pre-compiled script with named values that hold for this call only.
+     *
+     * <p>The values passed to {@link IScriptingEnvironment#precompile(String, java.util.Map)} are
+     * baked into the compiled script and shared by every call; these are not. A script reads them
+     * as {@code @name} until it assigns that name itself — the way a workflow hands each execution
+     * its own input parameters (an events route its {@code @exchange}) without recompiling.
+     *
+     * @param variables named values for this call; {@code null} or empty is the same as
+     *                  {@link #execute(Object...)}
+     * @param args      positional script arguments (mapped to @0, @1, …)
+     * @return immutable execution result
+     * @throws ScriptException if execution fails outside the script's own error-handling
+     */
+    IScriptExecutionResult executeWith(java.util.Map<String, Object> variables, Object... args)
+            throws ScriptException;
+
+    /**
      * Returns the original script source this compiled instance was built from.
      *
      * @return the source code this compiled script came from

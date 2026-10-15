@@ -37,15 +37,15 @@ import com.garganttua.core.reflection.IClass;
  *
  * <h2>Running them</h2>
  * <pre>{@code
- * mvn -o test -pl :garganttua-api-core -Dtest='*PerfTest' -Dgarganttua.perf=true
+ * mvn -o test -pl :garganttua-api-core -Dtest='*PerfTest' -Dgarganttua.perf=true -Djacoco.skip=true
  *
  * # with the per-stage attribution (which stage of the pipeline the time goes to):
- * mvn -o test -pl :garganttua-api-core -Dtest='*PerfTest' -Dgarganttua.perf=true \
+ * mvn -o test -pl :garganttua-api-core -Dtest='*PerfTest' -Dgarganttua.perf=true -Djacoco.skip=true \
  *     -DargLine="-Dgarganttua.perf.probe=true"
  * }</pre>
  *
  * <p>
- * They are gated on {@code -Dgarganttua.perf=true} rather than {@code @Disabled}: disabled tests
+ * They are gated on {@code -Dgarganttua.perf=true -Djacoco.skip=true} rather than {@code @Disabled}: disabled tests
  * cannot be run at all, not even by asking for them by name, which is why the older
  * {@code core/runtime} performance test never runs.
  * </p>
@@ -79,7 +79,7 @@ import com.garganttua.core.reflection.IClass;
  * </p>
  */
 @EnabledIfSystemProperty(named = "garganttua.perf", matches = "true",
-        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true")
+        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true -Djacoco.skip=true")
 @DisplayName("CRUD pipeline cost (in-memory repository)")
 class CrudPipelinePerfTest extends AbstractCrudIntegrationTest {
 

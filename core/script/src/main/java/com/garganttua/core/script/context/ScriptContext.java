@@ -54,6 +54,8 @@ public class ScriptContext implements IScript, IObservable {
     private volatile Throwable lastException = null;
     private volatile boolean aborted = false;
     private final Map<String, Object> initialVariables = Collections.synchronizedMap(new HashMap<>());
+    /** Named values of ONE execution of a shared compiled runtime — see {@link #callVariable(String)}. */
+    private volatile Map<String, Object> callVariables = Map.of();
     private final Map<String, IScript> includedScripts = new ConcurrentHashMap<>();
     private final ObservableRegistry observers = new ObservableRegistry();
     /** Shared with every child frame — see {@link #compileCached()}. */
@@ -292,6 +294,31 @@ public class ScriptContext implements IScript, IObservable {
     @Override
     public void setVariable(String name, Object value) {
         this.initialVariables.put(name, value);
+    }
+
+    /**
+     * Binds named values for the execution this context is the frame of.
+     *
+     * <p>Unlike {@link #setVariable(String, Object)}, whose values are baked into the runtime when
+     * it is compiled, these are read while it runs: they are how a {@link CompiledScript} — one
+     * runtime shared by every call — receives what differs from one call to the next, such as the
+     * message a route is processing. A per-call frame is fresh for each execution, so the values
+     * never leak into another one.
+     *
+     * @param variables the named values; copied
+     */
+    void bindCallVariables(Map<String, Object> variables) {
+        this.callVariables = variables == null || variables.isEmpty() ? Map.of() : Map.copyOf(variables);
+    }
+
+    /**
+     * {@return the value bound under {@code name} for this execution} Consulted by
+     * {@link ScriptVariableResolver} only for a name the running script has not assigned itself.
+     *
+     * @param name the variable name
+     */
+    Optional<Object> callVariable(String name) {
+        return Optional.ofNullable(this.callVariables.get(name));
     }
 
     @Override

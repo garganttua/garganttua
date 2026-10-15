@@ -25,9 +25,10 @@ import com.garganttua.core.script.SuppressFBWarnings;
  * {@link ScriptExecutionContext}).
  *
  * <p>Mutable state on the underlying {@link ScriptContext} is NEVER touched
- * by this class: every {@link #execute(Object...)} call goes directly to
+ * by this class: every {@link #executeWith(Map, Object...)} call goes directly to
  * {@code runtime.execute(args)} and wraps the result in a fresh
- * {@link CompiledScriptExecutionResult}.
+ * {@link CompiledScriptExecutionResult}. The named values of a call are bound on
+ * its per-call frame (below), never on the shared runtime.
  *
  * <p><b>Re-entrancy.</b> Each {@code execute()} binds a <em>fresh</em>
  * {@link ScriptContext} frame (via {@link ScriptContext#createChildScript()})
@@ -60,9 +61,15 @@ final class CompiledScript implements ICompiledScript {
     }
 
     @Override
+    public IScriptExecutionResult execute(Object... args) throws ScriptException {
+        return executeWith(Map.of(), args);
+    }
+
+    @Override
     @SuppressFBWarnings(value = "THROWS_METHOD_THROWS_RUNTIMEEXCEPTION",
             justification = "Re-throws the original RuntimeException after firing an error observability event.")
-    public IScriptExecutionResult execute(Object... args) throws ScriptException {
+    public IScriptExecutionResult executeWith(Map<String, Object> variables, Object... args)
+            throws ScriptException {
         try (ObservabilityEmitter.Scope scope = ObservabilityEmitter.open(this.observers, UUID.randomUUID())) {
             scope.fireStart("compiledscript:execute");
             try {
@@ -71,6 +78,7 @@ final class CompiledScript implements ICompiledScript {
                 // the enclosing call's sub-scripts. The immutable runtime is shared.
                 long frameProbe = HotPathProbe.start();
                 ScriptContext frame = this.captured.createChildScript();
+                frame.bindCallVariables(variables);
                 HotPathProbe.end("script.createChildFrame", frameProbe);
                 IScriptExecutionResult result = ScriptExecutionContext.callIn(frame, () -> {
                     long runtimeProbe = HotPathProbe.start();

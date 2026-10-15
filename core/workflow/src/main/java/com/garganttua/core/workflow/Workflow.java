@@ -208,9 +208,10 @@ public class Workflow implements IWorkflow, IObservable {
         com.garganttua.core.script.IScriptExecutionResult res;
         ObservableContextHolder.Session previous = ObservableContextHolder.push(observers, uuid);
         try {
-            res = args.isEmpty()
-                    ? this.precompiled.execute()
-                    : this.precompiled.execute(args.toArray());
+            // Named input parameters are bound for this call, as the fresh-script path binds them
+            // with setVariable (step 2b there): a stage reads them as @name — the events engine
+            // hands each message to its route as @exchange.
+            res = this.precompiled.executeWith(input.parameters(), args.toArray());
         } finally {
             ObservableContextHolder.pop(previous);
         }

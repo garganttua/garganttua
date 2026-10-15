@@ -46,7 +46,7 @@ import com.garganttua.core.workflow.WorkflowResult;
  * </p>
  *
  * <pre>{@code
- * mvn -o test -pl :garganttua-api-core -Dtest='*PerfTest' -Dgarganttua.perf=true
+ * mvn -o test -pl :garganttua-api-core -Dtest='*PerfTest' -Dgarganttua.perf=true -Djacoco.skip=true
  * }</pre>
  *
  * <h2>What the numbers include, and what they cannot</h2>
@@ -65,7 +65,7 @@ import com.garganttua.core.workflow.WorkflowResult;
  * </ul>
  */
 @EnabledIfSystemProperty(named = "garganttua.perf", matches = "true",
-        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true")
+        disabledReason = "performance measurement — opt in with -Dgarganttua.perf=true -Djacoco.skip=true")
 @DisplayName("Authentication and authorization cost (in-memory repository)")
 class SecurityPipelinePerfTest extends AbstractCrudScriptTest {
 
