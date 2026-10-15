@@ -1,5 +1,6 @@
 package com.garganttua.api.core.expression;
 
+import java.lang.reflect.Modifier;
 import java.util.List;
 
 import com.garganttua.api.commons.ApiException;
@@ -70,6 +71,11 @@ final class EntityUpdateSupport {
 	 * rule a partial update applies — so a framework write that only carries part of the
 	 * entity (e.g. a startup upsert declaring name but not email) never wipes data it did
 	 * not mean to touch.
+	 *
+	 * <p>Static fields are skipped, as the creation, document-reading and mapping paths already skip
+	 * them: they belong to no instance. A {@code public static final} constant is never null, so the
+	 * merge used to try to write it onto itself — refused by the JVM, and by the AOT descriptor with
+	 * {@code Cannot set final field … in AOT mode} — and every framework write on such an entity failed.
 	 */
 	static Object mergeAllNonNullFields(Object storedEntity, Object updatedEntity) {
 		if (storedEntity == null || updatedEntity == null) {
@@ -81,6 +87,9 @@ final class EntityUpdateSupport {
 		}
 		IReflection reflection = DefaultMapper.reflection();
 		for (IField field : IClass.getClass(storedEntity.getClass()).getDeclaredFields()) {
+			if (Modifier.isStatic(field.getModifiers())) {
+				continue;
+			}
 			String fieldName = field.getName();
 			Object updatedValue = reflection.getFieldValue(updatedEntity, fieldName);
 			if (updatedValue != null) {
