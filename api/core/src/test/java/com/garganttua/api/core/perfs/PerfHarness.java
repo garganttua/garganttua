@@ -22,6 +22,12 @@ import java.util.function.IntConsumer;
  * No dependency beyond the JDK, deliberately: a performance harness that drags in a charting
  * library is a harness nobody runs.
  * </p>
+ *
+ * <p>
+ * events-core and the events api connector carry copies of this class, since test sources are not
+ * shared between modules and the suites must report in the same shape. Change one, change the
+ * others.
+ * </p>
  */
 final class PerfHarness {
 
