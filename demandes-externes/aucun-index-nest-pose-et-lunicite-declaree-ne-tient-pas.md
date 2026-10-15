@@ -614,3 +614,189 @@ Deux conséquences de ce choix, à connaître :
 Enfin, `@EntityGeolocalized` reste ce qu'elle était : une déclaration que le résumé de démarrage
 affiche. C'est `@EntityIndexed(kind = geo)` qui pose le `2dsphere` dont votre §1.2 a besoin. Les
 lier serait exactement l'effet de bord que votre §4 refuse.
+
+---
+
+## Retour du consommateur — 2026-09-24
+
+Monté en `3.0.0-ALPHA24` le 2026-09-24. Trois choses à rapporter : ce qui fonctionne, une version
+intermédiaire qui ne fonctionne pas du tout, et une conséquence annoncée qui ne tient qu'à moitié.
+Aucun reproche dans ce qui suit — le point 2 ne concerne qu'un chemin d'installation que nous
+sommes probablement les seuls à emprunter, et le point 3 est un comportement à trancher, pas une
+faute.
+
+**Distinction tenue comme dans la fiche :** **MESURÉ** = reproduit chez nous ; **LU** = établi dans
+vos sources, sans exécution.
+
+### 1. Ce qui fonctionne — **MESURÉ**
+
+Rejoué dans les conditions du §1.1, sur ALPHA24, API réellement montée, MongoDB de développement,
+base jetable :
+
+| Sonde | Avant (ALPHA22) | Après (ALPHA24) |
+|---|---|---|
+| index créés au `registerDomain` pour neuf clés déclarées | 0 / 9 | **9 / 9** |
+| doublons, 2 fils, 30 tours | 30 / 30 | **0 / 30** |
+| écritures refusées par la base | 0 | 30 / 30 |
+
+Les neuf index portent le nom dérivé annoncé — `gg_<champ>_system_standard_unique` —, `unique: true`
+et leur `partialFilterExpression`. Le nom est bien une fonction pure de la déclaration : deux
+démarrages successifs retrouvent l'index au lieu d'en créer un second.
+
+**Le doublon remonte en 409, plus en 500.** C'était le point qui nous coûtait le plus cher côté
+client : un `SERVER_ERROR` sur une collision de clé se lit comme une panne, et il n'y a rien à
+afficher à l'utilisateur. Vérifié dans vos sources avant de l'écrire —
+`api/dao/dao-mongodb/src/main/java/com/garganttua/dao/mongodb/MongoDao.java:290-295` traduit un
+`MongoWriteException` de catégorie `DUPLICATE_KEY` en `ApiException.conflict(...)`, et laisse tout
+autre échec d'écriture à son propre sens (`ApiException.wrap`). Le commentaire qui l'accompagne dit
+la bonne raison : *« under concurrency the database is the one that wins the race »*. Nous avons
+rallumé les deux tests qui l'éprouvaient chez nous.
+
+Votre rectification sur le `partialFilterExpression` était juste et nous ne l'avions pas vue : notre
+`{$exists: true, $ne: null}` est bien refusé par mongod. Le `{$type: […]}` livré produit l'effet que
+nous décrivions.
+
+### 2. ALPHA23 est inutilisable, et n'a jamais été publiée — **MESURÉ**
+
+À signaler parce que c'est ce qui nous est arrivé, pas parce que nous pensons que cela vous a
+échappé : nous installons depuis les sources, et nous sommes donc passés par le seul chemin où cette
+version existe.
+
+Ses jars portent un **index AOT tronqué**. Recompté ce matin sur les 61 jars de notre dépôt local,
+en excluant `sources` et `javadoc` :
+
+| Version | Fichiers sous `META-INF/garganttua/index/` | Jars dont le répertoire d'index est VIDE | `garganttua-runtime` |
+|---|---|---|---|
+| ALPHA22 | 91 | 0 | 158 230 octets |
+| **ALPHA23** | **34** | **19** | **117 491 octets** |
+| ALPHA24 | 91 | 0 | 158 230 octets |
+
+*(Notre première mesure, faite sur le seul sous-ensemble dont nos six modules dépendent, donnait
+30 contre 84 ; le recomptage ci-dessus porte sur tous les jars présents et donne 34 contre 91. Les
+deux disent la même chose et le « 19 jars à index vide » est identique dans les deux comptes. Nous
+donnons les deux chiffres plutôt que le plus flatteur.)*
+
+**Conséquence mesurée :** aucune fabrique de contexte enregistrée, et l'API refuse de monter sur
+`No child context factory registered for context class …IRuntimeContext` — le message de
+`core/injection/src/main/java/com/garganttua/core/injection/context/InjectionContext.java:265-267`.
+L'essai A/B a été fait avec `clean` des deux côtés, précaution que nous nous imposons depuis qu'un
+build sans `clean` nous a fait accuser à tort une version du cadre.
+
+**Mesuré aussi, aujourd'hui, requête authentifiée sur GitHub Packages :**
+
+| Artefact | Code |
+|---|---|
+| `garganttua-runtime-3.0.0-ALPHA22.jar` | 200 |
+| `garganttua-runtime-3.0.0-ALPHA23.jar` | **404** |
+| `garganttua-runtime-3.0.0-ALPHA24.jar` | 200 |
+
+ALPHA23 n'est donc **pas** publiée, et le tag `v3.0.0-ALPHA23` n'a pas d'artefacts derrière lui.
+Personne qui résout par le registre ne peut tomber dessus ; ALPHA24 s'y résout normalement, y
+compris depuis un dépôt local vide. **Le danger est limité à qui installe depuis les sources** — et
+c'est pour cette seule raison que nous le rapportons : quelqu'un qui compile le dépôt à ce commit
+obtient une API qui ne démarre pas, avec un message qui ne ressemble pas à sa cause.
+
+### 3. Le §3.0 est corrigé, mais la conséquence annoncée ne tient qu'à moitié — **MESURÉ**
+
+Votre réponse écrivait : *« votre règle interne "aucune constante dans une entité mappée" n'a plus
+lieu d'être. Nous vous suggérons de la lever après une montée en ALPHA24. »* Nous l'avons éprouvé
+avant de la lever, sonde posée puis retirée : une `public static final String` sur une entité mappée,
+ALPHA24, AOT pur, JVM.
+
+| Étape | Avant (ALPHA22) | Après (ALPHA24) |
+|---|---|---|
+| montage de l'API | **échoue** — `entity().id("id")` ne résout pas, toute l'API en 404 | **réussit** |
+| première écriture | — (on n'y arrivait jamais) | **échoue** — `SERVER_ERROR Cannot set final field <Entité>.<CONSTANTE> in AOT mode` |
+
+La panne que nous décrivions a donc bien disparu, et c'est un vrai progrès : les vues d'ensemble
+sont complètes, `MemberLookup.getField` trouve le champ, l'API monte. Mais **la règle n'est pas
+caduque : elle a changé de forme.** Et sa nouvelle forme est plus tardive, donc plus coûteuse à
+découvrir — une instance qui démarre, sert ses `GET`, et tombe à la première création. Nous
+maintenons donc la règle chez nous, ce qui ne coûte rien, et nous la signalons ici parce que votre
+suggestion de la lever partait d'une mesure que nous n'avions pas encore faite.
+
+**Ce que la lecture de vos sources établit — LU.** Le message vient du générateur AOT, qui émet
+délibérément ce corps pour tout champ `final` :
+
+> `core/aot/aot-annotation-processor/src/main/java/com/garganttua/core/aot/annotation/processor/AOTFieldSourceGenerator.java:149-152`
+>
+> ```java
+> src.append("        throw new UnsupportedOperationException(\"Cannot set final field ")
+>    .append(enclosingBinaryName).append('.').append(field.getSimpleName())
+>    .append(" in AOT mode\");\n");
+> ```
+
+appelé depuis `set(Object,Object)` (`:114-115`) et depuis les accesseurs primitifs typés (`:140-141`).
+Le descripteur est donc correct : il refuse une écriture qu'il ne peut pas faire. Ce qui est en
+cause est **qu'une écriture soit tentée du tout** sur un champ statique.
+
+**Une piste, que nous donnons comme piste et pas comme diagnostic — LU, non isolé.** Trois chemins
+d'écriture du cadre écartent explicitement les champs `static` et `transient` avant d'écrire :
+
+- `api/core/src/main/java/com/garganttua/api/core/entity/EntityCreator.java:86-90`
+- `api/dao/dao-mongodb/src/main/java/com/garganttua/dao/mongodb/MongoDocumentReader.java:74-78`
+- `core/mapper/src/main/java/com/garganttua/core/mapper/MappingRules.java:413-419`
+  (`generateConventionRules`)
+
+Un quatrième ne le fait pas :
+
+> `api/core/src/main/java/com/garganttua/api/core/expression/EntityUpdateSupport.java:83-89`
+>
+> ```java
+> for (IField field : IClass.getClass(storedEntity.getClass()).getDeclaredFields()) {
+>     String fieldName = field.getName();
+>     Object updatedValue = reflection.getFieldValue(updatedEntity, fieldName);
+>     if (updatedValue != null) {
+>         reflection.setFieldValue(storedEntity, fieldName, updatedValue);
+>     }
+> }
+> ```
+
+Une constante initialisée n'est jamais nulle, donc la condition passe toujours et `setFieldValue`
+est appelé à chaque fusion. `mergeAllNonNullFields` n'est emprunté que par les écritures internes du
+cadre (`EntityLifecycleExpressions.java:239-240`), ce qui couvre notre upsert de démarrage mais ne
+couvre pas forcément la sonde exacte : **nous n'avons pas isolé le site qui lève chez nous**, et
+nous préférons le dire plutôt que de vous envoyer sur une ligne qui n'est peut-être pas la bonne. Ce
+que nous affirmons est seulement ceci : le filtre `static` existe à trois endroits et manque au
+quatrième, et le manque est du bon genre pour produire ce message.
+
+**Ce que nous demandons, et c'est peu :** que ce comportement soit soit **corrigé** — un champ
+statique final n'a pas à être écrit par le mapping, et l'écarter comme les trois autres chemins
+l'écartent semble sans effet de bord —, soit **documenté**, au même titre que les trois limites du
+natif que votre réponse a pris soin de nommer. L'un ou l'autre suffit. Ce qui ne va pas est
+uniquement qu'une suggestion de lever une règle de prudence ait été donnée, de bonne foi, sur un
+comportement qui la justifie encore.
+
+---
+
+## Réponse de la plateforme au retour du 2026-09-24 — 2026-10-15
+
+Merci pour la mesure du §1, et surtout pour le §3, qui corrige une suggestion que nous n'aurions
+pas dû faire sans l'avoir mesurée.
+
+### Votre point 3 — corrigé, et votre piste était le bon site
+
+**Reproduit, en JVM comme en AOT** — ce n'est pas une limite du natif : la réflexion d'exécution
+refuse aussi l'écriture d'un champ `static final` (`Cannot set field COLLECTION of object …`).
+`EntityUpdateSupport.mergeAllNonNullFields` écarte désormais les champs `static`, comme les trois
+autres chemins que vous citiez. Une constante n'est plus jamais écrite, et un champ statique non
+final non plus — il n'appartient à aucune instance. Épinglé par
+`api/core/src/test/java/com/garganttua/api/core/expression/EntityUpdateSupportTest.java`, qui échouait
+sur les trois cas avant le correctif.
+
+Sur la suggestion : **vous aviez raison de garder la règle.** Notre réponse affirmait une
+conséquence que nous n'avions éprouvée qu'au montage, pas à l'écriture. Avec `3.0.0-ALPHA25`, nous
+pensons qu'elle peut être levée — et cette fois nous vous demandons de le vérifier avant, avec la
+sonde que vous avez déjà : nous n'avons pas rejoué la vôtre, et nous n'avons parcouru que les
+chemins d'écriture du cadre, pas les vôtres.
+
+### Votre point 2 — ALPHA23
+
+Confirmé : le tag `v3.0.0-ALPHA23` n'a jamais été publié, son build de CI a échoué, et c'est ce qui a
+conduit à ALPHA24 le lendemain. Nous n'avons pas recherché ici la cause de l'index tronqué que vous
+avez mesuré en le compilant depuis les sources. Ne construisez pas depuis ce tag.
+
+### Votre point 1
+
+Rien à ajouter, sinon que le 409 sur doublon était précisément ce qui manquait pour que la base,
+et pas le cadre, tienne la contrainte.

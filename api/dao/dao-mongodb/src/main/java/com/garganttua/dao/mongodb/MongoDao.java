@@ -1,5 +1,6 @@
 package com.garganttua.dao.mongodb;
 
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -58,6 +59,7 @@ public class MongoDao implements IDao {
 	private final MongoDocumentWriter writer = new MongoDocumentWriter(this.config);
 	private final MongoDocumentReader reader;
 	private final MongoIndexManager indexes;
+	private volatile boolean projectDtoFields = true;
 
 	/** A DAO that creates the indexes its domain declares ({@link MongoIndexMode#CREATE}). */
 	public MongoDao(MongoDatabase database, String collectionName) {
@@ -76,12 +78,26 @@ public class MongoDao implements IDao {
 		this.indexes = new MongoIndexManager(indexMode);
 	}
 
+	/**
+	 * Reads every document whole, as this DAO used to, instead of projecting a read without
+	 * a requested selection onto the fields the DTO maps. The response is the same either way — the
+	 * read side copies only the DTO's fields — so this exists for a reader that looks at the raw
+	 * documents through this DAO, if one ever does.
+	 *
+	 * @return this DAO
+	 */
+	public MongoDao readWholeDocuments() {
+		this.projectDtoFields = false;
+		return this;
+	}
+
 	@SuppressWarnings("rawtypes")
 	@Override
 	public void registerDomain(IDomainDefinition domainDefinition) {
 		if (domainDefinition != null && domainDefinition.dtoDefinitions() != null && !domainDefinition.dtoDefinitions().isEmpty()) {
 			IDtoDefinition<?> dtoDefinition = (IDtoDefinition<?>) domainDefinition.dtoDefinitions().get(0);
 			this.config.dtoClass(dtoDefinition.dtoClass());
+			this.config.dtoFieldNames(mappedFields(dtoDefinition.dtoClass()));
 			if (dtoDefinition.uuid() != null) {
 				this.config.uuidFieldName(dtoDefinition.uuid().getLastElement());
 			}
@@ -91,6 +107,23 @@ public class MongoDao implements IDao {
 			}
 			ensureIndexes(domainDefinition, dtoDefinition);
 		}
+	}
+
+	/**
+	 * The document fields a DTO maps: its instance fields up the hierarchy, as {@link MongoDocumentReader}
+	 * reads them — static and transient fields are neither written nor read.
+	 */
+	private static List<String> mappedFields(IClass<?> dtoClass) {
+		Set<String> names = new LinkedHashSet<>();
+		for (IClass<?> current = dtoClass; current != null; current = current.getSuperclass()) {
+			for (IField field : current.getDeclaredFields()) {
+				int mods = field.getModifiers();
+				if (!Modifier.isStatic(mods) && !Modifier.isTransient(mods)) {
+					names.add(field.getName());
+				}
+			}
+		}
+		return new ArrayList<>(names);
 	}
 
 	/**
@@ -185,13 +218,22 @@ public class MongoDao implements IDao {
 	}
 
 	/**
-	 * Narrows the fetched fields to the requested projection (entity field names translated to their
-	 * document fields) for IO savings. Always force-includes the uuid field and every composition
-	 * (DBRef) field — {@code _id} is returned by default — so the read side can still map the identity
-	 * and resolve references. No-op when the projection is empty.
+	 * Narrows the fetched fields for IO savings: to the requested projection (entity field names
+	 * translated to their document fields) when there is one, else to the fields the DTO maps. Always
+	 * force-includes the uuid field and every composition (DBRef) field — {@code _id} is returned by
+	 * default — so the read side can still map the identity and resolve references.
+	 *
+	 * <p>Without a requested selection, the DTO is the projection. A domain whose DTO maps only part of
+	 * its collection — a light read-only twin over a rich collection — used to read every document
+	 * whole, then copy a dozen fields out of it. The response cannot change: {@link MongoDocumentReader}
+	 * copies the DTO's fields and nothing else. The filter is untouched — a query may still match on a
+	 * field the DTO does not map, since a projection only narrows what comes BACK.
 	 */
 	private void applyProjection(FindIterable<Document> iterable, Optional<List<String>> projection) {
 		if (projection == null || projection.isEmpty() || projection.get().isEmpty()) {
+			if (this.projectDtoFields && !this.config.dtoFieldNames().isEmpty()) {
+				include(iterable, new LinkedHashSet<>(this.config.dtoFieldNames()));
+			}
 			return;
 		}
 		Set<String> docFields = new LinkedHashSet<>();
@@ -205,9 +247,13 @@ public class MongoDao implements IDao {
 					: entityField;
 			docFields.add(translateToDtoField(head.trim()));
 		}
-		if (docFields.isEmpty()) {
-			return;
+		if (!docFields.isEmpty()) {
+			include(iterable, docFields);
 		}
+	}
+
+	/** Projects onto {@code docFields}, plus the uuid and every composition field the read side needs. */
+	private void include(FindIterable<Document> iterable, Set<String> docFields) {
 		docFields.add(this.config.uuidFieldName());
 		docFields.addAll(this.config.compositions().keySet());
 		iterable.projection(Projections.include(new ArrayList<>(docFields)));

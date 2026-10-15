@@ -1,6 +1,7 @@
 package com.garganttua.dao.mongodb;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.garganttua.core.reflection.IClass;
@@ -27,6 +28,9 @@ final class MongoDaoConfig {
 	/** Composition field name → target collection ({@code $ref}), as declared by {@code @Composed}/{@code .composed(...)}. */
 	private final Map<String, String> compositionMap = new HashMap<>();
 
+	/** The document fields the DTO maps — the only ones the read side ever copies. */
+	private List<String> dtoFields = List.of();
+
 	IClass<?> dtoClass() {
 		return this.dtoType;
 	}
@@ -45,5 +49,13 @@ final class MongoDaoConfig {
 
 	Map<String, String> compositions() {
 		return this.compositionMap;
+	}
+
+	List<String> dtoFieldNames() {
+		return this.dtoFields;
+	}
+
+	void dtoFieldNames(List<String> fieldNames) {
+		this.dtoFields = List.copyOf(fieldNames);
 	}
 }

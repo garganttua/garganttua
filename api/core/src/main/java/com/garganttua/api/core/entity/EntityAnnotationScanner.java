@@ -86,8 +86,18 @@ import com.garganttua.core.observability.Logger;
  *       {@link DtoTenantId} fields and {@code db} supplier name.</li>
  * </ol>
  *
- * <p>Silently no-ops when no packages are configured or when no
- * {@link IReflection} is available (e.g. native image without metadata).
+ * <p>Entities declared through the DSL ({@code apiBuilder.domain(...)}) are read too, whether or not
+ * they sit in a scanned package: the annotations describe the entity class, not the way it was
+ * assembled. Such an entity gets every step above except the DTO one — its DTO is the DSL's. Before
+ * this, an annotated entity declared by hand had its annotations read by no one: an
+ * {@link EntityIndexed} produced no index, an {@link EntityUnicity} no check, and nothing said so.
+ * What the DSL already declared stays as declared: the id / uuid / tenant-id annotations only fill an
+ * absent declaration, and a constraint or hook declared both ways is recorded once.
+ *
+ * <p>Runs only under auto-detection ({@code ApiBuilder.doAutoDetection()}); an api built with
+ * {@code autoDetect(false)} reads no annotation. Silently no-ops when there is neither a package
+ * nor a declared domain, or when no {@link IReflection} is available (e.g. native image without
+ * metadata).
  */
 @SuppressFBWarnings(value = {"EI_EXPOSE_REP2"}, justification = "Immutable-by-contract value/definition carrier; collections & arrays carried by reference as a snapshot (framework-internal, built once).")
 public final class EntityAnnotationScanner {
@@ -96,10 +106,23 @@ public final class EntityAnnotationScanner {
 
     private final IApiBuilder apiBuilder;
     private final Set<String> packages;
+    private final Set<IClass<?>> declaredEntities;
 
+    /** A scanner of the packages only — no domain is read unless a package holds it. */
     public EntityAnnotationScanner(IApiBuilder apiBuilder, Set<String> packages) {
+        this(apiBuilder, packages, Set.of());
+    }
+
+    /**
+     * @param apiBuilder       the builder to wire the domains into
+     * @param packages         the packages to scan for {@link Entity} / {@link Dto} pairs
+     * @param declaredEntities the entity classes the DSL already declared a domain for — their
+     *                         annotations are read even when no package holds them
+     */
+    public EntityAnnotationScanner(IApiBuilder apiBuilder, Set<String> packages, Set<IClass<?>> declaredEntities) {
         this.apiBuilder = apiBuilder;
         this.packages = packages;
+        this.declaredEntities = declaredEntities;
     }
 
     /**
@@ -108,7 +131,7 @@ public final class EntityAnnotationScanner {
      * matching DTO).
      */
     public void scan() throws ApiException {
-        if (this.packages.isEmpty()) {
+        if (this.packages.isEmpty() && this.declaredEntities.isEmpty()) {
             return;
         }
         IReflection reflection;
@@ -119,15 +142,24 @@ public final class EntityAnnotationScanner {
             return;
         }
 
-        Map<IClass<?>, IClass<?>> entityToDto = pairEntitiesWithDtos(reflection);
-        if (entityToDto.isEmpty()) {
-            return;
-        }
-
+        Map<IClass<?>, IClass<?>> entityToDto = this.packages.isEmpty() ? Map.of() : pairEntitiesWithDtos(reflection);
         for (Map.Entry<IClass<?>, IClass<?>> entry : entityToDto.entrySet()) {
             wireDomain(reflection, entry.getKey(), entry.getValue());
         }
-        log.debug("Auto-detected {} @Entity class(es)", entityToDto.size());
+        int declaredOnly = 0;
+        for (IClass<?> entityClass : this.declaredEntities) {
+            if (!entityToDto.containsKey(entityClass)) {
+                wireEntity(reflection, declaredDomain(entityClass), entityClass);
+                declaredOnly++;
+            }
+        }
+        log.debug("Auto-detected {} @Entity class(es); read the annotations of {} DSL-declared entit(ies)",
+                entityToDto.size(), declaredOnly);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private IDomainBuilder<Object> declaredDomain(IClass<?> entityClass) throws ApiException {
+        return (IDomainBuilder<Object>) this.apiBuilder.domain((IClass) entityClass);
     }
 
     private Map<IClass<?>, IClass<?>> pairEntitiesWithDtos(IReflection reflection) {
@@ -162,14 +194,19 @@ public final class EntityAnnotationScanner {
     }
 
     private void wireDomain(IReflection reflection, IClass<?> entityClass, IClass<?> dtoClass) throws ApiException {
-        IDomainBuilder<Object> domain = (IDomainBuilder<Object>) this.apiBuilder.domain((IClass) entityClass);
+        IDomainBuilder<Object> domain = declaredDomain(entityClass);
+        wireEntity(reflection, domain, entityClass);
+        applyDto(reflection, domain, dtoClass);
+    }
 
+    /** Everything the entity class declares about itself — the domain minus its DTO. */
+    private void wireEntity(IReflection reflection, IDomainBuilder<Object> domain, IClass<?> entityClass)
+            throws ApiException {
         applyEntityAnnotation(domain, entityClass);
         applyTypeLevelMarkers(domain, entityClass);
         applyEntityFields(reflection, domain, entityClass);
         applyLifecycleHooks(reflection, domain, entityClass);
         applyKeyRole(reflection, domain, entityClass);
-        applyDto(reflection, domain, dtoClass);
     }
 
     /**
@@ -266,14 +303,18 @@ public final class EntityAnnotationScanner {
     private void applyEntityFields(IReflection reflection, IDomainBuilder<Object> domain, IClass<?> entityClass)
             throws ApiException {
         IEntityBuilder<Object> entity = domain.entity();
+        // The DSL's own declaration wins: an annotation fills these only when nothing was declared.
+        EntityBuilder<?> declared = entity instanceof EntityBuilder<?> builder ? builder : null;
         Optional<IField> idField = reflection.findFieldAnnotatedWith(entityClass, IClass.getClass(EntityId.class));
-        if (idField.isPresent()) entity.id(idField.get().getName());
+        if (idField.isPresent() && (declared == null || !declared.declaresId())) entity.id(idField.get().getName());
 
         Optional<IField> uuidField = reflection.findFieldAnnotatedWith(entityClass, IClass.getClass(EntityUuid.class));
-        if (uuidField.isPresent()) entity.uuid(uuidField.get().getName());
+        if (uuidField.isPresent() && (declared == null || !declared.declaresUuid())) entity.uuid(uuidField.get().getName());
 
         Optional<IField> tenantIdField = reflection.findFieldAnnotatedWith(entityClass, IClass.getClass(EntityTenantId.class));
-        if (tenantIdField.isPresent()) entity.tenantId(tenantIdField.get().getName());
+        if (tenantIdField.isPresent() && (declared == null || !declared.declaresTenantId())) {
+            entity.tenantId(tenantIdField.get().getName());
+        }
 
         Optional<IField> superOwnerField = reflection.findFieldAnnotatedWith(entityClass, IClass.getClass(EntitySuperOwner.class));
         if (superOwnerField.isPresent()) domain.superOwner(superOwnerField.get().getName());

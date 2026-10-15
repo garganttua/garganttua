@@ -73,7 +73,7 @@ Both required keys are overridable by environment variables: `GARGANTTUA_MONGODB
 
 ### `mongodb.index.auto` — the declared indexes
 
-The counterpart of the PostgreSQL starter's `postgresql.schema.auto`. A domain declares an index with `@EntityIndexed` on the entity field, or with `entity().index(...)` on the DSL; this setting says who creates it.
+The counterpart of the PostgreSQL starter's `postgresql.schema.auto`. A domain declares an index with `@EntityIndexed` on the entity field (read when the api auto-detects — on scanned and hand-declared domains alike), or with `entity().index(...)` on the DSL; this setting says who creates it.
 
 | Value | Effect |
 |---|---|

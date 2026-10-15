@@ -27,7 +27,11 @@ import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.core.expression.annotations.Expression;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
+import com.garganttua.core.reflection.IFieldValue;
 import com.garganttua.core.reflection.ObjectAddress;
+import com.garganttua.core.reflection.ReflectionException;
+import com.garganttua.core.reflection.fields.FieldAccessor;
+import com.garganttua.core.reflection.fields.FieldResolver;
 
 import static com.garganttua.api.core.expression.ExpressionUtils.*;
 
@@ -223,26 +227,47 @@ public class CrudExpressions {
 		IDomain<?> dc = toDomain(context);
 		IClass<?> entityClass = dc.getEntityClass();
 		// Resolve + validate every requested name once against the entity class — an unknown field
-		// fails fast with a parlant message even when the result set is empty.
-		Map<String, IField> resolved = new LinkedHashMap<>();
+		// fails fast with a parlant message even when the result set is empty. The accessor is built
+		// here, once per request: reading through REFLECTION.getFieldValue(entity, field) resolved the
+		// field again for every row and every field, which is what made fields= slower than a full
+		// read in a native image (+10-12% measured by a consumer on 2 848 and 32 807 rows).
+		Map<String, FieldAccessor<Object>> accessors = new LinkedHashMap<>();
 		for (String name : requested) {
 			IField field = REFLECTION.findField(entityClass, name)
 					.orElseThrow(() -> new ApiException("Unknown field '" + name
 							+ "' in projection for entity " + entityClass.getSimpleName()));
-			resolved.put(name, field);
+			accessors.put(name, accessorOf(entityClass, field));
 		}
 
-		return entityList.stream().map(entity -> {
+		List<Object> projected = new ArrayList<>(entityList.size());
+		for (Object entity : entityList) {
 			Map<String, Object> map = new LinkedHashMap<>();
-			resolved.forEach((name, field) -> {
-				try {
-					map.put(name, REFLECTION.getFieldValue(entity, field));
-				} catch (Exception e) {
-					throw new ApiException("Failed to read field '" + name + "' for projection", e);
-				}
-			});
-			return (Object) map;
-		}).toList();
+			for (Map.Entry<String, FieldAccessor<Object>> accessor : accessors.entrySet()) {
+				map.put(accessor.getKey(), readProjected(accessor.getValue(), entity, accessor.getKey()));
+			}
+			projected.add(map);
+		}
+		return projected;
+	}
+
+	private static FieldAccessor<Object> accessorOf(IClass<?> entityClass, IField field) {
+		try {
+			return new FieldAccessor<>(FieldResolver.fieldByField(entityClass, REFLECTION, field));
+		} catch (ReflectionException e) {
+			throw new ApiException("Cannot read field '" + field.getName() + "' for projection", e);
+		}
+	}
+
+	private static Object readProjected(FieldAccessor<Object> accessor, Object entity, String name) {
+		try {
+			IFieldValue<Object> value = accessor.getValue(entity);
+			if (value.hasException()) {
+				throw new ApiException("Failed to read field '" + name + "' for projection", value.getException());
+			}
+			return value.first();
+		} catch (ReflectionException e) {
+			throw new ApiException("Failed to read field '" + name + "' for projection", e);
+		}
 	}
 
 	/** Unwraps an Optional/List into a trimmed, blank-filtered {@code List<String>}; empty when absent or not a list. */

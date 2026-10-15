@@ -120,13 +120,35 @@ class MongoDaoProjectionTest {
     }
 
     @Test
-    @DisplayName("no projection → .projection() is never called (full document fetched)")
-    void noProjectionNoPushdown() throws Exception {
+    @DisplayName("no projection → the DTO's own fields are projected, not the whole document")
+    void noProjectionProjectsTheDto() throws Exception {
         MongoDao dao = daoWith(List.of());
 
         dao.find(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
 
+        BsonDocument proj = capturedProjection();
+        assertEquals(java.util.Set.of("uuid", "name", "displayName", "email"), proj.keySet(),
+                "exactly the document fields the DTO maps — what the read side copies, and nothing more");
+    }
+
+    @Test
+    @DisplayName("readWholeDocuments() → .projection() is never called without a requested selection")
+    void readWholeDocumentsOptsOut() throws Exception {
+        MongoDao dao = daoWith(List.of()).readWholeDocuments();
+
+        dao.find(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+
         verify(this.find, never()).projection(any());
+    }
+
+    @Test
+    @DisplayName("readWholeDocuments() leaves a requested selection pushed down")
+    void readWholeDocumentsKeepsRequestedSelection() throws Exception {
+        MongoDao dao = daoWith(List.of()).readWholeDocuments();
+
+        dao.find(Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of("name")));
+
+        assertTrue(capturedProjection().containsKey("name"));
     }
 
     @Test

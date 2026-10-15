@@ -92,9 +92,13 @@ abstract class AbstractEntityConstraintBuilder<E> extends AbstractEntityHookBuil
         return addMandatory(addressOfAddress(fieldAddress), policy);
     }
 
-    /** Records one resolved mandatory field; a null policy reads as the historical {@code anyValue}. */
+    /**
+     * Records one resolved mandatory field; a null policy reads as the historical {@code anyValue}.
+     * The same declaration made twice — by the DSL and by the annotation the auto-detection reads —
+     * is recorded once.
+     */
     private IEntityBuilder<E> addMandatory(ObjectAddress address, MandatoryPolicy policy) {
-        this.mandatories.add(new Pair<>(address, policy == null ? MandatoryPolicy.anyValue : policy));
+        addOnce(this.mandatories, new Pair<>(address, policy == null ? MandatoryPolicy.anyValue : policy));
         return this;
     }
 
@@ -129,9 +133,9 @@ abstract class AbstractEntityConstraintBuilder<E> extends AbstractEntityHookBuil
         return addUnicity(addressOfAddress(fieldAddress), scope);
     }
 
-    /** Records one resolved unicity. The scope is kept as declared — {@code null} included. */
+    /** Records one resolved unicity, once. The scope is kept as declared — {@code null} included. */
     private IEntityBuilder<E> addUnicity(ObjectAddress address, UnicityScope scope) {
-        this.unicities.add(new Pair<>(address, scope));
+        addOnce(this.unicities, new Pair<>(address, scope));
         return this;
     }
 
@@ -185,10 +189,19 @@ abstract class AbstractEntityConstraintBuilder<E> extends AbstractEntityHookBuil
         return addIndex(addressOfAddress(fieldAddress), unique, scope, kind, name);
     }
 
-    /** Records one resolved index; the rule normalises a null scope, kind or name. */
+    /**
+     * Records one resolved index, once; the rule normalises a null scope, kind or name. Two rules
+     * that differ only by {@code unique} are two indexes, and both are kept.
+     */
     private IEntityBuilder<E> addIndex(ObjectAddress address, boolean unique, UnicityScope scope, IndexKind kind,
             String name) {
-        this.indexes.add(new EntityIndexRule(address, unique, scope, kind, name));
+        addOnce(this.indexes, new EntityIndexRule(address, unique, scope, kind, name));
         return this;
+    }
+
+    private static <T> void addOnce(List<T> declarations, T declaration) {
+        if (!declarations.contains(declaration)) {
+            declarations.add(declaration);
+        }
     }
 }

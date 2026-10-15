@@ -382,7 +382,10 @@ public class ApiBuilder extends AbstractAutomaticDependentBuilder<IApiBuilder, I
 		// Asset scan (serializers/protocols/authorization protocols) spans framework packages too;
 		// entity/security scans stay user-package-only to avoid dragging in framework test fixtures.
 		ApiBuilderAssetDetection.autoDetectAll(this, assetScanSurface());
-		new com.garganttua.api.core.entity.EntityAnnotationScanner(this, this.packages).scan();
+		// The DSL-declared domains are read too: their annotations describe the entity, not the way
+		// it was assembled — an @EntityIndexed on a hand-declared domain used to produce nothing.
+		new com.garganttua.api.core.entity.EntityAnnotationScanner(this, this.packages,
+				Set.copyOf(this.domainBuilders.keySet())).scan();
 		new com.garganttua.api.core.security.SecurityAnnotationScanner(this, this.packages).scan();
 		this.autoDetectionRan = true;
 	}

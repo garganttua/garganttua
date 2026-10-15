@@ -24,6 +24,14 @@ import com.garganttua.core.reflection.annotations.Indexed;
  * </p>
  *
  * <p>
+ * <b>Read under auto-detection only</b> — like every entity annotation. With
+ * {@code apiBuilder.autoDetect(true)} it is read on every domain, whether the domain was found by the
+ * package scan or declared by hand with {@code apiBuilder.domain(...)}; an api built without
+ * auto-detection reads no annotation, and the index must then be declared with
+ * {@code entity().index(...)}. Declaring both ways yields one index.
+ * </p>
+ *
+ * <p>
  * Do not confuse it with {@link Indexed}, which indexes an <em>annotation</em> at compile time for
  * classpath scanning. This one indexes data.
  * </p>
