@@ -61,8 +61,6 @@ final class CompiledScript implements ICompiledScript {
     }
 
     @Override
-    @SuppressFBWarnings(value = "THROWS_METHOD_THROWS_RUNTIMEEXCEPTION",
-            justification = "Re-throws the original RuntimeException after firing an error observability event.")
     public IScriptExecutionResult execute(Object... args) throws ScriptException {
         return executeWith(Map.of(), args);
     }
