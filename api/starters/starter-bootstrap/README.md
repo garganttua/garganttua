@@ -20,12 +20,12 @@ It is deliberately **transport- and persistence-agnostic** — it brings the fra
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-starter-bootstrap</artifactId>
-    <version>3.0.0-ALPHA25</version>
+    <version>3.0.0-ALPHA26</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA25
+3.0.0-ALPHA26
 
 ### Dependencies
  - `com.garganttua:garganttua-api-core`

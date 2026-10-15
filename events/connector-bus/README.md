@@ -14,12 +14,12 @@ broker is required.
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-connector-bus</artifactId>
-    <version>3.0.0-ALPHA25</version>
+    <version>3.0.0-ALPHA26</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA25
+3.0.0-ALPHA26
 
 ### Dependencies
  - `com.garganttua:garganttua-events-api`

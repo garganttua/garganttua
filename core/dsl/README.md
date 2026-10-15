@@ -21,12 +21,12 @@ This module is the foundation for all DSL implementations across the Garganttua 
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-dsl</artifactId>
-    <version>3.0.0-ALPHA25</version>
+    <version>3.0.0-ALPHA26</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA25
+3.0.0-ALPHA26
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
