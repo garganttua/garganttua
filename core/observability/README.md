@@ -36,7 +36,6 @@ The module deliberately offers **only the primitives** — aggregators, metrics 
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
- - `com.garganttua.core:garganttua-aot-commons`
  - `com.garganttua.core:garganttua-commons`
  - `com.garganttua.core:garganttua-expression`
  - `com.garganttua.core:garganttua-condition`

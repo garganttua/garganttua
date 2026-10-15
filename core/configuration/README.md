@@ -34,7 +34,6 @@ The `garganttua-configuration` module provides a unified API for loading configu
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
- - `com.garganttua.core:garganttua-aot-commons`
  - `com.garganttua.core:garganttua-commons`
  - `com.garganttua.core:garganttua-dsl`
  - `com.garganttua.core:garganttua-reflection`

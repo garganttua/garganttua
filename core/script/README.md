@@ -38,7 +38,6 @@ The **garganttua-script** module provides a scripting language engine for compos
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
- - `com.garganttua.core:garganttua-aot-commons`
  - `com.garganttua.core:garganttua-commons`
  - `com.garganttua.core:garganttua-aot-commons`
  - `com.garganttua.core:garganttua-runtime`

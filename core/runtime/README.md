@@ -37,7 +37,6 @@ The Runtime framework enables you to define **execution pipelines** where steps 
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
- - `com.garganttua.core:garganttua-aot-commons`
  - `com.garganttua.core:garganttua-commons`
  - `com.garganttua.core:garganttua-injection`
  - `com.garganttua.core:garganttua-execution`

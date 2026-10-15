@@ -30,9 +30,6 @@
               <artifactId>garganttua-aot-reflection</artifactId>
           </dependency>
           <dependency>
-              <groupId>com.garganttua.core</groupId>
-              <artifactId>garganttua-aot-commons</artifactId>
-          </dependency>            <dependency>
                   <groupId>com.garganttua.core</groupId>
                   <artifactId>garganttua-commons</artifactId>
             </dependency>
