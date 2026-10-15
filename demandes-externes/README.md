@@ -57,7 +57,7 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 Aucune.
 
-Les seize fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+Les dix-huit fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -124,3 +124,25 @@ attendait.
 
 Le reste est additif. `IEntityDefinition.indexes()` a une implémentation par défaut, donc un
 implémenteur extérieur ne casse pas — il déclare zéro index.
+
+## Fiches répondues — `3.0.0-ALPHA25`
+
+Traitées le 2026-10-15, corrigées sur `main`, **à paraître dans `3.0.0-ALPHA25`**. Trois envois de
+palliad : deux fiches et un retour de mesure sur une fiche d'ALPHA24.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [le-dto-ne-restreint-pas-la-lecture-mongodb](le-dto-ne-restreint-pas-la-lecture-mongodb.md) | palliad | Demande 1 tenue : le DTO est la projection par défaut, mesurée au profileur sur un vrai `mongod` — 85 606 → 5 848 octets, réponse identique ; `readWholeDocuments()` pour revenir en arrière par domaine. Demande 2 : la lenteur de `fields=` venait de la résolution du champ refaite à chaque ligne et chaque champ, sortie de la boucle (JVM, 32 807 × 12 : 170–370 → 15–20 ms) ; **le natif reste à re-mesurer chez eux**. Le raccourci « sélection = entité entière » est refusé : la réponse en changerait de forme. |
+| [entityindexed-ne-fait-rien-quand-les-domaines-sont-declares-par-le-dsl](entityindexed-ne-fait-rien-quand-les-domaines-sont-declares-par-le-dsl.md) | palliad | Corrigée, élargie à toute la famille : sous détection automatique, les annotations d'entité sont lues quel que soit le style d'assemblage — balayage ou `apiBuilder.domain(...)`. Le DSL l'emporte sur id / uuid / tenantId, une déclaration faite deux fois compte une fois, crochets compris. Sans détection automatique, aucune annotation n'est lue, et la documentation le dit. |
+| [aucun-index-nest-pose-et-lunicite-declaree-ne-tient-pas](aucun-index-nest-pose-et-lunicite-declaree-ne-tient-pas.md) — retour du 2026-09-24 | palliad | Leur §3 confirmé et corrigé : la fusion des écritures internes écrivait les champs `static`, donc une constante — en JVM comme en AOT. Notre suggestion de lever leur règle était prématurée, et la réponse le dit. ALPHA23 : jamais publiée, confirmé. |
+
+## Changements de comportement à la montée en `3.0.0-ALPHA25`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Domaine déclaré par le DSL, api en `autoDetect(true)` | ses annotations d'entité étaient ignorées | elles sont lues : une `@EntityUnicity`, `@EntityMandatory`, `@EntityIndexed` ou un crochet annoté qui dormait sur la classe **s'applique** |
+| `MongoDao.find` sans sélection | lisait le document entier | projette sur les champs du DTO — réponse inchangée ; `readWholeDocuments()` pour l'ancien comportement |
+
+Aucune signature publique ne change ; `MongoDao.readWholeDocuments()` et le constructeur à trois
+arguments d'`EntityAnnotationScanner` sont additifs.
+
