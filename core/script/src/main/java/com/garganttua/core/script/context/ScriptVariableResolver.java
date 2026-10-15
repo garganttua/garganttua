@@ -71,7 +71,32 @@ public class ScriptVariableResolver implements ForLoopExpressionNode.VariableSet
         if (VAR_OUTPUT.equals(name)) {
             return resolveOutput(context.getOutput(), type);
         }
-        return context.getVariable(name, type);
+        if (context.getVariable(name, OBJECT_CLASS).isPresent()) {
+            return context.getVariable(name, type);
+        }
+        return callVariable(name, type);
+    }
+
+    /**
+     * A value bound for this execution only ({@link ScriptContext#bindCallVariables}), for a name
+     * the script has not assigned: what a shared compiled script receives per call. A name the
+     * script assigns keeps resolving to its own value from then on.
+     */
+    @SuppressWarnings(UNCHECKED)
+    private static <T> Optional<T> callVariable(String name, IClass<T> type) {
+        ScriptContext frame = ScriptExecutionContext.get();
+        if (frame == null) {
+            return Optional.empty();
+        }
+        Optional<Object> value = frame.callVariable(name);
+        if (value.isEmpty()) {
+            return Optional.empty();
+        }
+        Object v = value.get();
+        if (type.isInstance(v)) {
+            return Optional.of(type.cast(v));
+        }
+        return type.equals(OBJECT_CLASS) ? Optional.of((T) v) : Optional.empty();
     }
 
     /** @return {@code true} if {@code name} (with leading {@code $}) is a numeric positional ref. */

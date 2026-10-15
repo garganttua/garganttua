@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,7 +40,10 @@ import com.garganttua.core.workflow.dsl.WorkflowsBuilder;
  *   <li>the same {@code ICompiledScript} is reused across {@code execute()}
  *       calls (no per-call ANTLR parse / runtime build);</li>
  *   <li>concurrent executions from N threads on the SAME Workflow instance
- *       all return independent, correct results.</li>
+ *       all return independent, correct results;</li>
+ *   <li>named input parameters reach the precompiled script as {@code @name}, per call, as they
+ *       do on the fresh-script path — the events engine hands each message to its route this way,
+ *       and a precompiled route that could not read its {@code @exchange} produced nothing.</li>
  * </ol>
  */
 @DisplayName("Workflow precompile — thread-safe shared compiled handle")
@@ -172,5 +176,83 @@ class WorkflowPrecompileTest {
         assertTrue(r.isSuccess());
         assertEquals("static",
                 r.getVariable("greeting", IClass.getClass(String.class)).orElse(null));
+    }
+    // ───── named input parameters ─────
+
+    private IWorkflow namedParameterWorkflow(boolean precompile, boolean inline, String script) {
+        var builder = WorkflowsBuilder.builder()
+                .provide(injectionContextBuilder)
+                .provide(scriptsBuilder)
+                .workflow("named-" + precompile + "-" + inline)
+                .precompile(precompile);
+        if (inline) {
+            builder.inlineAll();
+        }
+        return builder
+                .stage("greet")
+                    .script(script)
+                        .name("g")
+                        .output("greeting", "greeting")
+                        .up()
+                    .up()
+                .build();
+    }
+
+    private static String greeting(WorkflowResult r) {
+        assertTrue(r.isSuccess(), () -> "failed: " + r.exception().orElse(null));
+        return r.getVariable("greeting", IClass.getClass(String.class)).orElse(null);
+    }
+
+    @Test
+    @DisplayName("precompile(true) — a named input parameter is read as @name, per call")
+    void namedParameter_isBoundPerCall() {
+        for (boolean inline : new boolean[] { false, true }) {
+            IWorkflow workflow = namedParameterWorkflow(true, inline,
+                    "greeting <- concatenate(\"hello \", @who)");
+            assertEquals("hello alice", greeting(workflow.execute(WorkflowInput.of(null, Map.of("who", "alice")))),
+                    "inline=" + inline);
+            assertEquals("hello bob", greeting(workflow.execute(WorkflowInput.of(null, Map.of("who", "bob")))),
+                    "a second call reads its own value, not the first one's (inline=" + inline + ")");
+        }
+    }
+
+    @Test
+    @DisplayName("precompile(true) and the fresh-script path read named parameters alike")
+    void namedParameter_parityWithFreshPath() {
+        String script = "greeting <- concatenate(\"hello \", @who)";
+        WorkflowInput input = WorkflowInput.of(null, Map.of("who", "carol"));
+        assertEquals(greeting(namedParameterWorkflow(false, true, script).execute(input)),
+                greeting(namedParameterWorkflow(true, true, script).execute(input)));
+    }
+
+    @Test
+    @DisplayName("precompile(true) — a name the script assigns resolves to the script's value")
+    void namedParameter_assignmentWins() {
+        IWorkflow workflow = namedParameterWorkflow(true, true,
+                "who <- \"assigned\"\ngreeting <- concatenate(\"hello \", @who)");
+        assertEquals("hello assigned",
+                greeting(workflow.execute(WorkflowInput.of(null, Map.of("who", "parameter")))));
+    }
+
+    @Test
+    @DisplayName("precompile(true) — 200 concurrent calls each read their own named parameter")
+    void namedParameter_isIsolatedAcrossThreads() throws Exception {
+        IWorkflow workflow = namedParameterWorkflow(true, true,
+                "greeting <- concatenate(\"hello \", @who)");
+        ExecutorService pool = Executors.newFixedThreadPool(16);
+        try {
+            List<CompletableFuture<String>> futures = new ArrayList<>();
+            for (int i = 0; i < 200; i++) {
+                String who = "caller-" + i;
+                futures.add(CompletableFuture.supplyAsync(
+                        () -> greeting(workflow.execute(WorkflowInput.of(null, Map.of("who", who)))), pool));
+            }
+            for (int i = 0; i < futures.size(); i++) {
+                assertEquals("hello caller-" + i, futures.get(i).get(30, TimeUnit.SECONDS));
+            }
+        } finally {
+            pool.shutdownNow();
+            pool.awaitTermination(5, TimeUnit.SECONDS);
+        }
     }
 }
