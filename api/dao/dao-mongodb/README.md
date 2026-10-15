@@ -63,6 +63,8 @@ After construction, the framework calls `registerDomain(IDomainDefinition)` to s
 
 **uuid ↔ `_id`.** The domain uuid is projected onto MongoDB's `_id` on write and recovered from it on read. This makes `save()` upsert by uuid (`replaceOne(..., upsert(true))`) instead of inserting a duplicate row each time, and gives `delete()` a key. The uuid is also kept under its own field name, so filters that query it (every `readOne` / `readAll`-by-uuid, built as `Filter.eq(uuidField, …)`) keep matching without the filter converter needing to know about `_id`.
 
+**The DTO is the default projection.** A read without a requested selection (`fields=`) asks MongoDB only for the fields the DTO maps, plus the uuid and the composition fields. The response cannot differ — the read side copies the DTO's fields and nothing else — but a light DTO over a rich collection (a read-only map twin, say) no longer reads every document whole: on 66 documents of ~1.3 KB, a three-field DTO reads 5 848 bytes instead of 85 606. The filter is untouched: a query may still match on a field the DTO does not map. `new MongoDao(db, "x").readWholeDocuments()` restores the whole-document read for one domain.
+
 ### `MongoFilterConverter`
 
 A stateless utility class that recursively converts an `IFilter` tree into a `Bson` predicate consumed by the MongoDB driver. The filter tree uses a hierarchical node model where each node has a `getName()` (the operator), an optional `getValue()`, and optional child filters via `getFilters()`.
@@ -162,7 +164,7 @@ The raw material round-trips through core's `KeySerializer.exportRawKey` / `impo
 
 ### Declared indexes (`MongoIndexManager`)
 
-At `registerDomain`, the DAO reads `domainDefinition.entityDefinition().indexes()` — what the entity declared through `@EntityIndexed` on a field, or `entity().index(...)` on the DSL — and asks MongoDB for those indexes. This is what makes a declared uniqueness real: the framework's own `validateUnicity` is a read followed, some way later, by a write, and two concurrent requests walk straight through the gap between them. Only the store can hold a constraint, and a store holds it with a unique index.
+At `registerDomain`, the DAO reads `domainDefinition.entityDefinition().indexes()` — what the entity declared through `@EntityIndexed` on a field (read under auto-detection only, see [the entity annotations](../../commons)), or `entity().index(...)` on the DSL — and asks MongoDB for those indexes. This is what makes a declared uniqueness real: the framework's own `validateUnicity` is a read followed, some way later, by a write, and two concurrent requests walk straight through the gap between them. Only the store can hold a constraint, and a store holds it with a unique index.
 
 The setting `mongodb.index.auto` (see the [MongoDB starter](../../starters/starter-mongodb)) decides who creates them: `create` (default), `none`, or `strict`.
 

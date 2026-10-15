@@ -394,6 +394,21 @@ public class EntityBuilder<E> extends AbstractEntityConstraintBuilder<E> {
         EntityBuilderValidation.requireId(this.entityClass, this.id);
     }
 
+    /** Whether an id field has been declared — the auto-detection fills it only when absent. */
+    boolean declaresId() {
+        return this.id != null;
+    }
+
+    /** Whether a uuid field has been declared — the auto-detection fills it only when absent. */
+    boolean declaresUuid() {
+        return this.uuid != null;
+    }
+
+    /** Whether a tenant-id field has been declared — the auto-detection fills it only when absent. */
+    boolean declaresTenantId() {
+        return this.tenantId != null;
+    }
+
     @Override
     protected void doAutoDetection() {
 

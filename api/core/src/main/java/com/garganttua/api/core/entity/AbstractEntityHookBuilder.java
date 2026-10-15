@@ -61,6 +61,13 @@ abstract class AbstractEntityHookBuilder<E>
     private IEntityMethodBinderBuilder<E> createEntityMethodBuilder(
             String methodName, List<Pair<String, EntityMethodBinderBuilder<E>>> list, boolean collection)
             throws ApiException {
+        // The same entity method bound twice to the same hook — by the DSL and by the annotation the
+        // auto-detection reads — would run twice. It is one declaration: keep the first binding.
+        for (Pair<String, EntityMethodBinderBuilder<E>> bound : list) {
+            if (bound.getValue0().equals(methodName)) {
+                return bound.getValue1();
+            }
+        }
         // Create a supplier builder that will supply the entity instance at runtime.
         ISupplierBuilder<Object, ISupplier<Object>> supplierBuilder =
                 FixedSupplierBuilder.ofNullable(null, (IClass<Object>) (IClass<?>) hookEntityClass());

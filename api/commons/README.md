@@ -54,6 +54,8 @@ In addition, this module ships the annotation families that drive auto-detection
 
 Entity annotations control how the framework interprets a POJO class for storage, multi-tenancy, and access control. All are `@Retention(RUNTIME)` and carry `@Indexed` for fast classpath scanning.
 
+**They are read under auto-detection** (`autoDetect(true)` on the `ApiBuilder`), on every domain: one found by the package scan, and one declared by hand with `apiBuilder.domain(...)` alike. An api built without auto-detection reads none of them — declare the same things through the DSL. When the DSL and an annotation both declare something, the DSL's `id` / `uuid` / `tenantId` win, and a constraint, index or hook declared both ways is recorded once.
+
 #### Type-level — identity and roles
 
 | Annotation | Target | Description |
