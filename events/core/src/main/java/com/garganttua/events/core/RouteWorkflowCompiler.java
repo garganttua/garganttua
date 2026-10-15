@@ -80,7 +80,12 @@ final class RouteWorkflowCompiler {
 					.variable("tenantId", tenantId)
 					.variable("clusterId", clusterId)
 					.variable("subscriptionId", fromSub.id())
-					.inlineAll();
+					.inlineAll()
+					// One compiled script per route, reused by every message: without it each message
+					// re-parsed the route's script with ANTLR (~290 us floor, ~145 us per stage), and
+					// parallel workers contended on the parser until 4 of them routed slower than one.
+					// The message reaches the compiled script as @exchange, a per-call parameter.
+					.precompile(true);
 
 			DataflowDef fromDf = bindInbound(wb, runtime, fromSub);
 			boolean hasProducer = bindOutbound(routeDef, runtime, wb);
