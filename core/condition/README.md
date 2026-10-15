@@ -28,12 +28,12 @@ Key features:
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-condition</artifactId>
-    <version>3.0.0-ALPHA24</version>
+    <version>3.0.0-ALPHA25</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA24
+3.0.0-ALPHA25
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

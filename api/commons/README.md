@@ -26,12 +26,12 @@ In addition, this module ships the annotation families that drive auto-detection
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-commons</artifactId>
-    <version>3.0.0-ALPHA24</version>
+    <version>3.0.0-ALPHA25</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA24
+3.0.0-ALPHA25
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`

@@ -28,12 +28,12 @@ Traditional Java reflection is verbose, error-prone, and difficult to work with 
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-reflection</artifactId>
-    <version>3.0.0-ALPHA24</version>
+    <version>3.0.0-ALPHA25</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA24
+3.0.0-ALPHA25
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
