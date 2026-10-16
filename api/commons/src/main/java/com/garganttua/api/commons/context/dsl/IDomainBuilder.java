@@ -86,11 +86,36 @@ public interface IDomainBuilder<E> extends IAutomaticLinkedBuilder<IDomainBuilde
 
     IDomainBuilder<E> publik();
 
+    /**
+     * Declares the field naming the ONE tenant this entity is shared with, for reading only: a
+     * {@code String}, or a {@code List<String>} of tenant ids. For grants to several tenants or to
+     * owners, with a write right, prefer {@link #shares(String)}.
+     */
     IDomainBuilder<E> shared(IField field) throws ApiException;
 
     IDomainBuilder<E> shared(String string) throws ApiException;
 
     IDomainBuilder<E> shared(ObjectAddress fieldAddress) throws ApiException;
+
+    /**
+     * Declares the grants field of the entity: a {@code List<String>} of
+     * {@link com.garganttua.api.commons.entity.ShareGrant} tokens naming the tenants and owners that
+     * may read, or read and write, this entity besides its own tenant and owner.
+     *
+     * <p>
+     * The field is written only by the {@code share} operation ({@code PUT /<domain>/{uuid}/shares}),
+     * which only the entity's own tenant and owner may call; a client create or update never writes
+     * it. Declaring it registers that operation, closed behind an authority like any CRUD operation.
+     * Like the tenant and owner fields, the grants field is not indexed for you: every read filters
+     * on it, so declare {@code .entity().index(field)} on a large collection (a multikey index on
+     * MongoDB).
+     * </p>
+     */
+    IDomainBuilder<E> shares(String fieldName) throws ApiException;
+
+    IDomainBuilder<E> shares(IField field) throws ApiException;
+
+    IDomainBuilder<E> shares(ObjectAddress fieldAddress) throws ApiException;
 
     IDomainBuilder<E> geolocalized(String string) throws ApiException;
 

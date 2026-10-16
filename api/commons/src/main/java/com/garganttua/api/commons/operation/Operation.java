@@ -35,6 +35,8 @@ public record Operation(
 			return BusinessOperation.useCase;
 		if (type == OperationType.workflow)
 			return BusinessOperation.workflow;
+		if (type == OperationType.share)
+			return BusinessOperation.share;
 
 		return switch (techOp) {
 			case create -> BusinessOperation.create;
@@ -59,6 +61,9 @@ public record Operation(
 		if (type == OperationType.refreshAuthorization) {
 			return "refresh-authorization-" + Singularizer.toSingular(entityName);
 		}
+		if (type == OperationType.share) {
+			return "share-one-" + Singularizer.toSingular(entityName);
+		}
 		if (scope == Scope.allEntities || scope == Scope.listOfEntities) {
 			return techOp + "-" + scope + "-" + Pluralizer.toPlural(entityName);
 		}
@@ -76,6 +81,9 @@ public record Operation(
 			return new OperationPath(base + "/refresh");
 		// The caller's own entity has a LITERAL path: it takes no identifier, because taking one is
 		// exactly what it must not do. Without this it would fall through to the collection path.
+		// The grants of one entity: a sub-resource of it, so it never collides with readOne / update.
+		if (type == OperationType.share)
+			return new OperationPath(base + "/${uuid}/shares");
 		if (scope == Scope.self)
 			return new OperationPath(base + "/self");
 		if (scope == Scope.oneEntity)

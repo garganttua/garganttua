@@ -18,7 +18,8 @@ requirePresent(@caller)
 ! => recordCaughtException(@0, @exception) -> 400
 
 // Build filter for single entity lookup (uuid or id)
-filter <- buildGetOneFilter(@caller, @lookupType, @lookupId, @2)
+// MANAGE access: the caller's own rows only. No grant lets a grantee destroy what it was lent.
+filter <- buildGetOneAccessFilter(@caller, @lookupType, @lookupId, @2, "manage")
 ! => recordCaughtException(@0, @exception) -> 500
 
 // Find the entity

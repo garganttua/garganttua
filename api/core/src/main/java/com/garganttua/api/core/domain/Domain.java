@@ -543,7 +543,7 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
     private OperationResponse mapSuccessCode(String opLabel, Object output) {
         return switch (opLabel) {
             case "create" -> OperationResponse.created(output);
-            case "update" -> OperationResponse.updated(output);
+            case "update", "share" -> OperationResponse.updated(output);
             case "deleteOne", "deleteAll" -> OperationResponse.deleted(output);
             default -> OperationResponse.ok(output);
         };

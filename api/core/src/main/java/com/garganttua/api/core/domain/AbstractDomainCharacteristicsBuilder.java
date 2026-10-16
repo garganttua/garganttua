@@ -12,6 +12,7 @@ import com.garganttua.core.reflection.IField;
 import com.garganttua.core.reflection.IReflectionProvider;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.fields.FieldResolver;
+import com.garganttua.core.reflection.fields.ResolvedField;
 
 /**
  * Holds the entity-characteristic field setters ({@code owner / owned / shared / hiddenable /
@@ -30,6 +31,7 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     protected volatile ObjectAddress owner;
     protected volatile ObjectAddress owned;
     protected volatile ObjectAddress shared;
+    protected volatile ObjectAddress shares;
     protected volatile ObjectAddress hiddenable;
     protected volatile ObjectAddress geolocalized;
     protected volatile ObjectAddress superOwner;
@@ -87,6 +89,28 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
         return FieldResolver.fieldByAddress(characteristicEntityClass(), provider(), fieldAddress, type).address();
     }
 
+    /**
+     * Resolves a sharing field without the exact-type check of the other characteristics, then
+     * accepts it when it holds a {@code String} ({@code scalarAllowed}) or a collection of them: the
+     * repository filter compares a value with every element of a list field, on every DAO.
+     */
+    private ObjectAddress sharingField(String fieldName, ObjectAddress fieldAddress, boolean scalarAllowed)
+            throws ApiException {
+        requireCharacteristicEntityDeclared();
+        ResolvedField field = fieldAddress != null
+                ? FieldResolver.fieldByAddress(characteristicEntityClass(), provider(), fieldAddress)
+                : FieldResolver.fieldByFieldName(characteristicEntityClass(), provider(),
+                        Objects.requireNonNull(fieldName, "Field name cannot be null"));
+        IClass<?> type = field.fieldType();
+        boolean list = IClass.getClass(java.util.Collection.class).isAssignableFrom(type);
+        if (list || (scalarAllowed && str().equals(type))) {
+            return field.address();
+        }
+        throw new ApiException("Field " + field.address() + " of " + characteristicEntityClass().getSimpleName()
+                + " must be " + (scalarAllowed ? "a String or " : "") + "a List<String> to hold share grants, not "
+                + type.getSimpleName());
+    }
+
     private static IClass<String> str() {
         return IClass.getClass(String.class);
     }
@@ -133,20 +157,48 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
 
     @Override
     public IDomainBuilder<E> shared(IField field) throws ApiException {
-        this.shared = resolveByField(field, str());
+        this.shared = sharingField(Objects.requireNonNull(field, "Field cannot be null").getName(), null, true);
         return this;
     }
 
     @Override
     public IDomainBuilder<E> shared(String fieldName) throws ApiException {
-        this.shared = resolveByName(fieldName, str());
+        this.shared = sharingField(fieldName, null, true);
         return this;
     }
 
     @Override
     public IDomainBuilder<E> shared(ObjectAddress fieldAddress) throws ApiException {
-        this.shared = resolveByAddress(fieldAddress, str());
+        this.shared = sharingField(null, Objects.requireNonNull(fieldAddress, "Field address cannot be null"), true);
         return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> shares(String fieldName) throws ApiException {
+        this.shares = sharingField(fieldName, null, false);
+        onSharesDeclared();
+        return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> shares(IField field) throws ApiException {
+        return shares(Objects.requireNonNull(field, "Field cannot be null").getName());
+    }
+
+    @Override
+    public IDomainBuilder<E> shares(ObjectAddress fieldAddress) throws ApiException {
+        this.shares = sharingField(null, Objects.requireNonNull(fieldAddress, "Field address cannot be null"), false);
+        onSharesDeclared();
+        return this;
+    }
+
+    /**
+     * Registers the {@code share} operation the grants field calls for, CLOSED behind an authority
+     * like readSelf: a domain gains the route by declaring {@code .shares(field)}, and must not gain
+     * an open write with it. Security declared for it afterwards ({@code shareAuthority(...)}) wins.
+     */
+    private void onSharesDeclared() {
+        workflow(com.garganttua.api.commons.operation.BusinessOperation.share.getLabel()).security().authority(true);
     }
 
     @Override

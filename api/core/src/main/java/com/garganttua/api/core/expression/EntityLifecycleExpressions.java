@@ -147,25 +147,30 @@ public class EntityLifecycleExpressions {
 		}
 	}
 
-	@Expression(name = "ensureTenantId", description = "Sets the tenantId on the entity from the caller if not already set")
+	/** Client-path form of {@link #ensureTenantId(Object, Object, Object, Object)}: no request, so no internal write. */
 	public static Object ensureTenantId(Object entity, Object caller, Object context) {
+		return ensureTenantId(entity, caller, context, null);
+	}
+
+	@Expression(name = "ensureTenantId", description = "Stamps the caller's tenant on the entity being created. A regular caller always writes into its own (requested) tenant, whatever the body says; a super tenant, an anonymous caller or a framework-internal write keeps a tenantId the entity already carries and only fills a missing one.")
+	public static Object ensureTenantId(Object entity, Object caller, Object context, Object request) {
 		try {
-			ICaller c = (ICaller) unwrapOptional(caller);
 			IDomain<?> dc = toDomain(context);
 			ObjectAddress tenantIdAddress = dc.getEntityDefinition().tenantId();
+			ICaller c = (ICaller) unwrapOptional(caller);
 			if (tenantIdAddress == null || c == null) return entity;
-			String fieldName = tenantIdAddress.toString();
-			Object currentTenantId = REFLECTION.getFieldValue(entity, fieldName);
-			if (currentTenantId == null) {
-				// Stamp the caller's REQUESTED tenant — a super tenant may target another tenant via the
-				// request (cross-tenant create). When none was requested, fall back to the caller's HOME
-				// tenant: requestedTenantId is null for an unscoped super tenant (the read-side "all
-				// tenants" bypass signal), and that null must NOT leak into the persisted tenantId and
-				// orphan the entity. For a non-super caller requestedTenantId already equals tenantId,
-				// so this fallback only changes the super-tenant-without-target case.
-				String target = c.requestedTenantId() != null ? c.requestedTenantId() : c.tenantId();
-				REFLECTION.setFieldValue(entity, fieldName, target);
-			}
+			// Stamp the caller's REQUESTED tenant — a super tenant may target another tenant via the
+			// request (cross-tenant create). When none was requested, fall back to the caller's HOME
+			// tenant: requestedTenantId is null for an unscoped super tenant (the read-side "all
+			// tenants" bypass signal), and that null must NOT leak into the persisted tenantId and
+			// orphan the entity. For a non-super caller requestedTenantId already equals tenantId,
+			// so this fallback only changes the super-tenant-without-target case.
+			String target = c.requestedTenantId() != null ? c.requestedTenantId() : c.tenantId();
+			// A tenant row designates a tenant itself: its tenantId is not the creator's to impose.
+			boolean tenantDomain = Boolean.TRUE.equals(dc.getDomainDefinition().tenant());
+			boolean mayKeepBodyValue = c.superTenant() || target == null || tenantDomain
+					|| EntityUpdateSupport.isFrameworkInternalWrite(request);
+			stamp(entity, tenantIdAddress.toString(), target, mayKeepBodyValue);
 			return entity;
 		} catch (ApiException e) {
 			throw e;
@@ -174,9 +179,14 @@ public class EntityLifecycleExpressions {
 		}
 	}
 
-	@Expression(name = "ensureOwnerId",
-			description = "On an owned domain, sets the owned/ownerId field from the caller's ownerId when not already set. No-op for non-owned domains, super-owner/anonymous callers (no ownerId), or a field the caller already populated. The caller's ownerId already carries the qualified ${domainName}:${id} form, so the stored value stays consistent with the repository owner filter.")
+	/** Client-path form of {@link #ensureOwnerId(Object, Object, Object, Object)}: no request, so no internal write. */
 	public static Object ensureOwnerId(Object entity, Object caller, Object context) {
+		return ensureOwnerId(entity, caller, context, null);
+	}
+
+	@Expression(name = "ensureOwnerId",
+			description = "On an owned domain, stamps the caller's ownerId on the entity being created. A regular owner always creates for itself, whatever the body says; a super owner or a framework-internal write keeps an owner the entity already carries and only fills a missing one. No-op for non-owned domains and callers without an ownerId. The caller's ownerId already carries the qualified ${domainName}:${id} form, so the stored value stays consistent with the repository owner filter.")
+	public static Object ensureOwnerId(Object entity, Object caller, Object context, Object request) {
 		try {
 			IDomain<?> dc = toDomain(context);
 			ObjectAddress ownedAddress = dc.getDomainDefinition().owned();
@@ -187,17 +197,26 @@ public class EntityLifecycleExpressions {
 			if (c == null || c.ownerId() == null) {
 				return entity;
 			}
-			String fieldName = ownedAddress.toString();
-			Object currentOwnerId = REFLECTION.getFieldValue(entity, fieldName);
-			if (currentOwnerId == null) {
-				REFLECTION.setFieldValue(entity, fieldName, c.ownerId());
-			}
+			boolean mayKeepBodyValue = c.superOwner() || EntityUpdateSupport.isFrameworkInternalWrite(request);
+			stamp(entity, ownedAddress.toString(), c.ownerId(), mayKeepBodyValue);
 			return entity;
 		} catch (ApiException e) {
 			throw e;
 		} catch (Exception e) {
 			throw new ApiException("Failed to ensure ownerId on entity", e);
 		}
+	}
+
+	/**
+	 * Writes {@code value} into {@code fieldName}, unless the body already set the field and the
+	 * caller is entitled to choose it. A regular caller is not: left in place, a body value would let
+	 * it create a row in another tenant, or hand it to another owner.
+	 */
+	private static void stamp(Object entity, String fieldName, String value, boolean mayKeepBodyValue) {
+		if (mayKeepBodyValue && REFLECTION.getFieldValue(entity, fieldName) != null) {
+			return;
+		}
+		REFLECTION.setFieldValue(entity, fieldName, value);
 	}
 
 
@@ -230,6 +249,7 @@ public class EntityLifecycleExpressions {
 		ICaller c = (ICaller) unwrapOptional(caller);
 		IDomain<?> dc = toDomain(context);
 		EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
+		ShareExpressions.guardOnCreate(e, dc, req);
 		return recordWrittenFields(req, new EntityCreator().create(c, e, entityDef.creates()));
 	}
 
@@ -243,8 +263,11 @@ public class EntityLifecycleExpressions {
 		IDomain<?> dc = toDomain(context);
 		EntityDefinition<?> entityDef = (EntityDefinition<?>) dc.getEntityDefinition();
 		IOperationRequest req = (unwrapOptional(request) instanceof IOperationRequest r) ? r : null;
-		return recordWrittenFields(req, new EntityUpdater().update(c, storedEntity, updatedEntity,
-				EntityUpdateSupport.updateRules(entityDef, EntityUpdateSupport.isPartialUpdate(request))));
+		Object grantsBefore = ShareExpressions.grantsBefore(unwrapOptional(storedEntity), dc);
+		EntityWriteOutcome outcome = new EntityUpdater().update(c, storedEntity, updatedEntity,
+				EntityUpdateSupport.updateRules(entityDef, EntityUpdateSupport.isPartialUpdate(request)));
+		ShareExpressions.guardOnUpdate(outcome.entity(), grantsBefore, dc, req);
+		return recordWrittenFields(req, outcome);
 	}
 
 	/**

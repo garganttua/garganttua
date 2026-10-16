@@ -71,6 +71,9 @@ public interface IDomainSecurityBuilder<E>
 
 	IDomainSecurityBuilder<E> deleteAllAccess(Access access);
 
+	/** Access level of the {@code share} operation, present when the domain declares {@code .shares(field)}. */
+	IDomainSecurityBuilder<E> shareAccess(Access access);
+
 	// --- CRUD authority (boolean: auto-generated authority name) ---
 
 	IDomainSecurityBuilder<E> creationAuthority(boolean authority);
@@ -88,6 +91,8 @@ public interface IDomainSecurityBuilder<E>
 
 	IDomainSecurityBuilder<E> deleteAllAuthority(boolean authority);
 
+	IDomainSecurityBuilder<E> shareAuthority(boolean authority);
+
 	// --- CRUD authority (String: custom authority name) ---
 
 	IDomainSecurityBuilder<E> creationAuthority(String authority);
@@ -104,5 +109,7 @@ public interface IDomainSecurityBuilder<E>
 	IDomainSecurityBuilder<E> deleteOneAuthority(String authority);
 
 	IDomainSecurityBuilder<E> deleteAllAuthority(String authority);
+
+	IDomainSecurityBuilder<E> shareAuthority(String authority);
 
 }

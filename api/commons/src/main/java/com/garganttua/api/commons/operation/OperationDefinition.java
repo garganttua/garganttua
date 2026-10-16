@@ -128,6 +128,15 @@ public record OperationDefinition(String domainName, TechnicalOperation technica
 	}
 
 	/**
+	 * The {@code share} operation: the owner of one entity replaces the grants that let other tenants
+	 * or owners read or write it. Declared by {@code .shares(field)} on the domain; an {@code update}
+	 * on the wire, at {@code /<domain>/{uuid}/shares}.
+	 */
+	public static OperationDefinition share(String domainName, IClass<?> entity, boolean authority, String authorityName, Access access) {
+		return new OperationDefinition(domainName, TechnicalOperation.update, entity, Scope.oneEntity, OperationType.share, authority, authorityName, access);
+	}
+
+	/**
 	 * Builds the operation for a domain use case from its definition. The verb / scope / access /
 	 * authority and the rich spec (path, in/out, binder) all come from {@code useCase}, which is kept
 	 * on the operation so the path, body type and identity read from it.
@@ -213,6 +222,11 @@ public record OperationDefinition(String domainName, TechnicalOperation technica
 	private String getDefaultAuthorityName() {
 		if (useCase != null) {
 			return "usecase-" + useCase.name();
+		}
+		// share is an update of one entity on the wire; without its own prefix it would take the
+		// update's authority, and granting one would grant the other.
+		if (type == OperationType.share) {
+			return "share-" + scope + "-" + Singularizer.toSingular(this.entity.getSimpleName().toLowerCase(Locale.ROOT));
 		}
 		return technicalOperation + "-" + scope + "-"
 						+ ((scope == Scope.allEntities || scope == Scope.listOfEntities)

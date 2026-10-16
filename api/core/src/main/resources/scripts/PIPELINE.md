@@ -318,12 +318,23 @@ with tenant/owner/authority checks.
 **Location:** Engine
 
 **Scripts:** `scripts/operation/`
-- `CREATE_ONE.gs` — generate uuid, set tenantId, validate mandatories, check unicity, persist
-- `READ_ALL.gs` — build access filter, query with pagination/sort, inject beans, run afterGet hooks
-- `READ_ONE.gs` — build identifier + access filter, query, inject, run afterGet hooks
-- `UPDATE_ONE.gs` — lookup entity, apply authorized field updates, validate, persist
-- `DELETE_ONE.gs` — lookup entity, run beforeDelete hooks, delete, run afterDelete hooks
-- `DELETE_ALL.gs` — build access filter, fetch all, run beforeDelete hooks, delete all, run afterDelete hooks
+- `CREATE_ONE.gs` — generate uuid, stamp the caller's tenantId / ownerId (a regular caller cannot choose
+  them; a super tenant / super owner or a framework-internal write may), drop client-sent grants,
+  validate mandatories, check unicity, persist
+- `READ_ALL.gs` — build READ access filter, query with pagination/sort, inject beans, run afterGet hooks
+- `READ_ONE.gs` — build identifier + READ access filter, query, inject, run afterGet hooks
+- `UPDATE_ONE.gs` — lookup entity (WRITE access), apply authorized field updates (grants kept), validate, persist
+- `DELETE_ONE.gs` — lookup entity (MANAGE access), run beforeDelete hooks, delete, run afterDelete hooks
+- `DELETE_ALL.gs` — build MANAGE access filter, fetch all, run beforeDelete hooks, delete all, run afterDelete hooks
+- `SHARE.gs` — `PUT /<domain>/{uuid}/shares`, present when the domain declares `.shares(field)`: lookup
+  entity (MANAGE access), validate and write the grant tokens, run the update hooks, persist
+
+**Access modes** (`RepositoryFilterTools`, `AccessMode`). A row is reached through its own branch (the
+caller's tenant, and on an owned domain the caller itself — a caller without an ownerId reaches only
+unowned rows; a super owner all of its tenant's) or through a grant (legacy `.shared(field)`: a tenant,
+read only; `.shares(field)`: `r|w:tenant:<id>` / `r|w:owner:<id>` tokens). READ counts every grant,
+WRITE only write grants, MANAGE none — a grantee never deletes nor re-shares what it was lent. A public
+domain keeps its cross-tenant read and update; MANAGE narrows it to the caller's own rows.
 
 **Errors:** `400` (validation), `404` (not found), `409` (unicity), `500` (persistence)
 

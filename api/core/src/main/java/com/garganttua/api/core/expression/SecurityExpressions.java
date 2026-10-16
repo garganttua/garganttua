@@ -83,6 +83,29 @@ public class SecurityExpressions {
 		return Caller.createTenantCallerWithOwnerId(tenantId, ownerId);
 	}
 
+	/**
+	 * Caller for an internal UPDATE: the entity's tenant, acting as super owner on an owned domain. The
+	 * framework addresses the row by uuid and is not one of its owners; as a plain caller without an
+	 * ownerId it would reach only the rows that belong to no owner, and a key revoked during rotation
+	 * (owned, or global with no tenant) would answer 404.
+	 */
+	private static ICaller updateCallerFromEntity(IDomain<?> target, Object entity) {
+		if (target.getDomainDefinition().owned() == null) {
+			return callerFromEntity(target, entity);
+		}
+		String tenantId = readField(entity, target.getTenantIdFieldAddress());
+		if (tenantId != null) {
+			return new Caller(tenantId, tenantId, null, null, false, true, null);
+		}
+		// No tenant on the row (a global key): the super-tenant lookup caller reaches every row. Without
+		// a super tenant, a tenantless super owner is legitimate only when tenants are not isolated.
+		ICaller lookup = lookupCaller(target);
+		if (lookup.superTenant()) {
+			return lookup;
+		}
+		return target.isMultiTenant() ? lookup : new Caller(null, null, null, null, false, true, null);
+	}
+
 	/** Caller for an internal lookup (readAll): super + NO requested tenant → RepositoryFilterTools returns the supplied filter unchanged (the explicit filter is the sole scope). */
 	private static ICaller lookupCaller(IDomain<?> target) {
 		IApi api = apiOf(target);
@@ -143,7 +166,7 @@ public class SecurityExpressions {
 	public static Object invokeUpdate(IDomain<?> target, String uuid, Object entity) {
 		OperationDefinition op = OperationDefinition.updateOne(target.getDomainName(),
 				((IDomain) target).getEntityClass(), false, null, Access.anonymous);
-		return invokeInternal(target, op, callerFromEntity(target, entity), req -> {
+		return invokeInternal(target, op, updateCallerFromEntity(target, entity), req -> {
 			req.arg(IOperationRequest.ENTITY_UUID, uuid);
 			req.arg(IOperationRequest.BODY, entity);
 		});

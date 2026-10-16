@@ -294,7 +294,10 @@ Inactive (commented out, Lombok may linger pending migration): `garganttua-api-s
 Roles: **Tenant** (`.tenant(true)`/`@EntityTenant`), **Owner** (`.owner(field)`/`@EntityOwner`),
 **Owned** (`.owned(field)`/`@EntityOwned`). Characteristics: **Public** (`.publik()`),
 **Geolocalized**, **Hiddenable**, **Shared**. They combine into the access-filter matrix in
-`RepositoryFilterTools`. Multi-tenancy disables globally via `ApiBuilder.builder().multiTenant(false)`
+`RepositoryFilterTools`, per `AccessMode` (READ: own rows + every grant; WRITE: own + write grants;
+MANAGE — delete, re-share: own rows only). Sharing: legacy `.shared(field)` (tenant(s), read only) or
+`.shares(field)` — `ShareGrant` tokens `r|w:tenant:<id>` / `r|w:owner:<id>`, written only by the
+`share` operation (`PUT /<domain>/{uuid}/shares`, closed behind an authority by default). Multi-tenancy disables globally via `ApiBuilder.builder().multiTenant(false)`
 (strict: tenant APIs throw `ApiException` when disabled). Fluent request builder: `IDomain.request()`
 / `IApi.request(domainName)` → CRUD shortcuts → `.execute()`.
 

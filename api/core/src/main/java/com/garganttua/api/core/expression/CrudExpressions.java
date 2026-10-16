@@ -11,6 +11,7 @@ import java.util.Optional;
 import com.garganttua.api.core.domain.Domain;
 import com.garganttua.api.core.entity.EntityDefinition;
 import com.garganttua.api.core.filter.Filter;
+import com.garganttua.api.core.repository.AccessMode;
 import com.garganttua.api.core.repository.RepositoryFilterTools;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
@@ -50,14 +51,24 @@ public class CrudExpressions {
 		return opDef.getBusinessOperation().getLabel();
 	}
 
-	@Expression(name = "buildFilter", description = "Builds access filter from caller permissions and domain definition")
+	@Expression(name = "buildFilter", description = "Builds the READ access filter from caller permissions and domain definition")
 	public static Optional<IFilter> buildFilter(Object caller, Object filter, Object context) {
+		return buildAccessFilter(caller, filter, context, AccessMode.READ.name());
+	}
+
+	@Expression(name = "buildAccessFilter", description = "Builds the access filter for a mode — read, write or manage — from caller permissions and domain definition. Grants to read count for read, grants to write for write, none for manage (delete, re-share).")
+	public static Optional<IFilter> buildAccessFilter(Object caller, Object filter, Object context, Object mode) {
 		Optional<ICaller> castedCaller = (Optional<ICaller>) caller;
 		IDomain<?> dc = toDomain(context);
 		IDomainDefinition<?> domainDef = dc.getDomainDefinition();
 		Optional<IFilter> baseFilter = (Optional<IFilter>) filter;
-		return Optional.ofNullable(
-				RepositoryFilterTools.buildFilter(castedCaller.orElse(null), baseFilter.orElse(null), domainDef, dc.isMultiTenant()));
+		return Optional.ofNullable(RepositoryFilterTools.buildFilter(castedCaller.orElse(null),
+				baseFilter.orElse(null), domainDef, dc.isMultiTenant(), accessMode(mode)));
+	}
+
+	private static AccessMode accessMode(Object mode) {
+		Object unwrapped = unwrapOptional(mode);
+		return AccessMode.of(unwrapped == null ? null : unwrapped.toString());
 	}
 
 	@Expression(name = "getEntities", description = "Retrieves entities from repository with pagination, filtering and sorting")
@@ -311,8 +322,14 @@ public class CrudExpressions {
 		return List.of(value);
 	}
 
-	@Expression(name = "buildGetOneFilter", description = "Builds a filter for single entity lookup by uuid or id, combined with access control filter")
+	@Expression(name = "buildGetOneFilter", description = "Builds a filter for single entity lookup by uuid or id, combined with the READ access filter")
 	public static Optional<IFilter> buildGetOneFilter(Object caller, Object type, Object identifier, Object context) {
+		return buildGetOneAccessFilter(caller, type, identifier, context, AccessMode.READ.name());
+	}
+
+	@Expression(name = "buildGetOneAccessFilter", description = "Builds a filter for single entity lookup by uuid or id, combined with the access filter for a mode: read, write or manage")
+	public static Optional<IFilter> buildGetOneAccessFilter(Object caller, Object type, Object identifier, Object context,
+			Object mode) {
 		Optional<ICaller> castedCaller = (Optional<ICaller>) caller;
 		String typeStr = unwrapOptional(type) != null ? unwrapOptional(type).toString() : "uuid";
 		String identifierStr = unwrapOptional(identifier) != null ? unwrapOptional(identifier).toString() : null;
@@ -320,7 +337,8 @@ public class CrudExpressions {
 		IDomain<?> dc = toDomain(context);
 		IDomainDefinition<?> domainDef = dc.getDomainDefinition();
 
-		IFilter accessFilter = RepositoryFilterTools.buildFilter(castedCaller.orElse(null), null, domainDef, dc.isMultiTenant());
+		IFilter accessFilter = RepositoryFilterTools.buildFilter(castedCaller.orElse(null), null, domainDef,
+				dc.isMultiTenant(), accessMode(mode));
 
 		IEntityDefinition<?> entityDef = dc.getEntityDefinition();
 		IFilter identifierFilter;

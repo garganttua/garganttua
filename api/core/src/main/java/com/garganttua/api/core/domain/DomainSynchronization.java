@@ -42,7 +42,8 @@ final class DomainSynchronization {
 		return BusinessOperation.create.getLabel().equals(label)
 				|| BusinessOperation.update.getLabel().equals(label)
 				|| BusinessOperation.deleteOne.getLabel().equals(label)
-				|| BusinessOperation.deleteAll.getLabel().equals(label);
+				|| BusinessOperation.deleteAll.getLabel().equals(label)
+				|| BusinessOperation.share.getLabel().equals(label);
 	}
 
 	/**
