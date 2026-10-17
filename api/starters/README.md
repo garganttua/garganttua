@@ -25,12 +25,12 @@ The family is **composable**: a code-bearing socle (`bootstrap`) carries the run
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-starters</artifactId>
-    <version>3.0.0-ALPHA26</version>
+    <version>3.0.0-ALPHA27</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA26
+3.0.0-ALPHA27
 
 ### Dependencies
 
