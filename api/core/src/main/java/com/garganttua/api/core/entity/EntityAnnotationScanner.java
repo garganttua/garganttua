@@ -37,6 +37,7 @@ import com.garganttua.api.commons.entity.annotations.EntityOwned;
 import com.garganttua.api.commons.entity.annotations.EntityOwner;
 import com.garganttua.api.commons.entity.annotations.EntityPublic;
 import com.garganttua.api.commons.entity.annotations.EntityShared;
+import com.garganttua.api.commons.entity.annotations.EntityShares;
 import com.garganttua.api.commons.entity.annotations.EntitySuperOwner;
 import com.garganttua.api.commons.entity.annotations.EntitySuperTenant;
 import com.garganttua.api.commons.entity.annotations.EntityTenant;
@@ -75,7 +76,7 @@ import com.garganttua.core.observability.Logger;
  *   <li>Pairs it with a matching {@link Dto} (via {@code @Dto.entityClass()}).</li>
  *   <li>Registers the domain with CRUD flags from {@code @Entity}.</li>
  *   <li>Applies type-level markers ({@link EntityPublic}, {@link EntityTenant},
- *       {@link EntityOwner}, {@link EntityOwned}, {@link EntityShared},
+ *       {@link EntityOwner}, {@link EntityOwned}, {@link EntityShared}, {@link EntityShares},
  *       {@link EntityHiddenable}, {@link EntityGeolocalized}).</li>
  *   <li>Applies field-level markers ({@link EntityId}, {@link EntityUuid},
  *       {@link EntityTenantId}, {@link EntitySuperOwner}, {@link EntitySuperTenant},
@@ -289,6 +290,10 @@ public final class EntityAnnotationScanner {
         EntityShared sharedAnno = entityClass.getAnnotation(IClass.getClass(EntityShared.class));
         if (sharedAnno != null && !sharedAnno.share().isEmpty()) {
             domain.shared(sharedAnno.share());
+        }
+        EntityShares sharesAnno = entityClass.getAnnotation(IClass.getClass(EntityShares.class));
+        if (sharesAnno != null && !sharesAnno.value().isEmpty()) {
+            domain.shares(sharesAnno.value());
         }
         EntityHiddenable hiddenableAnno = entityClass.getAnnotation(IClass.getClass(EntityHiddenable.class));
         if (hiddenableAnno != null && !hiddenableAnno.hidden().isEmpty()) {

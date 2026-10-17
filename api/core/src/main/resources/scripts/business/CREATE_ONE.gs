@@ -42,11 +42,11 @@ entity <- ensureUuid(@entity, @2)
 ! => recordCaughtException(@0, @exception) -> 500
 
 // Set tenantId from caller
-entity <- ensureTenantId(@entity, @caller, @2)
+entity <- ensureTenantId(@entity, @caller, @2, @0)
 ! => recordCaughtException(@0, @exception) -> 500
 
 // Set ownerId from caller (owned domains only; no-op otherwise)
-entity <- ensureOwnerId(@entity, @caller, @2)
+entity <- ensureOwnerId(@entity, @caller, @2, @0)
 ! => recordCaughtException(@0, @exception) -> 500
 
 // Validate mandatory fields

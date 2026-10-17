@@ -58,6 +58,10 @@ public class SerializationExpressions {
 		if (opDef.type() == OperationType.authentication) {
 			return IClass.getClass(com.garganttua.api.core.security.authentication.AuthenticationRequest.class);
 		}
+		// share carries the grants, not the entity.
+		if (opDef.type() == OperationType.share) {
+			return IClass.getClass(com.garganttua.api.core.entity.ShareRequest.class);
+		}
 		// A use case deserializes its body to its declared input type (the @UseCaseInput target),
 		// not the domain entity.
 		if (opDef.type() == OperationType.usesCase && opDef.useCase() != null && opDef.useCase().inputType() != null) {

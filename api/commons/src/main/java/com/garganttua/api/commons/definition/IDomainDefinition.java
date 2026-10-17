@@ -30,6 +30,15 @@ public interface IDomainDefinition<E> {
 
     ObjectAddress shared();
 
+    /**
+     * The grants field ({@code .shares(field)}): a list of
+     * {@link com.garganttua.api.commons.entity.ShareGrant} tokens, or {@code null} when the domain
+     * declares none.
+     */
+    default ObjectAddress shares() {
+        return null;
+    }
+
     ObjectAddress hiddenable();
 
     ObjectAddress geolocalized();

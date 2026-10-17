@@ -36,6 +36,7 @@ public record DomainDefinition<E>(
         ObjectAddress owner,
         ObjectAddress owned,
         ObjectAddress shared,
+        ObjectAddress shares,
         ObjectAddress hiddenable,
         ObjectAddress geolocalized,
         ObjectAddress superOwner,
@@ -85,6 +86,7 @@ public record DomainDefinition<E>(
         addCrudIfPresent(ops, BusinessOperation.update, OperationDefinition::updateOne, entityClass);
         addCrudIfPresent(ops, BusinessOperation.deleteOne, OperationDefinition::deleteOne, entityClass);
         addCrudIfPresent(ops, BusinessOperation.deleteAll, OperationDefinition::deleteAll, entityClass);
+        addCrudIfPresent(ops, BusinessOperation.share, OperationDefinition::share, entityClass);
     }
 
     @FunctionalInterface

@@ -24,7 +24,9 @@ requirePresent(@entity)
 entity <- optionalGet(@entity)
 
 // Find existing entity by uuid/id
-filter <- buildGetOneFilter(@caller, @lookupType, @lookupId, @2)
+// WRITE access: the caller's own rows, plus the rows shared with it for writing (a read grant
+// lets one see a row, not change it).
+filter <- buildGetOneAccessFilter(@caller, @lookupType, @lookupId, @2, "write")
 ! => recordCaughtException(@0, @exception) -> 500
 
 entities <- getEntities(@1, :arg(@0, "pageable"), @filter, :arg(@0, "sort"))

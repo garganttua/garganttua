@@ -197,8 +197,7 @@ public class RequestBuilder implements IRequestBuilder {
 	public IRequestBuilder readOne(String uuid) {
 		operation(resolveOperation(BusinessOperation.readOne,
 				OperationDefinition::readOneWithStandardSecurity));
-		param("type", "uuid");
-		param("identifier", uuid);
+		byUuid(uuid);
 		return this;
 	}
 
@@ -213,8 +212,7 @@ public class RequestBuilder implements IRequestBuilder {
 	public IRequestBuilder updateOne(String uuid, Object body) {
 		operation(resolveOperation(BusinessOperation.update,
 				OperationDefinition::updateOneWithStandardSecurity));
-		param("type", "uuid");
-		param("identifier", uuid);
+		byUuid(uuid);
 		param("entity", body);
 		return this;
 	}
@@ -223,9 +221,23 @@ public class RequestBuilder implements IRequestBuilder {
 	public IRequestBuilder deleteOne(String uuid) {
 		operation(resolveOperation(BusinessOperation.deleteOne,
 				OperationDefinition::deleteOneWithStandardSecurity));
+		byUuid(uuid);
+		return this;
+	}
+
+	@Override
+	public IRequestBuilder share(String uuid, java.util.List<String> grants) {
+		operation(resolveOperation(BusinessOperation.share, (domain, entity) -> OperationDefinition.share(domain,
+				entity, true, null, com.garganttua.api.commons.operation.Access.authenticated)));
+		byUuid(uuid);
+		param("entity", grants);
+		return this;
+	}
+
+	/** Addresses one entity by its uuid, as the identifier-taking scripts read it. */
+	private void byUuid(String uuid) {
 		param("type", "uuid");
 		param("identifier", uuid);
-		return this;
 	}
 
 	@Override

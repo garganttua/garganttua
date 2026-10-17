@@ -158,6 +158,7 @@ final class ApiSummary {
 		if (Boolean.TRUE.equals(def.publik())) flags.add("public");
 		if (def.owned() != null) flags.add("owned");
 		if (def.shared() != null) flags.add("shared");
+		if (def.shares() != null) flags.add("shares");
 		if (def.hiddenable() != null) flags.add("hiddenable");
 		if (def.geolocalized() != null) flags.add("geolocalized");
 		if (def.superOwner() != null) flags.add("superOwner");

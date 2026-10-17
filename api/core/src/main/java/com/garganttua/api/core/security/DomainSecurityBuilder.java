@@ -185,6 +185,11 @@ public class DomainSecurityBuilder<E>
         return setCrudAccess(BusinessOperation.deleteAll.getLabel(), access);
     }
 
+    @Override
+    public IDomainSecurityBuilder<E> shareAccess(Access access) {
+        return setCrudAccess(BusinessOperation.share.getLabel(), access);
+    }
+
     // --- CRUD authority (boolean) ---
 
     private IDomainSecurityBuilder<E> setCrudAuthority(String label, boolean authority) {
@@ -227,6 +232,11 @@ public class DomainSecurityBuilder<E>
         return setCrudAuthority(BusinessOperation.deleteAll.getLabel(), authority);
     }
 
+    @Override
+    public IDomainSecurityBuilder<E> shareAuthority(boolean authority) {
+        return setCrudAuthority(BusinessOperation.share.getLabel(), authority);
+    }
+
     // --- CRUD authority (custom String) ---
 
     private IDomainSecurityBuilder<E> setCrudAuthority(String label, String customAuthority) {
@@ -267,6 +277,11 @@ public class DomainSecurityBuilder<E>
     @Override
     public IDomainSecurityBuilder<E> deleteAllAuthority(String authority) {
         return setCrudAuthority(BusinessOperation.deleteAll.getLabel(), authority);
+    }
+
+    @Override
+    public IDomainSecurityBuilder<E> shareAuthority(String authority) {
+        return setCrudAuthority(BusinessOperation.share.getLabel(), authority);
     }
 
 }

@@ -17,7 +17,9 @@ requirePresent(@caller)
 ! => recordCaughtException(@0, @exception) -> 400
 
 // Build access filter (tenant/owner isolation)
-filter <- buildFilter(@caller, @filter, @2)
+// MANAGE access: the caller's own rows only, so a bulk delete never reaches rows another
+// tenant shared with it, nor (on a public domain) another tenant's rows.
+filter <- buildAccessFilter(@caller, @filter, @2, "manage")
 ! => recordCaughtException(@0, @exception) -> 500
 
 // Fetch entities to delete

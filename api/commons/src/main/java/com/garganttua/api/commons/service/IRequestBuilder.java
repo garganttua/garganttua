@@ -88,6 +88,13 @@ public interface IRequestBuilder {
 
 	IRequestBuilder deleteAll();
 
+	/**
+	 * Replaces the grants of the entity {@code uuid}: after the call it is shared with exactly
+	 * {@code grants}, {@link com.garganttua.api.commons.entity.ShareGrant} tokens ({@code []} stops
+	 * sharing it). Only the entity's own tenant and owner may do it.
+	 */
+	IRequestBuilder share(String uuid, java.util.List<String> grants);
+
 	// --- Build & execute ---
 
 	IRequest build();

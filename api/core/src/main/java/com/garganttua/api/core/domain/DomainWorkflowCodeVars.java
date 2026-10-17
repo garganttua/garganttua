@@ -15,16 +15,17 @@ import com.garganttua.api.commons.operation.BusinessOperation;
 final class DomainWorkflowCodeVars {
 
 	/** CRUD/business operation label → workflow script classpath (membership + lookup). */
-	static final Map<String, String> CRUD_SCRIPT_PATHS = Map.of(
-			BusinessOperation.create.getLabel(), "scripts/business/CREATE_ONE.gs",
-			BusinessOperation.readAll.getLabel(), "scripts/business/READ_ALL.gs",
-			BusinessOperation.readOne.getLabel(), "scripts/business/READ_ONE.gs",
-			BusinessOperation.readSelf.getLabel(), "scripts/business/READ_SELF.gs",
-			BusinessOperation.update.getLabel(), "scripts/business/UPDATE_ONE.gs",
-			BusinessOperation.deleteOne.getLabel(), "scripts/business/DELETE_ONE.gs",
-			BusinessOperation.deleteAll.getLabel(), "scripts/business/DELETE_ALL.gs",
-			BusinessOperation.authenticate.getLabel(), "scripts/business/AUTHENTICATE.gs",
-			BusinessOperation.refreshAuthorization.getLabel(), "scripts/business/REFRESH_AUTHORIZATION.gs"
+	static final Map<String, String> CRUD_SCRIPT_PATHS = Map.ofEntries(
+			Map.entry(BusinessOperation.share.getLabel(), "scripts/business/SHARE.gs"),
+			Map.entry(BusinessOperation.create.getLabel(), "scripts/business/CREATE_ONE.gs"),
+			Map.entry(BusinessOperation.readAll.getLabel(), "scripts/business/READ_ALL.gs"),
+			Map.entry(BusinessOperation.readOne.getLabel(), "scripts/business/READ_ONE.gs"),
+			Map.entry(BusinessOperation.readSelf.getLabel(), "scripts/business/READ_SELF.gs"),
+			Map.entry(BusinessOperation.update.getLabel(), "scripts/business/UPDATE_ONE.gs"),
+			Map.entry(BusinessOperation.deleteOne.getLabel(), "scripts/business/DELETE_ONE.gs"),
+			Map.entry(BusinessOperation.deleteAll.getLabel(), "scripts/business/DELETE_ALL.gs"),
+			Map.entry(BusinessOperation.authenticate.getLabel(), "scripts/business/AUTHENTICATE.gs"),
+			Map.entry(BusinessOperation.refreshAuthorization.getLabel(), "scripts/business/REFRESH_AUTHORIZATION.gs")
 	);
 
 	private DomainWorkflowCodeVars() {

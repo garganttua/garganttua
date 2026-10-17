@@ -33,6 +33,7 @@ import com.garganttua.api.core.expression.EntityLifecycleExpressions;
 import com.garganttua.api.core.expression.ProtocolExpressions;
 import com.garganttua.api.core.expression.SecurityExpressions;
 import com.garganttua.api.core.expression.SerializationExpressions;
+import com.garganttua.api.core.expression.ShareExpressions;
 import com.garganttua.api.core.expression.SynchronizationExpressions;
 import com.garganttua.api.core.filter.Filter;
 import com.garganttua.api.core.mapper.DefaultMapper;
@@ -136,6 +137,7 @@ public class ApiCoreInfrastructureSeed implements IAOTInfrastructureSeed {
         context.registerClass(ProtocolExpressions.class);
         context.registerClass(SecurityExpressions.class);
         context.registerClass(SerializationExpressions.class);
+        context.registerClass(ShareExpressions.class);
         context.registerClass(SynchronizationExpressions.class);
     }
 }

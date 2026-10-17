@@ -9,6 +9,7 @@ public enum BusinessOperation {
     readSelf("readSelf"),
     deleteOne("deleteOne"),
     deleteAll("deleteAll"),
+    share("share"),
     authenticate("authenticate"),
     refreshAuthorization("refreshAuthorization"),
     useCase("useCase"),

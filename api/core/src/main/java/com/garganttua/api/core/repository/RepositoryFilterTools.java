@@ -7,20 +7,32 @@ import java.util.List;
 
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.definition.IDomainDefinition;
+import com.garganttua.api.commons.entity.ShareGrant;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.core.reflection.ObjectAddress;
 
 import com.garganttua.core.observability.Logger;
 
 /**
- * Utility class for building repository filters based on caller permissions and domain definition.
+ * Builds the filter that scopes a repository access to what the caller may see or change.
  *
- * This class handles the complex logic of combining filters for:
- * - Tenant isolation
- * - Owner-based access control
- * - Shared entities
- * - Hidden/visible entities
- * - Public entities
+ * <p>
+ * A row is reachable through one of two branches:
+ * </p>
+ * <ul>
+ * <li><b>its own</b> — the row is in the caller's (requested) tenant and, on an owned domain, belongs
+ * to the caller. A super owner skips the owner part. A caller without an ownerId, on an owned domain,
+ * reaches only the rows that belong to no owner;</li>
+ * <li><b>a grant</b> — the row is shared with the caller's tenant or with the caller itself: the legacy
+ * {@code .shared(field)} (a tenant, read only) or the {@code .shares(field)} grant tokens
+ * ({@link ShareGrant}). A grant to a tenant opens the row to every owner of that tenant. On a
+ * hiddenable domain a grant reaches only visible rows.</li>
+ * </ul>
+ * <p>
+ * The {@link AccessMode} picks the grants that count: every grant to read, write grants to change,
+ * none to delete or re-share. A public domain is readable as before; only {@link AccessMode#MANAGE}
+ * narrows it to the caller's own rows, so one tenant's bulk delete cannot reach another's.
+ * </p>
  */
 @SuppressWarnings("PMD.AvoidLiteralsInIfCondition")
 public class RepositoryFilterTools {
@@ -32,140 +44,150 @@ public class RepositoryFilterTools {
     }
 
     /**
-     * Builds a composite filter based on caller permissions and domain definition.
+     * Builds the READ filter, multi-tenancy on.
      *
      * @param caller The caller making the request
-     * @param domainDefinition The domain definition with entity configuration
      * @param baseFilter Optional base filter to include
+     * @param domainDefinition The domain definition with entity configuration
      * @return The composed filter, or null if no filtering needed
      */
     public static IFilter buildFilter(ICaller caller, IFilter baseFilter, IDomainDefinition<?> domainDefinition) {
         return buildFilter(caller, baseFilter, domainDefinition, true);
     }
 
+    /** Builds the READ filter. */
     public static IFilter buildFilter(ICaller caller, IFilter baseFilter, IDomainDefinition<?> domainDefinition, boolean multiTenant) {
+        return buildFilter(caller, baseFilter, domainDefinition, multiTenant, AccessMode.READ);
+    }
+
+    /**
+     * Builds the filter scoping {@code mode} for {@code caller}.
+     *
+     * @param caller the caller making the request; null leaves {@code baseFilter} alone
+     * @param baseFilter optional filter the request carries, ANDed with the access filter
+     * @param domainDefinition the domain definition with entity configuration
+     * @param multiTenant whether the API isolates tenants
+     * @param mode what the caller is about to do with the selected rows
+     * @return the composed filter, or null if no filtering is needed
+     */
+    public static IFilter buildFilter(ICaller caller, IFilter baseFilter, IDomainDefinition<?> domainDefinition,
+            boolean multiTenant, AccessMode mode) {
         if (caller == null) {
             return baseFilter;
         }
-        log.debug("Building filter for domain {} with caller tenantId={}, ownerId={}, multiTenant={}",
-                    domainDefinition.domainName(), caller.requestedTenantId(), caller.ownerId(), multiTenant);
+        log.debug("Building {} filter for domain {} with caller tenantId={}, ownerId={}, multiTenant={}",
+                    mode, domainDefinition.domainName(), caller.requestedTenantId(), caller.ownerId(), multiTenant);
 
-        FilterContext filterContext = new FilterContext(caller, domainDefinition, multiTenant);
+        FilterContext ctx = new FilterContext(caller, domainDefinition, multiTenant);
 
         // Super tenant without specific tenant ID bypasses tenant filtering
-        if (filterContext.isSuperTenantWithoutTenant()) {
+        if (ctx.isSuperTenantWithoutTenant()) {
             log.debug("Super tenant access without tenant restriction");
             return baseFilter;
         }
 
         List<Filter> filters = new ArrayList<>();
-
-        // Add base filter if provided
         if (baseFilter instanceof Filter filter) {
             filters.add(filter);
         }
-
-        // Build tenant/visibility filter
-        Filter accessFilter = buildAccessFilter(filterContext);
-        if (accessFilter != null) {
-            filters.add(accessFilter);
+        Filter access = ctx.isPublicEntity ? publicAccess(ctx, mode) : privateAccess(ctx, mode);
+        if (access != null) {
+            filters.add(access);
         }
-
-        // Build owner filter
-        Filter ownerFilter = buildOwnerFilter(filterContext);
-        if (ownerFilter != null) {
-            filters.add(ownerFilter);
-        }
-
-        return combineFilters(filters);
+        return all(filters);
     }
 
     /**
-     * Builds the access filter based on tenant, visibility, and sharing rules.
+     * A public domain, as it always behaved for reads and updates: (own tenant OR visible) when
+     * hiddenable, everything otherwise — narrowed to the caller's rows on an owned domain. MANAGE
+     * keeps to the own branch.
      */
-    private static Filter buildAccessFilter(FilterContext ctx) {
-        if (ctx.isPublicEntity && ctx.isHiddenableEntity) {
-            return buildPublicHiddenableFilter(ctx);
-        } else if (!ctx.isPublicEntity && ctx.isHiddenableEntity) {
-            return buildPrivateHiddenableFilter(ctx);
-        } else if (!ctx.isPublicEntity && !ctx.isHiddenableEntity) {
-            return buildPrivateVisibleFilter(ctx);
+    private static Filter publicAccess(FilterContext ctx, AccessMode mode) {
+        if (mode == AccessMode.MANAGE) {
+            return ownBranch(ctx);
         }
-        return null;
+        List<Filter> parts = new ArrayList<>();
+        if (ctx.isHiddenableEntity) {
+            Filter tenantFilter = ctx.buildTenantFilter();
+            Filter visibleFilter = ctx.buildVisibleFilter();
+            Filter visibility = tenantFilter != null && visibleFilter != null
+                    ? Filter.or(tenantFilter, visibleFilter) : visibleFilter;
+            addIfPresent(parts, visibility);
+        }
+        if (ctx.isOwnedEntity && !ctx.isSuperOwner && ctx.ownerId != null) {
+            parts.add(ctx.buildOwnerIdFilter());
+        }
+        return all(parts);
     }
 
-    /**
-     * Filter for public entities that can be hidden.
-     * Shows: tenant's own entities OR visible entities
-     */
-    private static Filter buildPublicHiddenableFilter(FilterContext ctx) {
-        Filter tenantFilter = ctx.buildTenantFilter();
-        Filter visibleFilter = ctx.buildVisibleFilter();
-
-        if (tenantFilter != null && visibleFilter != null) {
-            return Filter.or(tenantFilter, visibleFilter);
-        }
-        return visibleFilter;
-    }
-
-    /**
-     * Filter for private entities that can be hidden.
-     * Shows: (visible AND shared) OR tenant's own entities
-     */
-    private static Filter buildPrivateHiddenableFilter(FilterContext ctx) {
-        Filter tenantFilter = ctx.buildTenantFilter();
-        Filter visibleFilter = ctx.buildVisibleFilter();
-        Filter shareFilter = ctx.buildShareFilter();
-
-        if (ctx.isSharedEntity && visibleFilter != null && shareFilter != null) {
-            Filter visibleAndShared = visibleFilter.andOperator(shareFilter);
-            if (tenantFilter != null) {
-                return visibleAndShared.orOperator(tenantFilter);
-            }
-            return visibleAndShared;
-        }
-        return tenantFilter;
-    }
-
-    /**
-     * Filter for private entities that are always visible.
-     * Shows: shared entities OR tenant's own entities
-     */
-    private static Filter buildPrivateVisibleFilter(FilterContext ctx) {
-        Filter tenantFilter = ctx.buildTenantFilter();
-        Filter shareFilter = ctx.buildShareFilter();
-
-        if (ctx.isSharedEntity && shareFilter != null) {
-            if (tenantFilter != null) {
-                return shareFilter.orOperator(tenantFilter);
-            }
-            return shareFilter;
-        }
-        return tenantFilter;
-    }
-
-    /**
-     * Builds the owner filter for owned entities.
-     */
-    private static Filter buildOwnerFilter(FilterContext ctx) {
-        if (!ctx.isOwnedEntity || ctx.isSuperOwner) {
+    /** A private domain: the caller's own rows, OR the rows a grant valid for {@code mode} opens. */
+    private static Filter privateAccess(FilterContext ctx, AccessMode mode) {
+        Filter own = ownBranch(ctx);
+        if (own == null) {
+            // Nothing restricts the caller's own branch: every row is already its own.
             return null;
         }
-        return ctx.buildOwnerIdFilter();
+        Filter grants = grants(ctx, mode);
+        if (grants == null) {
+            return own;
+        }
+        Filter visibleFilter = ctx.isHiddenableEntity ? ctx.buildVisibleFilter() : null;
+        if (visibleFilter != null) {
+            grants = Filter.and(visibleFilter, grants);
+        }
+        return Filter.or(own, grants);
     }
 
-    /**
-     * Combines multiple filters into a single AND filter.
-     */
-    private static IFilter combineFilters(List<Filter> filters) {
+    /** The caller's own rows: its tenant, and on an owned domain itself. Null when nothing restricts. */
+    private static Filter ownBranch(FilterContext ctx) {
+        List<Filter> parts = new ArrayList<>();
+        addIfPresent(parts, ctx.buildTenantFilter());
+        if (ctx.isOwnedEntity && !ctx.isSuperOwner) {
+            parts.add(ctx.buildOwnerIdFilter());
+        }
+        return all(parts);
+    }
+
+    /** The grants that count for {@code mode}, ORed; null when none apply. */
+    private static Filter grants(FilterContext ctx, AccessMode mode) {
+        if (mode == AccessMode.MANAGE) {
+            return null;
+        }
+        List<Filter> grants = new ArrayList<>();
+        if (mode == AccessMode.READ) {
+            addIfPresent(grants, ctx.buildShareFilter());
+        }
+        ObjectAddress sharesField = ctx.domainDefinition.shares();
+        if (sharesField != null) {
+            String tenant = ctx.multiTenant ? ctx.requestedTenantId : null;
+            List<String> tokens = mode == AccessMode.READ
+                    ? ShareGrant.readTokens(tenant, ctx.ownerId)
+                    : ShareGrant.writeTokens(tenant, ctx.ownerId);
+            if (!tokens.isEmpty()) {
+                grants.add(Filter.in(sharesField.toString(), tokens.toArray()));
+            }
+        }
+        if (grants.isEmpty()) {
+            return null;
+        }
+        return grants.size() == 1 ? grants.get(0) : Filter.or(grants.toArray(new Filter[0]));
+    }
+
+    private static void addIfPresent(List<Filter> filters, Filter filter) {
+        if (filter != null) {
+            filters.add(filter);
+        }
+    }
+
+    /** ANDs the filters: null when there are none, the filter itself when there is one. */
+    private static Filter all(List<Filter> filters) {
         if (filters.isEmpty()) {
             return null;
         }
         if (filters.size() == 1) {
             return filters.get(0);
         }
-        Filter combined = Filter.and(filters.toArray(new Filter[0]));
-        return combined;
+        return Filter.and(filters.toArray(new Filter[0]));
     }
 
     /**
@@ -279,12 +301,12 @@ public class RepositoryFilterTools {
             return Filter.eq(hiddenField.toString(), false);
         }
 
+        /**
+         * The rows that belong to the caller. A caller without an ownerId owns nothing: it reaches
+         * only the rows that belong to no owner, never every owner's rows of its tenant.
+         */
         Filter buildOwnerIdFilter() {
-            ObjectAddress ownedField = domainDefinition.owned();
-            if (ownerId == null || ownedField == null) {
-                return null;
-            }
-            return Filter.eq(ownedField.toString(), ownerId);
+            return Filter.eq(domainDefinition.owned().toString(), ownerId);
         }
     }
 }

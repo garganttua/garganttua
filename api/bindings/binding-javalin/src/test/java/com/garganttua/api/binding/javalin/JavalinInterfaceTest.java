@@ -475,6 +475,30 @@ class JavalinInterfaceTest {
 		}
 
 		@Test
+		@DisplayName("PUT /users/{uuid}/shares → share, uuid + body captured, distinct from update")
+		void putShares() throws Exception {
+			List<OperationDefinition> withShare = new java.util.ArrayList<>(standardOperations());
+			withShare.add(OperationDefinition.share("users", fakeEntityClass(), true, null,
+					com.garganttua.api.commons.operation.Access.authenticated));
+			startWith(withShare);
+
+			HttpResponse<String> resp = send("PUT", "/users/u-5/shares", "{\"grants\":[\"r:tenant:B\"]}");
+
+			assertEquals(200, resp.statusCode());
+			assertEquals("ok:share", resp.body());
+			assertEquals(BusinessOperation.share, domain.lastOperation.getBusinessOperation());
+			assertEquals("u-5", domain.lastUuid);
+			assertArrayEquals("{\"grants\":[\"r:tenant:B\"]}".getBytes(StandardCharsets.UTF_8), domain.lastBody);
+		}
+
+		@Test
+		@DisplayName("no share operation on the domain → /users/{uuid}/shares is not routed")
+		void sharesAbsentWithoutGrantsField() throws Exception {
+			assertEquals(404, send("PUT", "/users/u-5/shares", "{}").statusCode());
+			assertEquals(0, domain.invokeCount);
+		}
+
+		@Test
 		@DisplayName("DELETE /users → deleteAll, no uuid")
 		void deleteAll() throws Exception {
 			HttpResponse<String> resp = send("DELETE", "/users", null);

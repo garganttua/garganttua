@@ -162,8 +162,8 @@ class EnsureOwnerIdIntegrationTest extends AbstractCrudScriptTest {
 	}
 
 	@Test
-	@DisplayName("a pre-populated ownerId is preserved, not overwritten by the caller")
-	void preservesExplicitOwnerId() throws ApiException {
+	@DisplayName("a regular owner cannot create for someone else: a pre-populated ownerId is overwritten")
+	void overwritesForgedOwnerId() throws ApiException {
 		Doc doc = new Doc();
 		doc.setTitle("spec");
 		doc.setOwnerId("users:explicit-owner");
@@ -176,7 +176,27 @@ class EnsureOwnerIdIntegrationTest extends AbstractCrudScriptTest {
 		assertTrue(result.isSuccess(), "create should succeed");
 
 		Doc out = (Doc) result.output();
+		assertEquals("users:owner-1", out.getOwnerId(),
+				"a regular owner always creates for itself, whatever the body says");
+	}
+
+	@Test
+	@DisplayName("a super owner may create for another owner: a pre-populated ownerId is preserved")
+	void superOwnerPreservesExplicitOwnerId() throws ApiException {
+		Doc doc = new Doc();
+		doc.setTitle("spec");
+		doc.setOwnerId("users:explicit-owner");
+
+		OperationRequest request = createRequest();
+		request.arg(IOperationRequest.OWNER_ID, "users:owner-1");
+		request.arg(IOperationRequest.SUPER_OWNER, true);
+		request.arg("entity", doc);
+
+		WorkflowResult result = executeScript(docCtx, request);
+		assertTrue(result.isSuccess(), "create should succeed");
+
+		Doc out = (Doc) result.output();
 		assertEquals("users:explicit-owner", out.getOwnerId(),
-				"an explicitly-set ownerId must be preserved, not overwritten");
+				"a super owner chooses the owner of what it creates");
 	}
 }

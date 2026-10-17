@@ -273,6 +273,8 @@ public class JavalinInterface implements IInterface {
 		record(mounted, route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true));
 		record(mounted, route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true));
 		record(mounted, route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false));
+		// The grants of one entity, present when the domain declares .shares(field).
+		record(mounted, route(server, HttpVerb.PUT, one + "/shares", domain, configured, BusinessOperation.share, true));
 
 		// Authentication entry point (anonymous): the credentials travel in the body as
 		// an AuthenticationRequest. Registered only when the domain has an authenticator

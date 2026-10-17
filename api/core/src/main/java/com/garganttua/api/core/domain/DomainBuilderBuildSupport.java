@@ -75,7 +75,7 @@ final class DomainBuilderBuildSupport {
                 b.publik, b.tenant,
                 DomainBuilderBuildSupport.<E>castEntities(b.createEntities),
                 DomainBuilderBuildSupport.<E>castEntities(b.upsertEntities),
-                b.owner, b.owned, b.shared, b.hiddenable, b.geolocalized,
+                b.owner, b.owned, b.shared, b.shares, b.hiddenable, b.geolocalized,
                 b.superOwner, b.superTenant,
                 useCaseDefinitions, workflowDefinitions, securityDefinition, keyDefinition);
     }
