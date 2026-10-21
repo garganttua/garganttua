@@ -41,6 +41,7 @@ public class Event implements IEvent {
 	private String userId;
 	private String exceptionMessage;
 	private OperationResponseCode code;
+	private String entityUuid;
 
 	@Override public OperationDefinition getOperation() { return this.operation; }
 	@Override public void setOperation(OperationDefinition operation) { this.operation = operation; }
@@ -80,6 +81,9 @@ public class Event implements IEvent {
 
 	@Override public OperationResponseCode getCode() { return this.code; }
 	@Override public void setCode(OperationResponseCode code) { this.code = code; }
+
+	@Override public String getEntityUuid() { return this.entityUuid; }
+	@Override public void setEntityUuid(String entityUuid) { this.entityUuid = entityUuid; }
 
 	@Override
 	public IOperationResponse toServiceResponse() {

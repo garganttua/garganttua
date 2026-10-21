@@ -3,6 +3,7 @@ package com.garganttua.events.core;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.mutex.IMutexManager;
@@ -16,6 +17,7 @@ import com.garganttua.core.workflow.WorkflowInput;
 import com.garganttua.core.workflow.WorkflowResult;
 import com.garganttua.events.api.Exchange;
 import com.garganttua.events.api.IConnector;
+import com.garganttua.events.api.IAcknowledgingConsumer;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.context.DataflowDef;
@@ -78,6 +80,27 @@ final class RouteMessageProcessor {
 		routeDispatchers.add(dispatcher);
 		RouteHandlers handlers = resolveHandlers(routeDef, runtime);
 		try {
+			if (consumer instanceof IAcknowledgingConsumer acknowledging) {
+				// The connector acknowledges once the route has run: hand it the outcome of each message.
+				acknowledging.startAcknowledged(rawBytes -> {
+					Exchange exchange = Exchange.create(
+							fromSub.connector(), fromSub.topic(),
+							fromDf != null ? fromDf.uuid() : null, rawBytes);
+					Map<String, Object> params = new HashMap<>();
+					params.put("exchange", exchange);
+					WorkflowInput input = WorkflowInput.of(exchange, params);
+					CompletableFuture<Boolean> outcome = new CompletableFuture<>();
+					dispatcher.dispatch(() -> {
+						try {
+							outcome.complete(processMessage(routeDef.uuid(), workflow, input, exchange, handlers));
+						} catch (RuntimeException e) {
+							outcome.complete(Boolean.FALSE);
+						}
+					});
+					return outcome;
+				});
+				return;
+			}
 			consumer.start(rawBytes -> {
 				Exchange exchange = Exchange.create(
 						fromSub.connector(), fromSub.topic(),
@@ -98,34 +121,38 @@ final class RouteMessageProcessor {
 	 * routes the exchange to the error subscription when the workflow fails or throws — honouring
 	 * {@code RouteDef.synchronization} and {@code RouteDef.exceptions}.
 	 */
-	private void processMessage(String routeUuid, IWorkflow workflow, WorkflowInput input,
+	private boolean processMessage(String routeUuid, IWorkflow workflow, WorkflowInput input,
 			Exchange exchange, RouteHandlers handlers) {
 		if (handlers.mutex() == null) {
-			executeAndHandle(routeUuid, workflow, input, exchange, handlers);
-			return;
+			return executeAndHandle(routeUuid, workflow, input, exchange, handlers);
 		}
 		try {
-			handlers.mutex().acquire(() -> {
-				executeAndHandle(routeUuid, workflow, input, exchange, handlers);
-				return null;
-			});
+			Boolean ok = handlers.mutex().acquire(() -> executeAndHandle(routeUuid, workflow, input, exchange, handlers));
+			return Boolean.TRUE.equals(ok);
 		} catch (MutexException e) {
 			log.error("Route {}: synchronized execution failed under its mutex", routeUuid, e);
 			routeToError(routeUuid, exchange, handlers.errorProducer());
+			return false;
 		}
 	}
 
-	/** Runs the workflow and dead-letters on failure; never throws (so it is safe inside a mutex). */
-	private void executeAndHandle(String routeUuid, IWorkflow workflow, WorkflowInput input,
+	/**
+	 * Runs the workflow and dead-letters on failure; never throws (so it is safe inside a mutex). Returns whether the
+	 * route succeeded — what an {@link IAcknowledgingConsumer} acknowledges on.
+	 */
+	private boolean executeAndHandle(String routeUuid, IWorkflow workflow, WorkflowInput input,
 			Exchange exchange, RouteHandlers handlers) {
 		try {
 			WorkflowResult result = routeObserver.execute(routeUuid, workflow, input, exchange);
 			if (result == null || !result.isSuccess()) {
 				routeToError(routeUuid, exchange, handlers.errorProducer());
+				return false;
 			}
+			return true;
 		} catch (RuntimeException e) {
 			log.error("Route {} execution failed", routeUuid, e);
 			routeToError(routeUuid, exchange, handlers.errorProducer());
+			return false;
 		}
 	}
 

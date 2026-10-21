@@ -43,6 +43,9 @@ final class DomainEventBuilder {
         event.setInDate(inDate);
         event.setOutDate(new Date());
         event.setIn(request.arg(ENTITY_ARG).orElse(request.arg(IOperationRequest.BODY).orElse(null)));
+        // The addressed entity's uuid (path {uuid}). Without it a deleteOne event says nothing about
+        // WHAT was deleted (in = null) and a PATCH whose body omits the uuid says nothing either.
+        event.setEntityUuid(request.arg(IOperationRequest.ENTITY_UUID).orElse(null));
         event.setTenantId(request.arg(IOperationRequest.TENANT_ID).orElse(null));
         event.setOwnerId(request.arg(IOperationRequest.OWNER_ID).orElse(null));
         event.setUserId(request.arg(IOperationRequest.CALLER_ID).orElse(null));

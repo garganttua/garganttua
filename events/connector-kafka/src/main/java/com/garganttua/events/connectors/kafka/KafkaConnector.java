@@ -59,6 +59,10 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 	private String autoOffsetResetConfig = "latest";
 	private boolean allowAutoCreateTopics = false;
 	private int pollInterval = 10;
+	/** {@code max.poll.interval.ms} of the consumers; {@code null} keeps the Kafka client's default (300 s). */
+	private Integer maxPollIntervalMs;
+	/** How long a publish waits for the broker's acknowledgement; {@code 0} = fire-and-forget (historical). */
+	private long producerAckTimeoutMs = 0L;
 	private TimeUnit pollIntervalUnit = TimeUnit.SECONDS;
 
 	@Override
@@ -83,6 +87,14 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 		}
 		if (configuration.containsKey("pollIntervalUnit")) {
 			this.pollIntervalUnit = TimeUnit.valueOf(configuration.get("pollIntervalUnit"));
+		}
+		// A handler runs ON the poll thread: one that outlives max.poll.interval.ms gets its member evicted
+		// and its records redelivered to another — a subscriber with long handlers must be able to say so.
+		if (configuration.containsKey("maxPollIntervalMs")) {
+			this.maxPollIntervalMs = Integer.valueOf(configuration.get("maxPollIntervalMs"));
+		}
+		if (configuration.containsKey("producerAckTimeoutMs")) {
+			this.producerAckTimeoutMs = Long.parseLong(configuration.get("producerAckTimeoutMs"));
 		}
 	}
 
@@ -112,6 +124,9 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 		props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, enableAutoCommitConfig);
 		props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetResetConfig);
 		props.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RoundRobinAssignor.class.getName());
+		if (maxPollIntervalMs != null) {
+			props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, maxPollIntervalMs);
+		}
 
 		Consumer<String, byte[]> consumer = new KafkaConsumer<>(props);
 		consumer.subscribe(Collections.singletonList(formatTopicRef(sub.topic())));
@@ -130,7 +145,7 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 		props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
 
 		KafkaProducer<String, byte[]> kafkaProducer = new KafkaProducer<>(props);
-		return new KafkaProducer_(kafkaProducer, formatTopicRef(sub.topic()), sub.dataflow());
+		return new KafkaProducer_(kafkaProducer, formatTopicRef(sub.topic()), sub.dataflow(), producerAckTimeoutMs);
 	}
 
 	@Override

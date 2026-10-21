@@ -3,6 +3,8 @@ package com.garganttua.core.aot.nativve;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -113,6 +115,13 @@ public class GarganttuaAotFeature implements Feature {
         int classCount = 0;
         int memberCount = 0;
         int descriptorInitCount = 0;
+        // The annotation INSTANCES baked into the descriptors (AOTAnnotations.of*, above) are JDK proxies of the
+        // annotation interfaces, and the enum values their attributes carry. They sit in the image heap as soon as
+        // a descriptor is initialised at build time, and native-image refuses a heap object whose type is left to
+        // run-time initialisation (« An object of type 'jdk.proxy4.$Proxy77' was found in the image heap … marked
+        // for initialization at image run time »). Mark those types build-time too, once each.
+        Set<Class<?>> annotationTypes = new LinkedHashSet<>();
+        RuntimeClassInitialization.initializeAtBuildTime(Annotation.class);
         for (String fqn : AOTRegistry.getInstance().registeredClasses()) {
             try {
                 Class<?> clazz = access.findClassByName(fqn);
@@ -127,6 +136,7 @@ public class GarganttuaAotFeature implements Feature {
                 memberCount += registerMembers(clazz);
                 descriptorInitCount += initializeDescriptorAtBuildTime(
                         AOTRegistry.getInstance().get(fqn).orElse(null));
+                initializeAnnotationTypesAtBuildTime(clazz, annotationTypes);
             } catch (RuntimeException e) {
                 System.err.println("[GarganttuaAotFeature] Failed to register " + fqn + ": " + e.getMessage());
             }
@@ -146,7 +156,58 @@ public class GarganttuaAotFeature implements Feature {
         System.out.println("[GarganttuaAotFeature] Registered " + classCount
                 + " AOT descriptor classes (" + memberCount + " members) with RuntimeReflection; "
                 + descriptorInitCount + " descriptor classes marked initialize-at-build-time; "
-                + reflectedCount + " @Reflected classes registered from the annotation index.");
+                + reflectedCount + " @Reflected classes registered from the annotation index; "
+                + annotationTypes.size() + " annotation / enum types marked initialize-at-build-time.");
+    }
+
+    /**
+     * Marks initialize-at-build-time every annotation type found on {@code clazz} — on the class, its declared
+     * fields, methods, constructors and their parameters — and every enum or annotation type one of those
+     * annotations' attributes returns. They are exactly the types whose instances the member descriptors keep
+     * (AOTAnnotations), hence the types of objects that reach the image heap. {@code seen} dedupes across classes.
+     */
+    private static void initializeAnnotationTypesAtBuildTime(Class<?> clazz, Set<Class<?>> seen) {
+        try {
+            collectAnnotationTypes(clazz, seen);
+            for (Field field : clazz.getDeclaredFields()) {
+                collectAnnotationTypes(field, seen);
+            }
+            for (Method method : clazz.getDeclaredMethods()) {
+                collectAnnotationTypes(method, seen);
+                for (Annotation[] parameter : method.getParameterAnnotations()) {
+                    markAnnotationTypes(parameter, seen);
+                }
+            }
+            for (Constructor<?> constructor : clazz.getDeclaredConstructors()) {
+                collectAnnotationTypes(constructor, seen);
+                for (Annotation[] parameter : constructor.getParameterAnnotations()) {
+                    markAnnotationTypes(parameter, seen);
+                }
+            }
+        } catch (LinkageError | RuntimeException e) {
+            System.err.println("[GarganttuaAotFeature] annotation types of " + clazz.getName() + ": " + e.getMessage());
+        }
+    }
+
+    private static void collectAnnotationTypes(AnnotatedElement element, Set<Class<?>> seen) {
+        markAnnotationTypes(element.getAnnotations(), seen);
+    }
+
+    private static void markAnnotationTypes(Annotation[] annotations, Set<Class<?>> seen) {
+        for (Annotation annotation : annotations) {
+            Class<? extends Annotation> type = annotation.annotationType();
+            if (!seen.add(type)) {
+                continue;
+            }
+            RuntimeClassInitialization.initializeAtBuildTime(type);
+            for (Method attribute : type.getDeclaredMethods()) {
+                Class<?> returned = attribute.getReturnType().isArray()
+                        ? attribute.getReturnType().getComponentType() : attribute.getReturnType();
+                if ((returned.isEnum() || returned.isAnnotation()) && seen.add(returned)) {
+                    RuntimeClassInitialization.initializeAtBuildTime(returned);
+                }
+            }
+        }
     }
 
     private static final String REFLECTED_INDEX_RESOURCE =

@@ -99,4 +99,25 @@ class ApiEventCodecTest {
 		String json = new String(bytes, StandardCharsets.UTF_8);
 		assertTrue(json.contains("\"in\":{"), "in serialised as a nested object in the bytes");
 	}
+
+	@Test
+	@DisplayName("serialises the addressed entity uuid, even when in is null (deleteOne)")
+	void serialisesEntityUuid() throws Exception {
+		FakeEvent event = new FakeEvent();
+		event.setEntityUuid("0199-abc");
+
+		JsonNode root = mapper.readTree(codec.toBytes(event));
+
+		assertEquals("0199-abc", root.get("entityUuid").asText());
+		assertTrue(root.get("in").isNull(), "a deleteOne carries no body, only the uuid");
+	}
+
+	@Test
+	@DisplayName("entityUuid is JSON null when the operation addresses no single entity")
+	void entityUuidNullWhenAbsent() throws Exception {
+		JsonNode root = mapper.readTree(codec.toBytes(new FakeEvent()));
+
+		assertTrue(root.has("entityUuid"), "the key is always present, like the other fields");
+		assertTrue(root.get("entityUuid").isNull());
+	}
 }

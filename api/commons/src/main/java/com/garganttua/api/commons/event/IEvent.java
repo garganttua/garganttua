@@ -50,6 +50,28 @@ public interface IEvent {
 
     OperationResponseCode getCode();
     void setCode(OperationResponseCode code);
+
+    /**
+     * The uuid of the entity the operation was addressed to — the {@code {uuid}} of the path
+     * ({@code IOperationRequest.ENTITY_UUID}) for a {@code readOne}, an {@code update} or a
+     * {@code deleteOne}; {@code null} when the operation targets no single entity (a create, a
+     * {@code readAll}, a {@code deleteAll}).
+     *
+     * <p>It is the ONLY place a consumer can learn which entity a {@code deleteOne} removed (its
+     * {@link #getIn() in} is {@code null}: a DELETE has no body) or which entity a partial update
+     * touched (a PATCH body rarely repeats its uuid).
+     *
+     * <p>Default methods, so that an existing implementation keeps compiling and simply reports
+     * {@code null}.
+     */
+    default String getEntityUuid() {
+        return null;
+    }
+
+    /** @see #getEntityUuid() — ignored by implementations that do not carry it. */
+    default void setEntityUuid(String entityUuid) {
+        // not carried by default
+    }
     
     IOperationResponse toServiceResponse();
     

@@ -84,4 +84,36 @@ public interface IEvents extends ILifecycle, IObservable {
 	 * @throws EventsException when no subscription has that id, or the producer cannot be created
 	 */
 	IProducer producer(String subscriptionId) throws EventsException;
+
+	/**
+	 * Reconfigures, while the engine runs, the connector declared under {@code connectorName} in the context
+	 * {@code (tenantId, clusterId)}.
+	 *
+	 * <p>The connector must implement {@link IReconfigurableConnector}: the keys of {@code configuration} are merged
+	 * into its current configuration (see that interface for the semantics) and apply to the producers and consumers
+	 * it already created, from their next message on. Thread-safe.</p>
+	 *
+	 * @param tenantId      the tenant of the context that declares the connector
+	 * @param clusterId     the cluster of that context
+	 * @param connectorName the connector's declared name
+	 * @param configuration the keys to change
+	 * @throws EventsException when no such context or connector exists, when the connector is not reconfigurable,
+	 *                         or when it refuses the configuration (the current one then stays in force)
+	 */
+	void reconfigureConnector(String tenantId, String clusterId, String connectorName,
+			java.util.Map<String, String> configuration) throws EventsException;
+
+	/**
+	 * Reconfigures the connector declared under {@code connectorName} in EVERY context that declares it — for an
+	 * application that declares one connector per context and wants a setting to follow everywhere.
+	 *
+	 * @param connectorName the connector's declared name
+	 * @param configuration the keys to change
+	 * @return the number of connector instances reconfigured (at least one)
+	 * @throws EventsException when no context declares that connector, when one of them is not reconfigurable, or
+	 *                         when one refuses the configuration — none is reconfigured when a declared instance is
+	 *                         not reconfigurable; the ones already applied stay applied when a later one refuses
+	 */
+	int reconfigureConnector(String connectorName, java.util.Map<String, String> configuration)
+			throws EventsException;
 }

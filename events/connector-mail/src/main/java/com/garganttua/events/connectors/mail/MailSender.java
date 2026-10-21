@@ -3,8 +3,10 @@ package com.garganttua.events.connectors.mail;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,6 +32,10 @@ import jakarta.mail.util.ByteArrayDataSource;
  * field-by-field to the connector configuration; a non-JSON payload is treated as a plain-text body.
  * SMTP transport parameters always come from the connector config.
  *
+ * <p>The configuration is read through a supplier, ONCE per message: when the connector is reconfigured, a sender
+ * created before sees the new configuration from its next mail on, and a mail being sent finishes with the one it
+ * started with.</p>
+ *
  * <p>When no recipient can be resolved (neither the envelope nor the config provides {@code to}),
  * the mail is skipped with a warning rather than failing the pipeline. A single malformed attachment
  * (invalid Base64 / blank file name) is likewise skipped with a warning and never fails the mail.</p>
@@ -40,42 +46,43 @@ public class MailSender {
 
 	private static final String DEFAULT_ATTACHMENT_TYPE = "application/octet-stream";
 
-	private final Properties properties;
-	private final String from;
-	private final String to;
-	private final String subject;
-	private final String body;
-	private final String username;
-	private final String password;
-	private final String contentType;
+	private final Supplier<MailSettings> settings;
 	private final ObjectMapper mapper;
 
+	/** A sender with a fixed configuration (the historical form, kept for callers and tests). */
 	public MailSender(Properties properties, String from, String to, String subject,
 			String body, String username, String password, String contentType) {
-		// Defensive copy: avoid storing a caller-owned mutable Properties (EI_EXPOSE_REP2).
-		this.properties = new Properties();
-		if (properties != null) {
-			this.properties.putAll(properties);
-		}
-		this.from = from;
-		this.to = to;
-		this.subject = subject;
-		this.body = body;
-		this.username = username;
-		this.password = password;
-		this.contentType = contentType;
+		this(fixed(MailSettings.fixed(properties, from, to, subject, body, username, password, contentType)));
+	}
+
+	/** A sender reading the connector's CURRENT configuration at each mail — see {@link MailConnector}. */
+	MailSender(Supplier<MailSettings> settings) {
+		this.settings = Objects.requireNonNull(settings, "settings");
 		this.mapper = new ObjectMapper()
 				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 	}
 
+	/** The configuration this sender would use for its next mail (package-private, for tests). */
+	MailSettings currentSettings() {
+		return this.settings.get();
+	}
+
+	private static Supplier<MailSettings> fixed(MailSettings settings) {
+		return () -> settings;
+	}
+
 	public void send(byte[] value) throws MessagingException {
-		ResolvedMail mail = resolve(value);
+		// One snapshot for the whole mail: a reconfiguration during the send does not mix two configurations.
+		MailSettings current = this.settings.get();
+		ResolvedMail mail = resolve(value, current);
 		if (isBlank(mail.to())) {
 			log.warn("Mail not sent: no recipient ('to') in the message envelope or connector config");
 			return;
 		}
 
-		Session session = Session.getInstance(properties, new Authenticator() {
+		final String username = current.username();
+		final String password = current.password();
+		Session session = Session.getInstance(current.smtpProperties(), new Authenticator() {
 			@Override
 			protected PasswordAuthentication getPasswordAuthentication() {
 				return new PasswordAuthentication(username, password);
@@ -163,13 +170,19 @@ public class MailSender {
 	 * @return the resolved mail; its {@code to} may be {@code null} when none was configured
 	 */
 	ResolvedMail resolve(byte[] value) {
+		return resolve(value, this.settings.get());
+	}
+
+	private ResolvedMail resolve(byte[] value, MailSettings current) {
 		Optional<MailEnvelope> envelope = MailEnvelope.tryParse(value, mapper);
-		String effectiveTo = firstNonBlank(envelope.map(MailEnvelope::to).orElse(null), to);
-		String effectiveFrom = firstNonBlank(envelope.map(MailEnvelope::from).orElse(null), from, username);
+		String effectiveTo = firstNonBlank(envelope.map(MailEnvelope::to).orElse(null), current.to());
+		String effectiveFrom = firstNonBlank(envelope.map(MailEnvelope::from).orElse(null), current.from(),
+				current.username());
 		String effectiveSubject = firstNonBlank(envelope.map(MailEnvelope::subject).orElse(null),
-				subject, "Event notification");
+				current.subject(), "Event notification");
 		String effectiveType = firstNonBlank(envelope.map(MailEnvelope::contentType).orElse(null),
-				contentType, "text/plain");
+				current.contentType(), "text/plain");
+		String body = current.body();
 		String effectiveBody = envelope.isPresent()
 				? firstNonBlank(envelope.get().body(), body, "")
 				: (body != null ? body : new String(value, StandardCharsets.UTF_8));

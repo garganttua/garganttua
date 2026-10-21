@@ -22,6 +22,7 @@ final class FakeEvent implements IEvent {
 	private Object out;
 	private OperationResponseCode code;
 	private OperationDefinition operation;
+	private String entityUuid;
 
 	@Override
 	public OperationDefinition getOperation() {
@@ -156,5 +157,15 @@ final class FakeEvent implements IEvent {
 	@Override
 	public IOperationResponse toServiceResponse() {
 		return null;
+	}
+
+	@Override
+	public String getEntityUuid() {
+		return this.entityUuid;
+	}
+
+	@Override
+	public void setEntityUuid(String entityUuid) {
+		this.entityUuid = entityUuid;
 	}
 }

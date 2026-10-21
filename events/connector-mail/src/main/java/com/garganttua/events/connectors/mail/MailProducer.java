@@ -13,6 +13,11 @@ public class MailProducer implements IProducer {
 		this.sender = sender;
 	}
 
+	/** The sender behind this producer (package-private, for tests). */
+	MailSender sender() {
+		return this.sender;
+	}
+
 	@Override
 	public void publish(byte[] value) throws ConnectorException {
 		try {

@@ -61,6 +61,8 @@ public final class ApiEventCodec {
 		json.put("exceptionCode", event.getExceptionCode());
 		json.put("exceptionMessage", event.getExceptionMessage());
 		json.put("tenantId", event.getTenantId());
+		// The addressed entity (path {uuid}) — null for create / readAll / deleteAll.
+		json.put("entityUuid", event.getEntityUuid());
 		json.put("ownerId", event.getOwnerId());
 		json.put("userId", event.getUserId());
 		json.put("inDate", str(event.getInDate()));

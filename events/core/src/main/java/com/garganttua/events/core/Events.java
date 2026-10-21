@@ -20,6 +20,7 @@ import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IEvents;
 import com.garganttua.events.api.IProducer;
+import com.garganttua.events.api.IReconfigurableConnector;
 import com.garganttua.events.api.context.ConnectorDef;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
@@ -127,6 +128,68 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 	@Override
 	public IProducer producer(String subscriptionId) throws EventsException {
 		return this.publisher.producer(subscriptionId);
+	}
+
+	@Override
+	public void reconfigureConnector(String tenantId, String clusterId, String connectorName,
+			Map<String, String> configuration) throws EventsException {
+		Map<String, ClusterRuntime> clusters = this.runtimes.get(tenantId);
+		ClusterRuntime runtime = clusters == null ? null : clusters.get(clusterId);
+		if (runtime == null) {
+			throw new EventsException("No context [" + tenantId + "][" + clusterId + "] in engine " + assetId
+					+ " (is the engine initialised?)");
+		}
+		IConnector connector = runtime.getConnectors().get(connectorName);
+		if (connector == null) {
+			throw new EventsException("No connector '" + connectorName + "' in context [" + tenantId + "]["
+					+ clusterId + "]");
+		}
+		reconfigure(connector, connectorName, tenantId, clusterId, configuration);
+	}
+
+	@Override
+	public int reconfigureConnector(String connectorName, Map<String, String> configuration)
+			throws EventsException {
+		// Collect first, so that a connector that is not reconfigurable refuses the whole call before any change.
+		List<Object[]> targets = new ArrayList<>();
+		for (Map.Entry<String, Map<String, ClusterRuntime>> tenant : this.runtimes.entrySet()) {
+			for (Map.Entry<String, ClusterRuntime> cluster : tenant.getValue().entrySet()) {
+				IConnector connector = cluster.getValue().getConnectors().get(connectorName);
+				if (connector != null) {
+					if (!(connector instanceof IReconfigurableConnector)) {
+						throw new EventsException("Connector '" + connectorName + "' in context [" + tenant.getKey()
+								+ "][" + cluster.getKey() + "] is not reconfigurable ("
+								+ connector.getClass().getName() + ")");
+					}
+					targets.add(new Object[] { connector, tenant.getKey(), cluster.getKey() });
+				}
+			}
+		}
+		if (targets.isEmpty()) {
+			throw new EventsException("No connector '" + connectorName + "' in any context of engine " + assetId);
+		}
+		// A connector instance shared by several contexts (bean resolution) is reconfigured once.
+		java.util.Set<IConnector> done = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		for (Object[] target : targets) {
+			IConnector connector = (IConnector) target[0];
+			if (done.add(connector)) {
+				reconfigure(connector, connectorName, (String) target[1], (String) target[2], configuration);
+			}
+		}
+		return done.size();
+	}
+
+	private void reconfigure(IConnector connector, String connectorName, String tenantId, String clusterId,
+			Map<String, String> configuration) throws EventsException {
+		if (!(connector instanceof IReconfigurableConnector reconfigurable)) {
+			throw new EventsException("Connector '" + connectorName + "' in context [" + tenantId + "][" + clusterId
+					+ "] is not reconfigurable (" + connector.getClass().getName() + ")");
+		}
+		if (configuration == null) {
+			throw new EventsException("No configuration given for connector '" + connectorName + "'");
+		}
+		reconfigurable.reconfigure(configuration);
+		log.info("[{}][{}][{}] Connector {} reconfigured", assetId, tenantId, clusterId, connectorName);
 	}
 
 	@Override
