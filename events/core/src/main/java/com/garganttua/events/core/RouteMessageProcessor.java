@@ -83,12 +83,8 @@ final class RouteMessageProcessor {
 			if (consumer instanceof IAcknowledgingConsumer acknowledging) {
 				// The connector acknowledges once the route has run: hand it the outcome of each message.
 				acknowledging.startAcknowledged(rawBytes -> {
-					Exchange exchange = Exchange.create(
-							fromSub.connector(), fromSub.topic(),
-							fromDf != null ? fromDf.uuid() : null, rawBytes);
-					Map<String, Object> params = new HashMap<>();
-					params.put("exchange", exchange);
-					WorkflowInput input = WorkflowInput.of(exchange, params);
+					Exchange exchange = exchangeOf(fromSub, fromDf, rawBytes);
+					WorkflowInput input = inputOf(exchange);
 					CompletableFuture<Boolean> outcome = new CompletableFuture<>();
 					dispatcher.dispatch(() -> {
 						try {
@@ -102,18 +98,24 @@ final class RouteMessageProcessor {
 				return;
 			}
 			consumer.start(rawBytes -> {
-				Exchange exchange = Exchange.create(
-						fromSub.connector(), fromSub.topic(),
-						fromDf != null ? fromDf.uuid() : null, rawBytes);
-				Map<String, Object> params = new HashMap<>();
-				params.put("exchange", exchange);
-				WorkflowInput input = WorkflowInput.of(exchange, params);
+				Exchange exchange = exchangeOf(fromSub, fromDf, rawBytes);
+				WorkflowInput input = inputOf(exchange);
 				// Sequential (ordered) inline, or submitted to the worker pool (parallel).
 				dispatcher.dispatch(() -> processMessage(routeDef.uuid(), workflow, input, exchange, handlers));
 			});
 		} catch (Exception e) {
 			log.error("Consumer thread error for route {}", routeDef.uuid(), e);
 		}
+	}
+
+	private static Exchange exchangeOf(SubscriptionDef fromSub, DataflowDef fromDf, byte[] rawBytes) {
+		return Exchange.create(fromSub.connector(), fromSub.topic(), fromDf != null ? fromDf.uuid() : null, rawBytes);
+	}
+
+	private static WorkflowInput inputOf(Exchange exchange) {
+		Map<String, Object> params = new HashMap<>();
+		params.put("exchange", exchange);
+		return WorkflowInput.of(exchange, params);
 	}
 
 	/**

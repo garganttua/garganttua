@@ -18,10 +18,6 @@ public class KafkaProducer_ implements IProducer {
 	private final String dataflowUuid;
 	private final long ackTimeoutMs;
 
-	// The connector must retain the live KafkaProducer to publish/close it; a defensive copy would
-	// break the contract (the same client instance has to be reused), so storing the ref is intended.
-	@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
-			justification = "Live KafkaProducer client must be retained by reference, not copied.")
 	public KafkaProducer_(KafkaProducer<String, byte[]> kafkaProducer, String topic, String dataflowUuid) {
 		this(kafkaProducer, topic, dataflowUuid, 0L);
 	}
@@ -31,8 +27,7 @@ public class KafkaProducer_ implements IProducer {
 	 *                     the historical fire-and-forget (a record the broker never stores is lost without
 	 *                     a word to the publisher)
 	 */
-	@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
-			justification = "Live KafkaProducer client must be retained by reference, not copied.")
+	// The connector must retain the live client to publish/close it: storing the reference is intended.
 	public KafkaProducer_(Producer<String, byte[]> kafkaProducer, String topic, String dataflowUuid,
 			long ackTimeoutMs) {
 		this.kafkaProducer = kafkaProducer;
@@ -54,7 +49,7 @@ public class KafkaProducer_ implements IProducer {
 			Thread.currentThread().interrupt();
 			throw new ConnectorException("Kafka publish on " + topic + " interrupted before its acknowledgement", e);
 		} catch (ExecutionException e) {
-			throw new ConnectorException("Kafka publish on " + topic + " refused by the broker", e.getCause());
+			throw new ConnectorException("Kafka publish on " + topic + " refused by the broker", e);
 		} catch (TimeoutException e) {
 			throw new ConnectorException("Kafka publish on " + topic + " not acknowledged within " + ackTimeoutMs
 					+ " ms", e);

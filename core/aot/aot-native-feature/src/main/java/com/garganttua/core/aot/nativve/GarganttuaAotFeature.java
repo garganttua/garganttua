@@ -112,9 +112,6 @@ public class GarganttuaAotFeature implements Feature {
         // time — which initialises AOTAnnotations itself at build time.
         RuntimeClassInitialization.initializeAtBuildTime(AOTAnnotations.class);
 
-        int classCount = 0;
-        int memberCount = 0;
-        int descriptorInitCount = 0;
         // The annotation INSTANCES baked into the descriptors (AOTAnnotations.of*, above) are JDK proxies of the
         // annotation interfaces, and the enum values their attributes carry. They sit in the image heap as soon as
         // a descriptor is initialised at build time, and native-image refuses a heap object whose type is left to
@@ -122,6 +119,40 @@ public class GarganttuaAotFeature implements Feature {
         // for initialization at image run time »). Mark those types build-time too, once each.
         Set<Class<?>> annotationTypes = new LinkedHashSet<>();
         RuntimeClassInitialization.initializeAtBuildTime(Annotation.class);
+        DescriptorCounts counts = registerDescriptorClasses(access, annotationTypes);
+
+        // Second pass: register every @Reflected class for native reflection
+        // from the compile-time @Reflected index. This is the layering-clean,
+        // universal mechanism — the index (META-INF/garganttua/index/...Reflected)
+        // is emitted by IndexedAnnotationProcessor in EVERY module (a resource
+        // file, no aot-reflection dependency, no -Dgarganttua.direct.binders),
+        // so it covers framework classes that ship no generated AOTClass_*
+        // descriptor (e.g. ExpressionContext, whose man() built-in is resolved
+        // reflectively and would otherwise throw NoSuchMethodException in the
+        // closed world). Registering the class + members makes the live-
+        // reflection fallback in AOTClass work natively.
+        int reflectedCount = registerReflectedClassesFromIndex(access);
+
+        System.out.println("[GarganttuaAotFeature] Registered " + counts.classes()
+                + " AOT descriptor classes (" + counts.members() + " members) with RuntimeReflection; "
+                + counts.descriptors() + " descriptor classes marked initialize-at-build-time; "
+                + reflectedCount + " @Reflected classes registered from the annotation index; "
+                + annotationTypes.size() + " annotation / enum types marked initialize-at-build-time.");
+    }
+
+    /** What the first pass registered: described classes, their members, descriptors marked build-time. */
+    private record DescriptorCounts(int classes, int members, int descriptors) {
+    }
+
+    /**
+     * Registers every class the AOT registry describes (class + members) for native reflection, marks its
+     * descriptor and the annotation / enum types its members carry initialize-at-build-time.
+     */
+    private static DescriptorCounts registerDescriptorClasses(BeforeAnalysisAccess access,
+            Set<Class<?>> annotationTypes) {
+        int classCount = 0;
+        int memberCount = 0;
+        int descriptorInitCount = 0;
         for (String fqn : AOTRegistry.getInstance().registeredClasses()) {
             try {
                 Class<?> clazz = access.findClassByName(fqn);
@@ -141,23 +172,7 @@ public class GarganttuaAotFeature implements Feature {
                 System.err.println("[GarganttuaAotFeature] Failed to register " + fqn + ": " + e.getMessage());
             }
         }
-        // Second pass: register every @Reflected class for native reflection
-        // from the compile-time @Reflected index. This is the layering-clean,
-        // universal mechanism — the index (META-INF/garganttua/index/...Reflected)
-        // is emitted by IndexedAnnotationProcessor in EVERY module (a resource
-        // file, no aot-reflection dependency, no -Dgarganttua.direct.binders),
-        // so it covers framework classes that ship no generated AOTClass_*
-        // descriptor (e.g. ExpressionContext, whose man() built-in is resolved
-        // reflectively and would otherwise throw NoSuchMethodException in the
-        // closed world). Registering the class + members makes the live-
-        // reflection fallback in AOTClass work natively.
-        int reflectedCount = registerReflectedClassesFromIndex(access);
-
-        System.out.println("[GarganttuaAotFeature] Registered " + classCount
-                + " AOT descriptor classes (" + memberCount + " members) with RuntimeReflection; "
-                + descriptorInitCount + " descriptor classes marked initialize-at-build-time; "
-                + reflectedCount + " @Reflected classes registered from the annotation index; "
-                + annotationTypes.size() + " annotation / enum types marked initialize-at-build-time.");
+        return new DescriptorCounts(classCount, memberCount, descriptorInitCount);
     }
 
     /**

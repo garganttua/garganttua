@@ -12,33 +12,17 @@ import java.util.Properties;
  * <p>The connector holds exactly one current snapshot and swaps it atomically on reconfiguration; a
  * {@link MailSender} reads it once per message, so a mail being sent finishes with the snapshot it started with.</p>
  */
-final class MailSettings {
+record MailSettings(Map<String, String> raw, Properties smtpProperties, String from, String to, String subject,
+		String body, String username, String password, String contentType) {
 
-	private final Map<String, String> raw;
-	private final Properties smtpProperties;
-	private final String from;
-	private final String to;
-	private final String subject;
-	private final String body;
-	private final String username;
-	private final String password;
-	private final String contentType;
-
-	private MailSettings(Map<String, String> raw, Properties smtpProperties, String from, String to, String subject,
-			String body, String username, String password, String contentType) {
-		this.raw = Collections.unmodifiableMap(new HashMap<>(raw));
+	/** Copies what it is given: the snapshot shares no mutable object with its caller. */
+	MailSettings {
+		raw = Collections.unmodifiableMap(new HashMap<>(raw));
 		Properties properties = new Properties();
 		if (smtpProperties != null) {
 			properties.putAll(smtpProperties);
 		}
-		this.smtpProperties = properties;
-		this.from = from;
-		this.to = to;
-		this.subject = subject;
-		this.body = body;
-		this.username = username;
-		this.password = password;
-		this.contentType = contentType;
+		smtpProperties = properties;
 	}
 
 	private static MailSettings parse(Map<String, String> configuration) {
@@ -51,15 +35,6 @@ final class MailSettings {
 		return new MailSettings(configuration, properties, configuration.get("from"), configuration.get("to"),
 				configuration.get("object"), configuration.get("body"), configuration.get("username"),
 				configuration.get("password"), configuration.get("contentType"));
-	}
-
-	/**
-	 * A snapshot built from explicit values — what {@link MailSender}'s historical constructor receives. It carries
-	 * no configuration map, so it is not meant to be merged.
-	 */
-	static MailSettings fixed(Properties smtpProperties, String from, String to, String subject, String body,
-			String username, String password, String contentType) {
-		return new MailSettings(Map.of(), smtpProperties, from, to, subject, body, username, password, contentType);
 	}
 
 	/** The snapshot of a full configuration map — the keys {@code configure} has always read. */
@@ -98,37 +73,10 @@ final class MailSettings {
 	}
 
 	/** A copy of the SMTP properties — a session must never share a mutable object with the snapshot. */
-	Properties smtpProperties() {
+	@Override
+	public Properties smtpProperties() {
 		Properties copy = new Properties();
 		copy.putAll(this.smtpProperties);
 		return copy;
-	}
-
-	String from() {
-		return this.from;
-	}
-
-	String to() {
-		return this.to;
-	}
-
-	String subject() {
-		return this.subject;
-	}
-
-	String body() {
-		return this.body;
-	}
-
-	String username() {
-		return this.username;
-	}
-
-	String password() {
-		return this.password;
-	}
-
-	String contentType() {
-		return this.contentType;
 	}
 }

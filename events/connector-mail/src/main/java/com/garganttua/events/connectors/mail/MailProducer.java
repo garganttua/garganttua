@@ -7,21 +7,24 @@ import jakarta.mail.MessagingException;
 
 public class MailProducer implements IProducer {
 
-	private final MailSender sender;
+	private final MailSender mailSender;
 
+	// The producer sends through the connector's live sender, which reads the current settings: it must not be copied.
+	@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
+			justification = "Live MailSender shared with the connector must be retained by reference, not copied.")
 	public MailProducer(MailSender sender) {
-		this.sender = sender;
+		this.mailSender = sender;
 	}
 
 	/** The sender behind this producer (package-private, for tests). */
 	MailSender sender() {
-		return this.sender;
+		return this.mailSender;
 	}
 
 	@Override
 	public void publish(byte[] value) throws ConnectorException {
 		try {
-			sender.send(value);
+			this.mailSender.send(value);
 		} catch (MessagingException e) {
 			throw new ConnectorException(e);
 		}

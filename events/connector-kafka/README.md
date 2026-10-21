@@ -28,6 +28,8 @@ configurable poll intervals.
  - `org.apache.kafka:kafka-clients`
  - `org.projectlombok:lombok`
  - `org.slf4j:slf4j-api`
+ - `org.junit.jupiter:junit-jupiter-api:test`
+ - `org.junit.jupiter:junit-jupiter-engine:${junit.version}:test`
 
 <!-- AUTO-GENERATED-END -->
 

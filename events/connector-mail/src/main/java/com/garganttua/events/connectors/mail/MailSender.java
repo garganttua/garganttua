@@ -3,6 +3,7 @@ package com.garganttua.events.connectors.mail;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -52,7 +53,7 @@ public class MailSender {
 	/** A sender with a fixed configuration (the historical form, kept for callers and tests). */
 	public MailSender(Properties properties, String from, String to, String subject,
 			String body, String username, String password, String contentType) {
-		this(fixed(MailSettings.fixed(properties, from, to, subject, body, username, password, contentType)));
+		this(fixed(new MailSettings(Map.of(), properties, from, to, subject, body, username, password, contentType)));
 	}
 
 	/** A sender reading the connector's CURRENT configuration at each mail — see {@link MailConnector}. */
