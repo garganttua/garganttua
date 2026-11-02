@@ -12,12 +12,12 @@ Compile-time annotation scanner for AOT class descriptor generation. This module
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-aot-annotation-scanner</artifactId>
-    <version>3.0.0-ALPHA28</version>
+    <version>3.0.0-ALPHA29</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA28
+3.0.0-ALPHA29
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`

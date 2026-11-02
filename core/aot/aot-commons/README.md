@@ -12,12 +12,12 @@ Common interfaces and types for Garganttua AOT (Ahead-of-Time) compilation suppo
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-aot-commons</artifactId>
-    <version>3.0.0-ALPHA28</version>
+    <version>3.0.0-ALPHA29</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA28
+3.0.0-ALPHA29
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`

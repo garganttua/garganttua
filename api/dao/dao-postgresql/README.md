@@ -24,12 +24,12 @@
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-dao-postgresql</artifactId>
-    <version>3.0.0-ALPHA28</version>
+    <version>3.0.0-ALPHA29</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA28
+3.0.0-ALPHA29
 
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`
