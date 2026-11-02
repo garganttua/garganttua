@@ -405,6 +405,22 @@ class RepositoryTest {
         }
 
         @Test
+        @DisplayName("keeps the order the DAO answered in — a sort, a $near distance — whatever the uuids")
+        void keepsTheDaoOrder() throws ApiException {
+            List<String> stored = new ArrayList<>();
+            for (int i = 0; i < 40; i++) {
+                String name = "n" + i;
+                stored.add(name);
+                repository.save(createTestEntity(String.valueOf(i), java.util.UUID.randomUUID().toString(), "t1", name));
+            }
+
+            List<Object> entities = repository.getEntities(Optional.empty(), Optional.empty(), Optional.empty());
+
+            assertEquals(stored, entities.stream().map(e -> ((TestEntity) e).getName()).toList(),
+                    "a hash map keyed by uuid used to hand the entities back in hash order");
+        }
+
+        @Test
         @DisplayName("returned entities are of correct type")
         void returnedEntitiesAreCorrectType() throws ApiException {
             repository.save(createTestEntity("1", "uuid-1", "t1", "Alice"));

@@ -9,6 +9,8 @@ import java.util.regex.Pattern;
 
 import org.geojson.GeoJsonObject;
 
+import com.garganttua.api.commons.filter.GeoNear;
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.garganttua.api.commons.ApiException;
@@ -32,6 +34,9 @@ public class Filter implements IFilter {
 	public static final String OPERATOR_TEXT = OPERATOR_PREFIX + "text";
 	public static final String OPERATOR_GEOLOC = OPERATOR_PREFIX + "geoWithin";
 	public static final String OPERATOR_GEOLOC_SPHERE = OPERATOR_PREFIX + "geoWithinSphere";
+	public static final String OPERATOR_GEOLOC_INTERSECTS = OPERATOR_PREFIX + "geoIntersects";
+	public static final String OPERATOR_GEOLOC_NEAR = OPERATOR_PREFIX + "near";
+	public static final String OPERATOR_GEOLOC_NEAR_SPHERE = OPERATOR_PREFIX + "nearSphere";
 
 	public static final String OPERATOR_IN = OPERATOR_PREFIX + "in";
 	public static final String OPERATOR_NOT_IN = OPERATOR_PREFIX + "nin";
@@ -57,6 +62,9 @@ public class Filter implements IFilter {
 		finalOperators.add(OPERATOR_NOT_IN);
 		finalOperators.add(OPERATOR_GEOLOC);
 		finalOperators.add(OPERATOR_GEOLOC_SPHERE);
+		finalOperators.add(OPERATOR_GEOLOC_INTERSECTS);
+		finalOperators.add(OPERATOR_GEOLOC_NEAR);
+		finalOperators.add(OPERATOR_GEOLOC_NEAR_SPHERE);
 	}
 
 	@JsonProperty
@@ -137,19 +145,18 @@ public class Filter implements IFilter {
 		}
 	}
 
+	/** The comparisons that carry exactly one value and no sub-literal. */
+	private static final java.util.Set<String> VALUED_LEAVES = java.util.Set.of(OPERATOR_EQUAL, OPERATOR_NOT_EQUAL,
+			OPERATOR_GEOLOC, OPERATOR_GEOLOC_SPHERE, OPERATOR_GEOLOC_INTERSECTS, OPERATOR_GEOLOC_NEAR,
+			OPERATOR_GEOLOC_NEAR_SPHERE, OPERATOR_GREATER_THAN, OPERATOR_GREATER_THAN_EXCLUSIVE, OPERATOR_LOWER_THAN,
+			OPERATOR_LOWER_THAN_EXCLUSIVE, OPERATOR_REGEX);
+
 	private static void validateByOperator(Filter literal) throws FilterException {
+		if (VALUED_LEAVES.contains(literal.name)) {
+			validateValuedLeaf(literal);
+			return;
+		}
 		switch (literal.name) {
-			case OPERATOR_EQUAL:
-			case OPERATOR_NOT_EQUAL:
-			case OPERATOR_GEOLOC:
-			case OPERATOR_GEOLOC_SPHERE:
-			case OPERATOR_GREATER_THAN:
-			case OPERATOR_GREATER_THAN_EXCLUSIVE:
-			case OPERATOR_LOWER_THAN:
-			case OPERATOR_LOWER_THAN_EXCLUSIVE:
-			case OPERATOR_REGEX:
-				validateValuedLeaf(literal);
-				break;
 			case OPERATOR_IN:
 			case OPERATOR_NOT_IN:
 				validateInOperator(literal);
@@ -378,6 +385,24 @@ public class Filter implements IFilter {
 
 	public static Filter geolocWithinSphere(String fieldName, GeoJsonObject object) {
 		return operator(Filter.OPERATOR_GEOLOC_SPHERE, fieldName, object);
+	}
+
+	/** Geometries that share at least one point with {@code object}, on the sphere. */
+	public static Filter geolocIntersects(String fieldName, GeoJsonObject object) {
+		return operator(Filter.OPERATOR_GEOLOC_INTERSECTS, fieldName, object);
+	}
+
+	/**
+	 * Geometries within a ring of distances, in metres, around a point — sorted nearest first when the
+	 * read names no other sort, as MongoDB's {@code $near} is.
+	 */
+	public static Filter geolocNear(String fieldName, GeoNear near) {
+		return operator(Filter.OPERATOR_GEOLOC_NEAR, fieldName, near);
+	}
+
+	/** {@link #geolocNear} — the two are the same query on the sphere, as on a MongoDB 2dsphere index. */
+	public static Filter geolocNearSphere(String fieldName, GeoNear near) {
+		return operator(Filter.OPERATOR_GEOLOC_NEAR_SPHERE, fieldName, near);
 	}
 
 	@Override

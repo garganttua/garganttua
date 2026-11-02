@@ -51,6 +51,7 @@ Requires JDK 25.
 | \|    \|- [**dao**](./api/dao/README.md) | Data-access abstractions for entity persistence (parent module). |
 | \|    \|    \|- [**dao-mongodb**](./api/dao/dao-mongodb/README.md) | MongoDB DAO implementation — native-ready repository backed by the MongoDB driver. |
 | \|    \|    \|- [**dao-postgresql**](./api/dao/dao-postgresql/README.md) | PostgreSQL DAO implementation — relational mapping, one column per field, backed by JDBC. |
+| \|    \|    \|- [**native-postgres**](./api/e2e/native-postgres/README.md) | Native proof of the PostgreSQL stack: a pure-AOT application on 		starter-aot-postgres-javalin, compiled by GraalVM native-image and driven over HTTP 		against PostgreSQL 17 + PostGIS, through TLS. Built only with -Pnative-e2e. |
 | \|    \|- [**interface**](./api/interface/README.md) | Interface-layer abstractions for exposing domains over transport protocols (parent module). |
 | \|    \|    \|- [**interface-rest**](./api/interface/interface-rest/README.md) | REST interface binding — maps domain CRUD operations to HTTP/REST endpoints. |
 | \|    \|- [**javalin**](./api/javalin/README.md) | Javalin HTTP integration — serves API domains over a lightweight Javalin web layer. |
@@ -64,6 +65,7 @@ Requires JDK 25.
 | \|    \|    \|- [**security-authorization-jwt**](./api/security/security-authorization-jwt/README.md) | JWT authorization: signable/refreshable JWT tokens (pending migration to the 3.0.0 core). |
 | \|    \|- [**starters**](./api/starters/README.md) | Opinionated Spring Boot / Javalin starters bundling a ready-to-run API stack (parent module). |
 | \|    \|    \|- [**starter-aot-mongo-javalin**](./api/starters/starter-aot-mongo-javalin/README.md) | AOT/native starter: same stack as jvm-mongo-javalin but with AOT reflection 		providers ahead of the runtime ones (GraalVM-ready). |
+| \|    \|    \|- [**starter-aot-postgres-javalin**](./api/starters/starter-aot-postgres-javalin/README.md) | AOT/native starter: PostgreSQL + Javalin with the AOT reflection 		providers only (GraalVM-ready). |
 | \|    \|    \|- [**starter-bootstrap**](./api/starters/starter-bootstrap/README.md) | Bootstrap starter: a Spring-Boot-style runner (GarganttuaApplication.run) that 		assembles the framework, scans @Entity/@Dto, runs ServiceLoader auto-configs and reads 		application.yaml — transport- and persistence-agnostic (no Mongo, no Javalin). |
 | \|    \|    \|- [**starter-javalin**](./api/starters/starter-javalin/README.md) | Javalin add-on starter: exposes every annotation-scanned domain over HTTP on a 		shared Javalin server (server.port), with JSON serialization out of the box. |
 | \|    \|    \|- [**starter-jvm-mongo-javalin**](./api/starters/starter-jvm-mongo-javalin/README.md) | JVM starter: bootstrap runner + MongoDB persistence + Javalin HTTP, runtime reflection. |

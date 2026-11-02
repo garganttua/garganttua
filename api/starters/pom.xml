@@ -37,5 +37,6 @@
 		<module>starter-quickstart</module>
 		<module>starter-jvm-mongo-javalin</module>
 		<module>starter-aot-mongo-javalin</module>
+		<module>starter-aot-postgres-javalin</module>
 	</modules>
 </project>

@@ -15,12 +15,14 @@ import com.garganttua.api.commons.dao.IDao;
 import com.garganttua.api.commons.definition.DtoComposition;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
+import com.garganttua.api.commons.definition.IEntityDefinition;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.annotations.Reflected;
+import com.garganttua.dao.postgresql.schema.PgIndexMode;
 import com.garganttua.dao.postgresql.schema.PgSchemaModel;
 import com.garganttua.dao.postgresql.schema.PgTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
@@ -60,6 +62,7 @@ public class PgDao implements IDao {
     private final String domainName;
     private final PgSchemaRegistry registry;
     private final SchemaMode schemaMode;
+    private final PgIndexMode indexMode;
 
     private volatile Wiring wiring;
 
@@ -86,10 +89,25 @@ public class PgDao implements IDao {
      * @param schemaMode whether this DAO creates what is missing or only checks it
      */
     public PgDao(DataSource dataSource, String domainName, PgSchemaRegistry registry, SchemaMode schemaMode) {
+        this(dataSource, domainName, registry, schemaMode, PgIndexMode.CREATE);
+    }
+
+    /**
+     * A DAO sharing a registry, with an explicit policy for the indexes its domain declares.
+     *
+     * @param dataSource where the tables live
+     * @param domainName the domain served
+     * @param registry   the shape of every domain of this database
+     * @param schemaMode whether this DAO creates what is missing or only checks it
+     * @param indexMode  who creates the declared indexes, and what a failure costs
+     */
+    public PgDao(DataSource dataSource, String domainName, PgSchemaRegistry registry, SchemaMode schemaMode,
+            PgIndexMode indexMode) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
         this.domainName = Objects.requireNonNull(domainName, "domainName");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode");
+        this.indexMode = Objects.requireNonNull(indexMode, "indexMode");
     }
 
     @SuppressWarnings("rawtypes")
@@ -107,8 +125,10 @@ public class PgDao implements IDao {
             compositions.put(composition.field().getLastElement(), composition.collection());
         }
         PgTable table = PgSchemaModel.of(this.domainName, dtoClass, uuidField, compositions);
+        List<PgIndexPlanner.Planned> indexes = planIndexes(domainDefinition, dto, table);
         try {
             new PgSchemaManager(this.dataSource, this.schemaMode).ensure(table);
+            new PgIndexManager(this.indexMode, this.schemaMode).ensure(this.dataSource, this.domainName, indexes);
         } catch (ApiException e) {
             // registerDomain cannot throw a checked exception: surface it unchecked, with its message.
             throw new IllegalStateException("PostgreSQL schema of domain '" + this.domainName
@@ -116,9 +136,30 @@ public class PgDao implements IDao {
         }
         this.registry.register(this.domainName, table, dtoClass);
         this.wiring = new Wiring(table, new PgWriter(table, this.registry),
-                new PgReader(table, dtoClass, this.registry), new PgQueryBuilder(table, dtoClass));
+                new PgReader(table, dtoClass, this.registry),
+                new PgQueryBuilder(table, dtoClass, PgIndexPlanner.textColumn(table, indexes)));
         log.debug("PostgreSQL domain '{}' mapped to table '{}' ({} columns, {} child tables)",
                 this.domainName, table.name(), table.columns().size(), table.children().size());
+    }
+
+    /**
+     * The indexes the ENTITY declares, resolved against this table. Entity field names are translated
+     * to DTO fields first: every query this DAO emits speaks in DTO fields, so an index on anything
+     * else would never be used.
+     */
+    @SuppressWarnings("rawtypes")
+    private static List<PgIndexPlanner.Planned> planIndexes(IDomainDefinition domainDefinition,
+            IDtoDefinition<?> dto, PgTable table) {
+        IEntityDefinition<?> entity = domainDefinition.entityDefinition();
+        if (entity == null || entity.indexes().isEmpty()) {
+            return List.of();
+        }
+        IClass<?> dtoClass = dto.dtoClass();
+        return PgIndexPlanner.plan(table, entity.indexes(), path -> {
+            int dot = path.indexOf('.');
+            return dot < 0 ? PgQueryBuilder.translateToDtoField(dtoClass, path)
+                    : PgQueryBuilder.translateToDtoField(dtoClass, path.substring(0, dot)) + path.substring(dot);
+        }, dto.tenantId() == null ? null : dto.tenantId().toString());
     }
 
     @Override

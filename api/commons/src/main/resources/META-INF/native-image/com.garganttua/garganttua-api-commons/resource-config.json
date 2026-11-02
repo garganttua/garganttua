@@ -1,0 +1,9 @@
+{
+  "comment": "GarganttuaConfig reads application.yaml / application.yml / application.properties from the classpath (then from the working directory). native-image embeds no resource by default: without this file the image starts with an EMPTY configuration — no api.packages, so no @Entity / @Dto is discovered — while every value given by environment variable still works, which hides the cause. Shipped here, next to the class that reads them, so no native consumer has to list them by hand.",
+  "resources": {
+    "includes": [
+      { "pattern": "application\\.ya?ml" },
+      { "pattern": "application\\.properties" }
+    ]
+  }
+}

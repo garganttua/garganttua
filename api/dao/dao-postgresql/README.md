@@ -9,7 +9,7 @@
 **Key Features:**
 - **`IDao` implementation** — `PgDao`: `find` (filter, sort, page, projection), `save` (upsert), `delete`, `count`, `registerDomain`
 - **Relational mapping** — scalars become typed columns, embedded POJOs are flattened into prefixed columns, collections and maps become child tables; see *Core Concepts*
-- **MongoDB semantics** — the full filter language (`$and` `$or` `$nor`, `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$empty` `$text` `$geoWithin` `$geoWithinSphere`) with MongoDB's own rules: BSON type bracketing, array "any element" semantics, absent vs null, binary string order, PCRE regular expressions, text search over every string value
+- **MongoDB semantics** — the full filter language (`$and` `$or` `$nor`, `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$empty` `$text` `$geoWithin` `$geoWithinSphere` `$geoIntersects` `$near` `$nearSphere`) with MongoDB's own rules: BSON type bracketing, array "any element" semantics, absent vs null, binary string order, PCRE regular expressions, text search over every string value
 - **Atomic writes, consistent reads** — every write runs in one transaction; every read runs in one `REPEATABLE READ` snapshot, however many tables it touches
 - **Schema management** — tables and later-added columns are created at startup (`SchemaMode.CREATE`, the default), or only checked (`SchemaMode.VALIDATE`); safe when several instances start at once
 - **Compositions** — `@Composed` fields are stored as the referenced uuid and resolved one level deep, like MongoDB's DBRefs
@@ -107,7 +107,8 @@ A geometry field needs the PostGIS extension; without it, `CREATE` mode stops wi
 | pages | the uuid is appended as a final ascending sort key, so pages over a non-unique key are stable |
 | dates | milliseconds, as BSON keeps them |
 | `$regex` | PCRE: `\b`, `\A`, `\z`, `$` before a final newline, `.` not matching a newline — translated to PostgreSQL's engine; a construct it cannot express is refused by name, never matched differently |
-| `$text` | a `$**` text index: terms are OR-ed, `"phrases"`, `-exclusions`, English stemming, case- and accent-insensitive, over every string value |
+| `$text` | a `$**` text index: terms are OR-ed, `"phrases"`, `-exclusions`, English stemming, case- and accent-insensitive, over every string value — or, when the domain declares a `text` index, over that field only, as MongoDB's text index covers it, served by the index |
+| geography | on the sphere, as a `2dsphere` index: `$geoWithin` / `$geoWithinSphere` (`ST_CoveredBy`), `$geoIntersects` (`ST_Intersects`), `$near` / `$nearSphere` with `$maxDistance` / `$minDistance` in metres, nearest first when the read names no sort; `$near` is refused under `$or` / `$nor`, twice, or on a field held in a collection, as MongoDB refuses it |
 | numbers beyond 34 digits | refused, as MongoDB's `Decimal128` cannot hold them |
 
 ### Known differences
@@ -145,7 +146,7 @@ ApiBuilder.builder()
 - **Share one `PgSchemaRegistry` across the domains of a database.** A `@Composed` field is resolved against the target domain's table, which only that domain's DAO knows. `new PgDao(dataSource, domain)` creates a private registry: fine without compositions, not with them.
 - **Share one pooled `DataSource`.** Each operation borrows a connection and returns it.
 - **Use `SchemaMode.VALIDATE` where DDL goes through review.** It checks everything and changes nothing.
-- **Indexes are yours**, as on MongoDB: the DAO creates primary keys and child-table keys only. Index the columns your filters and sorts use.
+- **Declare the indexes your filters and sorts use** — `entity().index(...)` or `@EntityIndexed` — and the DAO creates them at startup, as the MongoDB DAO does (`PgIndexMode`, `postgresql.index.auto`): `standard` is a b-tree, composed `(tenantId, field)` when tenant-scoped, partial `WHERE field IS NOT NULL` when unique; `geo` is a GiST on `(field)::geography`; `text` a GIN on the text-search vector `$text` queries. A field held in a collection is indexed on its child table; a UNIQUE index there is refused (it would compare the elements of one entity, not two entities). A unique violation answers **409**, as on MongoDB. Index names are prefixed with their table: PostgreSQL names indexes per schema, not per table.
 
 ## Parameters
 

@@ -377,8 +377,8 @@ class PgQueryBuilderTest {
         void unknownOperators() {
             assertEquals("Unsupported filter operator: $xor", assertThrows(ApiException.class,
                     () -> match(logical("$xor", field("name", "$eq", "a"), field("name", "$eq", "b")))).getMessage());
-            assertEquals("Unsupported comparison operator: $near", assertThrows(ApiException.class,
-                    () -> match(field("name", "$near", "a"))).getMessage());
+            assertEquals("Unsupported comparison operator: $within", assertThrows(ApiException.class,
+                    () -> match(field("name", "$within", "a"))).getMessage());
             assertEquals("$in operator requires at least 1 value", assertThrows(ApiException.class,
                     () -> match(listed("name", "$in"))).getMessage());
         }
@@ -495,11 +495,12 @@ class PgQueryBuilderTest {
         }
 
         @Test
-        @DisplayName("$geoWithin and $geoWithinSphere become ST_Within with the GeoJSON bound")
+        @DisplayName("$geoWithin and $geoWithinSphere become ST_CoveredBy on the sphere, with the GeoJSON bound")
         void geoWithin() throws Exception {
             for (String op : List.of("$geoWithin", "$geoWithinSphere")) {
                 PgQuery q = places().count(field("location", op, square()));
-                assertEquals("ST_Within(t.\"location\", ST_SetSRID(ST_GeomFromGeoJSON(?), 4326))", q.where(), op);
+                assertEquals("ST_CoveredBy((t.\"location\")::geography, (ST_SetSRID(ST_GeomFromGeoJSON(?), 4326))"
+                        + "::geography)", q.where(), op);
                 assertTrue(q.params().get(0).toString().contains("\"Polygon\""),
                         () -> "the geometry must be bound as GeoJSON: " + q.params());
             }

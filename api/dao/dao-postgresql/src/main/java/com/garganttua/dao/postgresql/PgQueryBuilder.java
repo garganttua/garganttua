@@ -14,6 +14,7 @@ import com.garganttua.core.mapper.annotations.FieldMappingRule;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
+import com.garganttua.dao.postgresql.schema.PgColumn;
 import com.garganttua.dao.postgresql.schema.PgTable;
 
 /**
@@ -48,9 +49,18 @@ public final class PgQueryBuilder {
      * @param dtoClass its DTO class — where {@code @FieldMappingRule} translates projected entity fields
      */
     public PgQueryBuilder(PgTable table, IClass<?> dtoClass) {
+        this(table, dtoClass, Optional.empty());
+    }
+
+    /**
+     * @param table      the domain's relational shape
+     * @param dtoClass   its DTO class
+     * @param textColumn the column a declared text index covers — {@code $text} then searches it alone
+     */
+    public PgQueryBuilder(PgTable table, IClass<?> dtoClass, Optional<PgColumn> textColumn) {
         this.table = table;
         this.dtoClass = dtoClass;
-        this.translator = new PgFilterTranslator(table);
+        this.translator = new PgFilterTranslator(table, textColumn);
         this.sorts = new PgSortClause(table);
     }
 
@@ -71,7 +81,10 @@ public final class PgQueryBuilder {
         IPageable page = present(pageable);
         Integer limit = limit(page);
         Long offset = offset(page);
-        String orderBy = sorts.orderBy(present(sort), page != null);
+        ISort requested = present(sort);
+        // MongoDB returns a $near nearest first — unless the read names a sort of its own.
+        String orderBy = sorts.orderBy(requested, page != null,
+                requested == null ? translator.nearOrder(present(filter)) : Optional.empty());
         LOG.debug("Query on {}: WHERE {} {} LIMIT {} OFFSET {}", table.name(), where.text(), orderBy, limit, offset);
         return new PgQuery(where.text(), where.params(), orderBy, limit, offset,
                 projection(present(projection)).orElse(null));
@@ -128,13 +141,16 @@ public final class PgQueryBuilder {
             }
             String trimmed = entityField.trim();
             int dot = trimmed.indexOf('.');
-            fields.add(translateToDtoField((dot < 0 ? trimmed : trimmed.substring(0, dot)).trim()));
+            fields.add(translateToDtoField(dtoClass, (dot < 0 ? trimmed : trimmed.substring(0, dot)).trim()));
         }
         return fields.isEmpty() ? Optional.empty() : Optional.of(new ArrayList<>(fields));
     }
 
-    /** The DTO field whose {@code @FieldMappingRule} reads the entity field; the same name otherwise. */
-    private String translateToDtoField(String entityField) {
+    /**
+     * The DTO field whose {@code @FieldMappingRule} reads the entity field; the same name otherwise.
+     * Shared with the index planner, which must speak in the same DTO fields as every query.
+     */
+    static String translateToDtoField(IClass<?> dtoClass, String entityField) {
         IClass<?> current = dtoClass;
         while (current != null) {
             for (IField field : current.getDeclaredFields()) {

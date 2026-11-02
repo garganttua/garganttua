@@ -123,6 +123,70 @@ final class PgTextSearch {
                 PgTextQuery.FOLD_FROM, PgTextQuery.FOLD_TO).then(PgSql.join(" AND ", conditions)).then(")");
     }
 
+    /**
+     * The folded text of one column, with the folding written as LITERALS rather than bind
+     * parameters: this is the expression a text index is built on, and PostgreSQL uses an expression
+     * index only when the query spells the very same expression — a parameter is not a literal to the
+     * planner.
+     *
+     * @param columnRef the column, as SQL ({@code "title"} or {@code t."title"})
+     * @return the folded text expression
+     */
+    static String folded(String columnRef) {
+        return "translate(" + columnRef + ", " + literal(PgTextQuery.FOLD_FROM) + ", "
+                + literal(PgTextQuery.FOLD_TO) + ")";
+    }
+
+    /**
+     * The text-search vector of one column — the key of a declared text index, and what {@code $text}
+     * queries when the domain declares one.
+     *
+     * @param columnRef the column, as SQL
+     * @return the vector expression
+     */
+    static String indexedVector(String columnRef) {
+        return "to_tsvector(" + CONFIG + ", translate(" + folded(columnRef) + ", "
+                + literal(PgTextQuery.DELIMITERS) + ", " + literal(PgTextQuery.DELIMITER_SPACES) + "))";
+    }
+
+    /**
+     * A constant of this class as an SQL string literal. Safe because the text is ours, never a
+     * caller's; quotes are doubled, which is the standard ({@code standard_conforming_strings}, on by
+     * default since PostgreSQL 9.1) spelling.
+     */
+    private static String literal(String text) {
+        return "'" + text.replace("'", "''") + "'";
+    }
+
+    /**
+     * The predicate of a {@code $text} search restricted to the ONE field a text index is declared
+     * on — what MongoDB searches when the collection's text index covers that field. It spells the
+     * index expression exactly, so the index serves the search.
+     *
+     * @param column the declared text column
+     * @param search the search string
+     * @return the predicate — never NULL
+     */
+    static PgSql predicateOnIndexed(PgColumn column, Object search) {
+        if (search == null) {
+            throw new ApiException("$text filter requires a search string");
+        }
+        PgTextQuery query = PgTextQuery.parse(search.toString());
+        if (query.positive().isEmpty()) {
+            return PgSql.FALSE;
+        }
+        String ref = PgQuery.ALIAS + "." + PgNaming.quote(column.name());
+        List<PgSql> conditions = new ArrayList<>();
+        conditions.add(PgSql.of(indexedVector(ref) + " @@ ").then(tsquery(query)));
+        for (String phrase : query.phrases()) {
+            conditions.add(PgSql.of("strpos(lower(" + folded(ref) + "), lower(?)) > 0", phrase));
+        }
+        for (String phrase : query.negatedPhrases()) {
+            conditions.add(PgSql.of("coalesce(strpos(lower(" + folded(ref) + "), lower(?)), 0) = 0", phrase));
+        }
+        return PgSql.join(" AND ", conditions).wrap("(", ")");
+    }
+
     /** ANY positive term, and none of the negated ones; a stop word alone is empty and ignored. */
     private static PgSql tsquery(PgTextQuery query) {
         List<PgSql> any = new ArrayList<>();

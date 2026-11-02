@@ -79,6 +79,24 @@ public final class PgNaming {
     }
 
     /**
+     * The name of an index a domain declares.
+     *
+     * <p>
+     * MongoDB names an index per collection; PostgreSQL names it per SCHEMA, in the same namespace
+     * as the tables. Two domains declaring the same field unique derive the same index name, and
+     * {@code CREATE INDEX IF NOT EXISTS} would then silently skip the second one — so the name is
+     * prefixed with the table.
+     * </p>
+     *
+     * @param table     the table the index is on
+     * @param indexName the declared (or derived) index name
+     * @return the index name, shortened if PostgreSQL would otherwise truncate it
+     */
+    public static String index(String table, String indexName) {
+        return fit(table + PATH_SEPARATOR + indexName);
+    }
+
+    /**
      * Keeps an identifier within PostgreSQL's 63-byte limit.
      *
      * <p>

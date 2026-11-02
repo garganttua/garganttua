@@ -21,6 +21,7 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.dsl.IApiBuilder;
 import com.garganttua.api.commons.starter.AutoConfigurationContext;
 import com.garganttua.api.commons.starter.IConfig;
+import com.garganttua.dao.postgresql.schema.PgIndexMode;
 import com.zaxxer.hikari.HikariConfig;
 
 @DisplayName("PostgresAutoConfiguration")
@@ -98,6 +99,36 @@ class PostgresAutoConfigurationTest {
             assertEquals(PostgresAutoConfiguration.DEFAULT_POOL_SIZE, pool.getMaximumPoolSize());
             assertTrue(pool.getInitializationFailTimeout() > 0,
                     "a server that cannot be reached must fail the startup, not the first request");
+        }
+    }
+
+    @Nested
+    @DisplayName("reads postgresql.index.auto")
+    class IndexMode {
+
+        @Test
+        @DisplayName("unset means create")
+        void defaultsToCreate() throws ApiException {
+            assertEquals(PgIndexMode.CREATE, PostgresAutoConfiguration.indexMode(config));
+        }
+
+        @Test
+        @DisplayName("each mode by name, any case, and the booleans of postgresql.schema.auto")
+        void spellings() throws ApiException {
+            when(config.getString(PostgresAutoConfiguration.INDEX_AUTO))
+                    .thenReturn(Optional.of(" Strict "), Optional.of("none"), Optional.of("true"), Optional.of("FALSE"));
+            assertEquals(PgIndexMode.STRICT, PostgresAutoConfiguration.indexMode(config));
+            assertEquals(PgIndexMode.NONE, PostgresAutoConfiguration.indexMode(config));
+            assertEquals(PgIndexMode.CREATE, PostgresAutoConfiguration.indexMode(config));
+            assertEquals(PgIndexMode.NONE, PostgresAutoConfiguration.indexMode(config));
+        }
+
+        @Test
+        @DisplayName("a misspelt mode is refused, not downgraded")
+        void misspelt() {
+            when(config.getString(PostgresAutoConfiguration.INDEX_AUTO)).thenReturn(Optional.of("stric"));
+            ApiException refused = assertThrows(ApiException.class, () -> PostgresAutoConfiguration.indexMode(config));
+            assertTrue(refused.getMessage().contains("'stric'"), refused.getMessage());
         }
     }
 }

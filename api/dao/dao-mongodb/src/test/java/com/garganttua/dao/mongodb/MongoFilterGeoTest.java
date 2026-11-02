@@ -18,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.filter.GeoNear;
 import com.garganttua.api.commons.filter.IFilter;
 import com.mongodb.MongoClientSettings;
 
@@ -102,5 +103,37 @@ class MongoFilterGeoTest {
 				() -> MongoFilterConverter.convert(geoFilter("$geoWithin", "location", null)));
 		assertTrue(ex.getMessage().contains("location"), "the error must name the offending field");
 		assertTrue(ex.getMessage().contains("GeoJSON"), "the error must mention the expected geometry");
+	}
+
+	@Test
+	@DisplayName("$geoIntersects keeps its GeoJSON shape under $geometry")
+	void intersects() throws ApiException {
+		Point paris = new Point(2.3522, 48.8566);
+
+		BsonDocument predicate = render(MongoFilterConverter.convert(geoFilter("$geoIntersects", "area", paris)));
+
+		BsonDocument geometry = predicate.getDocument("area").getDocument("$geoIntersects").getDocument("$geometry");
+		assertEquals("Point", geometry.getString("type").getValue());
+	}
+
+	@Test
+	@DisplayName("$near and $nearSphere both become $nearSphere, distances in metres")
+	void near() throws ApiException {
+		GeoNear near = new GeoNear(new Point(2.3522, 48.8566), 5000.0, 10.0);
+		for (String operator : List.of("$near", "$nearSphere")) {
+			BsonDocument clause = render(MongoFilterConverter.convert(geoFilter(operator, "location", near)))
+					.getDocument("location").getDocument("$nearSphere");
+			assertEquals("Point", clause.getDocument("$geometry").getString("type").getValue(), operator);
+			assertEquals(5000.0, clause.getNumber("$maxDistance").doubleValue(), operator);
+			assertEquals(10.0, clause.getNumber("$minDistance").doubleValue(), operator);
+		}
+	}
+
+	@Test
+	@DisplayName("$near without a point and distances is refused by name")
+	void nearNeedsAValue() {
+		ApiException ex = assertThrows(ApiException.class,
+				() -> MongoFilterConverter.convert(geoFilter("$near", "location", new Point(1, 2))));
+		assertTrue(ex.getMessage().contains("location"), ex.getMessage());
 	}
 }
