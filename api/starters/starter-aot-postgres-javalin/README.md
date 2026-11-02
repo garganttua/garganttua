@@ -12,12 +12,12 @@ The PostgreSQL twin of [`garganttua-api-starter-aot-mongo-javalin`](../starter-a
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-starter-aot-postgres-javalin</artifactId>
-    <version>3.0.0-ALPHA29</version>
+    <version>3.0.0-ALPHA30</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA29
+3.0.0-ALPHA30
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

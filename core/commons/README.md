@@ -20,12 +20,12 @@ This module serves as the central dependency for the entire framework, offering:
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-commons</artifactId>
-    <version>3.0.0-ALPHA29</version>
+    <version>3.0.0-ALPHA30</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA29
+3.0.0-ALPHA30
 
 ### Dependencies
  - `javax.inject:javax.inject`

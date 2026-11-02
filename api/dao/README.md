@@ -19,12 +19,12 @@ Garganttua API DAO is the data-access layer of the garganttua-api framework. It 
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-dao</artifactId>
-    <version>3.0.0-ALPHA29</version>
+    <version>3.0.0-ALPHA30</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA29
+3.0.0-ALPHA30
 
 ### Dependencies
 

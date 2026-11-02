@@ -26,12 +26,12 @@ serializer (`garganttua-api-binding-jackson`) uses to read and write geometries 
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-binding-geojson</artifactId>
-    <version>3.0.0-ALPHA29</version>
+    <version>3.0.0-ALPHA30</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA29
+3.0.0-ALPHA30
 
 ### Dependencies
  - `de.grundid.opendatalab:geojson-jackson:${geojson-jackson.version}`
