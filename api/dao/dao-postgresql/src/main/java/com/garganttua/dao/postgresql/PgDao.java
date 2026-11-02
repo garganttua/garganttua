@@ -1,6 +1,7 @@
 package com.garganttua.dao.postgresql;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -135,11 +136,42 @@ public class PgDao implements IDao {
                     + "' is not usable: " + e.getMessage(), e);
         }
         this.registry.register(this.domainName, table, dtoClass);
-        this.wiring = new Wiring(table, new PgWriter(table, this.registry),
+        this.wiring = new Wiring(table, new PgWriter(table, this.registry, ensureDigests(table)),
                 new PgReader(table, dtoClass, this.registry),
                 new PgQueryBuilder(table, dtoClass, PgIndexPlanner.textColumn(table, indexes)));
         log.debug("PostgreSQL domain '{}' mapped to table '{}' ({} columns, {} child tables)",
                 this.domainName, table.name(), table.columns().size(), table.children().size());
+    }
+
+    /**
+     * Installs the list digests (CREATE) or checks them (VALIDATE), under an advisory lock so instances
+     * starting together do not race on the DDL. They are an optimisation: any failure leaves every
+     * collection rewritten at every write, as before, with a WARN — never a refusal to start.
+     */
+    private boolean ensureDigests(PgTable table) {
+        if (table.children().isEmpty()) {
+            return false;
+        }
+        try (Connection connection = this.dataSource.getConnection()) {
+            boolean autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
+                lock.setLong(1, PgSchemaManager.lockKey("digests:" + table.name()));
+                lock.execute();
+                boolean ready = PgListDigests.ensure(connection, table, this.schemaMode);
+                connection.commit();
+                return ready;
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(autoCommit);
+            }
+        } catch (SQLException e) {
+            log.warn("Table '{}': the list digests could not be installed ({}); every write rewrites every "
+                    + "collection of the entity.", table.name(), e.getMessage());
+            return false;
+        }
     }
 
     /**

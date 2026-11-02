@@ -22,11 +22,10 @@
 			<artifactId>garganttua-api-binding-mongodb</artifactId>
 		</dependency>
 
-		<!-- Geo filter translation serialises org.geojson geometries to GeoJSON via
-		     Jackson; the binding wrapper pins both jackson-databind and geojson-jackson. -->
+		<!-- Geometries are written, read and filtered as GeoJSON by GeoJsonCodec — no JSON library. -->
 		<dependency>
 			<groupId>com.garganttua</groupId>
-			<artifactId>garganttua-api-binding-jackson</artifactId>
+			<artifactId>garganttua-api-binding-geojson</artifactId>
 		</dependency>
 
 		<!-- IKey persistence bridge: serialise/reconstruct crypto key material at the

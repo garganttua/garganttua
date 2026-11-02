@@ -2,14 +2,14 @@
 
 ## Description
 
-`garganttua-api-binding-jackson` is a **pure dependency-bundle module** — it contains no source code of its own. Its sole purpose is to declare and version-pin the Jackson family of artifacts (`jackson-annotations`, `jackson-core`, `jackson-databind`) together with `geojson-jackson` so that every consuming module resolves exactly the same JAR versions without repeating coordinates or version literals.
+`garganttua-api-binding-jackson` is a **pure dependency-bundle module** — it contains no source code of its own. Its sole purpose is to declare and version-pin the Jackson family of artifacts (`jackson-annotations`, `jackson-core`, `jackson-databind`) so that every consuming module resolves exactly the same JAR versions without repeating coordinates or version literals.
 
 Consumers (`garganttua-api-core`, `garganttua-api-security`, `garganttua-api-javalin`) declare a single dependency on this binding and get the full Jackson + GeoJSON surface transitively. The root POM controls the actual version strings via the properties `${jackson.version}` (currently **2.18.6**) and `${geojson-jackson.version}` (currently **1.14**) — bumping those properties is the only change required to upgrade Jackson across the entire framework.
 
 **Key Features:**
 - **Single upgrade point** — `jackson.version` and `geojson-jackson.version` in the root POM control the full Jackson surface for every module
 - **Conflict-free transitive graph** — `geojson-jackson`'s own Jackson transitive dependencies are explicitly excluded so the three core Jackson JARs come from exactly one coordinate set
-- **GeoJSON support** — `org.geojson.GeoJsonObject` and its subtypes are available for geolocation filter expressions (used by `Filter.geolocWithin` / `Filter.geolocWithinSphere` in `garganttua-api-core`)
+- **GeoJSON in bodies** — the `org.geojson` model comes from [`garganttua-api-binding-geojson`](../binding-geojson), which pins it; this binding (de)serialises geometries in HTTP bodies through the model's annotations, and ships their native-image reflection metadata. The DAOs store geometries through `GeoJsonCodec`, without Jackson
 - **No source, no surprise** — the module cannot introduce behaviour of its own; auditing its effect means reading its `pom.xml`
 
 ## Installation
@@ -31,7 +31,7 @@ Consumers (`garganttua-api-core`, `garganttua-api-security`, `garganttua-api-jav
  - `com.fasterxml.jackson.core:jackson-annotations:${jackson.version}`
  - `com.fasterxml.jackson.core:jackson-core:${jackson.version}`
  - `com.fasterxml.jackson.core:jackson-databind:${jackson.version}`
- - `de.grundid.opendatalab:geojson-jackson:${geojson-jackson.version}`
+ - `com.garganttua:garganttua-api-binding-geojson`
  - `com.fasterxml.jackson.dataformat:jackson-dataformat-xml:${jackson.version}`
  - `com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${jackson.version}`
  - `com.garganttua:garganttua-api-commons`

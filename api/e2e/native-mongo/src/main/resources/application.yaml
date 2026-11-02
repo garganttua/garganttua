@@ -1,0 +1,12 @@
+# Native proof of the MongoDB stack. The server is given at run time by run-e2e.sh through
+# GARGANTTUA_MONGODB_URI; this default only documents the shape.
+api:
+  multiTenant: false
+  packages: com.garganttua.api.e2e.nativemongo
+mongodb:
+  uri: mongodb://localhost:27017
+  database: e2e
+  index:
+    auto: strict
+server:
+  port: 7172

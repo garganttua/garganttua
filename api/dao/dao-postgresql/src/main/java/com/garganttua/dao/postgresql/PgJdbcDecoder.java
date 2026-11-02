@@ -13,7 +13,10 @@ import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
+import org.geojson.GeoJsonObject;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.garganttua.api.binding.geojson.GeoJsonCodec;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.dao.postgresql.schema.PgColumn;
@@ -91,8 +94,17 @@ final class PgJdbcDecoder {
         return json == null ? null : PgKeyCodec.fromJson(PgJson.MAPPER.readTree(json));
     }
 
-    private static Object geometry(String geoJson, IClass<?> type) throws JsonProcessingException {
-        return geoJson == null ? null : PgJson.GEO.readValue(geoJson, (Class<?>) type.getType());
+    /** {@code ST_AsGeoJSON} text onto the declared geometry type, read by {@link GeoJsonCodec}. */
+    private static Object geometry(String geoJson, IClass<?> type) {
+        if (geoJson == null) {
+            return null;
+        }
+        GeoJsonObject geometry = GeoJsonCodec.fromJson(geoJson);
+        if (!type.isInstance(geometry)) {
+            throw new IllegalArgumentException("a stored " + geometry.getClass().getSimpleName()
+                    + " does not fit a field of type " + type.getSimpleName());
+        }
+        return geometry;
     }
 
     private static Object scalar(ResultSet rs, int index, IClass<?> type) throws SQLException {

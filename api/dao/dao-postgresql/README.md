@@ -34,6 +34,7 @@
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`
  - `com.garganttua:garganttua-api-binding-postgresql`
+ - `com.garganttua:garganttua-api-binding-geojson`
  - `com.garganttua:garganttua-api-binding-jackson`
  - `com.garganttua.core:garganttua-crypto`
  - `com.garganttua.core:garganttua-aot-reflection`
@@ -65,7 +66,7 @@ The shape of a domain's tables is derived once from its DTO by `PgSchemaModel`, 
 | a list / set / map inside a collection element (`List<Order>` whose `Order` holds `List<Line>`, `List<List<String>>`, `Map<String, List<Book>>`) | a nested child table of the element's table, at any depth |
 | a `@Composed` reference | a `TEXT` column holding the referenced uuid (a child table for a collection) |
 | `IKey` | a `JSONB` key descriptor |
-| a GeoJSON geometry | a PostGIS `geometry(Geometry, 4326)` column |
+| a GeoJSON geometry | a PostGIS `geometry(Geometry, 4326)` column, bound and read as GeoJSON by `GeoJsonCodec` (no Jackson) |
 | anything with no finite relational shape | a `JSONB` column |
 
 The `JSONB` fallback covers what relational storage cannot express: a POJO that contains itself (`Node next`) would flatten into infinitely many columns, and an untyped `List<Object>` has no column type.
@@ -145,6 +146,7 @@ ApiBuilder.builder()
 
 - **Share one `PgSchemaRegistry` across the domains of a database.** A `@Composed` field is resolved against the target domain's table, which only that domain's DAO knows. `new PgDao(dataSource, domain)` creates a private registry: fine without compositions, not with them.
 - **Share one pooled `DataSource`.** Each operation borrows a connection and returns it.
+- **Collections are rewritten only when they change.** The digest of the rows each collection would be written as is stored on the main row (`_digest__<field>`); a write whose collection has the stored digest leaves its rows untouched — a name changed on an entity with lists costs a third of what it did (measured: 12.9 → 4.2 ms on 3 + 8 × 7 lists; when every list changes, 1.3 ms more). A trigger on every child table clears the owner's digest whenever another writer touches the rows (SQL, a migration, an older instance during a rolling upgrade), so a digest never hides a change. Installed in `SchemaMode.CREATE`; under `VALIDATE` they are not required — without them every collection is rewritten, and a WARN gives the DDL.
 - **Use `SchemaMode.VALIDATE` where DDL goes through review.** It checks everything and changes nothing.
 - **Declare the indexes your filters and sorts use** — `entity().index(...)` or `@EntityIndexed` — and the DAO creates them at startup, as the MongoDB DAO does (`PgIndexMode`, `postgresql.index.auto`): `standard` is a b-tree, composed `(tenantId, field)` when tenant-scoped, partial `WHERE field IS NOT NULL` when unique; `geo` is a GiST on `(field)::geography`; `text` a GIN on the text-search vector `$text` queries. A field held in a collection is indexed on its child table; a UNIQUE index there is refused (it would compare the elements of one entity, not two entities). A unique violation answers **409**, as on MongoDB. Index names are prefixed with their table: PostgreSQL names indexes per schema, not per table.
 

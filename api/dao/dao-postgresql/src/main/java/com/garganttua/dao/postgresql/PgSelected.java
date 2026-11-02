@@ -10,7 +10,7 @@ import com.garganttua.dao.postgresql.schema.PgNaming;
  * <p>
  * The select expression is not always the bare column: a PostGIS geometry is selected as
  * {@code ST_AsGeoJSON(...)}, because its wire form is WKB, which no Java type here decodes, while
- * GeoJSON text is exactly what {@code PgJson.GEO} reads.
+ * GeoJSON text is exactly what {@code GeoJsonCodec} reads.
  * </p>
  *
  * @param column     the column model

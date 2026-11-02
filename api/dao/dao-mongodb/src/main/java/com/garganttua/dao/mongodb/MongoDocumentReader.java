@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.bson.Document;
+import org.geojson.GeoJsonObject;
 
+import com.garganttua.api.binding.geojson.GeoJsonCodec;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
@@ -150,6 +152,11 @@ final class MongoDocumentReader {
 			return IKeyBsonBridge.fromDocument((Document) value);
 		}
 		Class<?> raw = rawClass(type);
+		if (value instanceof Document doc && raw != null && GeoJsonObject.class.isAssignableFrom(raw)
+				&& GeoJsonCodec.isGeometry(doc)) {
+			return geometry(raw, doc);
+		}
+		// A geometry stored before ALPHA30 — field by field, without a "type" — still reads, as it always did.
 		if (value instanceof Document doc) {
 			return mapDocument(type, raw, doc);
 		}
@@ -157,6 +164,21 @@ final class MongoDocumentReader {
 			return mapList(type, raw, list);
 		}
 		return MongoValueCoercer.coerce(value, raw);
+	}
+
+	/** A GeoJSON sub-document onto its declared geometry type — the symmetric read of the writer's codec. */
+	private static Object geometry(Class<?> raw, Document doc) throws ApiException {
+		GeoJsonObject geometry;
+		try {
+			geometry = GeoJsonCodec.fromMap(doc);
+		} catch (IllegalArgumentException e) {
+			throw new ApiException("A stored GeoJSON geometry cannot be read: " + e.getMessage(), e);
+		}
+		if (!raw.isInstance(geometry)) {
+			throw new ApiException("A stored " + geometry.getClass().getSimpleName() + " cannot be read into a field of type "
+					+ raw.getSimpleName());
+		}
+		return geometry;
 	}
 
 	/** Maps a BSON array onto the declared array or collection type, each element on its declared type. */

@@ -21,10 +21,10 @@ From a sandbox without a local docker: `DOCKER="flatpak-spawn --host docker" api
 `SKIP_BUILD=1` reuses a binary already built.
 
 The script builds the binary, starts `postgis/postgis:17-3.5` with TLS behind a throwaway CA, runs the
-binary against it, plays [`e2e_scenario.py`](e2e_scenario.py) — creation, a duplicate answering 409,
+binary against it, plays [`e2e_scenario.py`](../e2e_scenario.py), shared with the MongoDB proof — creation, a duplicate answering 409,
 every shape read back unchanged, `$regex`, `$geoWithin`, `$near` — then checks from the server side
 (`pg_stat_ssl`) that every connection of the application is encrypted, and lists the indexes it created.
-The same scenario runs against the JVM: `python3 e2e_scenario.py http://localhost:7171`.
+The same scenario runs against the JVM: `python3 api/e2e/e2e_scenario.py http://localhost:7171`.
 
 ## What it found
 

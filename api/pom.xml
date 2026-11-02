@@ -251,6 +251,11 @@
 			<!-- Garganttua API bindings — each wraps one external lib. -->
 			<dependency>
 				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-binding-geojson</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
 				<artifactId>garganttua-api-binding-jackson</artifactId>
 				<version>${project.version}</version>
 			</dependency>
@@ -539,6 +544,7 @@
 			<id>native-e2e</id>
 			<modules>
 				<module>e2e/native-postgres</module>
+				<module>e2e/native-mongo</module>
 			</modules>
 		</profile>
 		<!-- Opt-in code-size gate (WARNING ONLY — never fails the build). Kept out

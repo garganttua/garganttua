@@ -13,6 +13,7 @@
 	<description>Aggregator for third-party bindings — each submodule wraps one external library (Jackson, SLF4J, JsonPath, MongoDB driver, Javalin) so consumers depend on a binding artifact, keeping library swaps a pom-level edit.</description>
 
 	<modules>
+		<module>binding-geojson</module>
 		<module>binding-jackson</module>
 		<module>binding-slf4j</module>
 		<module>binding-jsonpath</module>

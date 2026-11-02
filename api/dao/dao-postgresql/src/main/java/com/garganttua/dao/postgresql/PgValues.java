@@ -13,9 +13,11 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
+import org.geojson.GeoJsonObject;
 import org.postgresql.util.PGobject;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.garganttua.api.binding.geojson.GeoJsonCodec;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.crypto.IKey;
 import com.garganttua.core.reflection.IClass;
@@ -73,6 +75,25 @@ public final class PgValues {
     }
 
     /**
+     * A geometry as the GeoJSON text {@code ST_GeomFromGeoJSON} reads, written by {@link GeoJsonCodec} —
+     * the same form the MongoDB DAO stores. A String is taken as GeoJSON already.
+     */
+    private static String geoJson(PgColumn column, Object value) {
+        if (value instanceof String text) {
+            return text;
+        }
+        if (!(value instanceof GeoJsonObject geometry)) {
+            throw new ApiException("Column '" + column.name() + "' holds a GeoJSON geometry, got a "
+                    + value.getClass().getName());
+        }
+        try {
+            return GeoJsonCodec.toJson(geometry);
+        } catch (IllegalArgumentException e) {
+            throw new ApiException("Column '" + column.name() + "' cannot hold this geometry: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Converts a Java value to what {@code PreparedStatement.setObject} expects for a column.
      *
      * @param column the column the value is written to or compared with
@@ -89,7 +110,7 @@ public final class PgValues {
                 case ID, COMPOSITION -> value.toString();
                 case JSONB -> jsonb(PgJson.MAPPER.writeValueAsString(value));
                 case IKEY -> jsonb(PgKeyCodec.toJson((IKey) value).toString());
-                case GEOMETRY -> value instanceof String s ? s : PgJson.GEO.writeValueAsString(value);
+                case GEOMETRY -> geoJson(column, value);
                 case SCALAR -> withinDecimal128(column, scalar(column.javaType(), value));
                 // The value is the structure itself: present when non-null. NULL, not FALSE, so an
                 // absent structure reads as absent in SQL too.
