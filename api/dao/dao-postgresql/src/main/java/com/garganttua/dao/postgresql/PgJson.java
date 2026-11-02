@@ -20,8 +20,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
  * </p>
  *
  * <p>
- * {@link #GEO} is a plain mapper for GeoJSON geometries: {@code org.geojson} types carry their own
- * Jackson annotations and getters, which the field-only configuration above would bypass.
+ * Geometries do not go through it: {@code GeoJsonCodec} writes and reads them, as the MongoDB DAO does.
  * </p>
  */
 public final class PgJson {
@@ -35,9 +34,6 @@ public final class PgJson {
             .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .build();
-
-    /** For GeoJSON geometries, which serialise through their own annotations. */
-    public static final ObjectMapper GEO = new ObjectMapper();
 
     private PgJson() {
         // Static holder

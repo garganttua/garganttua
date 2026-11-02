@@ -57,7 +57,7 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 Aucune.
 
-Les dix-neuf fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+Les vingt et une fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -162,3 +162,22 @@ Traitée le 2026-11-02, corrigée sur `main`, **à paraître dans `3.0.0-ALPHA29
 | `$geoWithin` / `$geoWithinSphere` (PostgreSQL) | `ST_Within` planaire | `ST_CoveredBy` sur la sphère |
 | `$text` (PostgreSQL), domaine déclarant un index texte | toutes les chaînes de l'entité | le champ déclaré seul |
 | Index déclarés (PostgreSQL) | ignorés | posés au démarrage, unicité tenue par la base |
+
+## Fiches répondues — `3.0.0-ALPHA30`
+
+Traitées le 2026-11-02, corrigées sur `main`, **à paraître dans `3.0.0-ALPHA30`**. Deux fiches de palliad,
+arrivées ensemble.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [le-dao-mongodb-ne-stocke-pas-un-champ-geojson-en-geojson](le-dao-mongodb-ne-stocke-pas-un-champ-geojson-en-geojson.md) | palliad | Corrigée, et la réponse reconnaît que notre conseil précédent (« `IndexKind.geo` sur les deux bases ») n'aurait pas dû être donné sans épreuve. Géométries écrites, relues et filtrées en GeoJSON par `GeoJsonCodec` (module neuf `binding-geojson`), **sans Jackson** — le DAO MongoDB n'en dépend plus, PostgreSQL l'utilise aussi. Éprouvé contre `mongod` 4.4 et 7.0, puis en natif (`api/e2e/native-mongo`, 13/13 sur les deux). `$near` compté en `$centerSphere` ; un second défaut trouvé : la clé `_id` des pages écrasait l'ordre de `$near`. |
+| [le-dao-postgresql-reecrit-toutes-les-listes-a-chaque-ecriture](le-dao-postgresql-reecrit-toutes-les-listes-a-chaque-ecriture.md) | palliad | Traitée par leur option 1 : une empreinte par collection, calculée sur les lignes, sur la ligne principale. Ajout : des déclencheurs effacent l'empreinte à toute écriture des tables enfants hors du DAO (SQL, migration, instance ALPHA29 en montée progressive), pour qu'elle ne mente jamais. Mesuré au DAO : 12,9 → 4,2 ms pour un nom changé ; +1,3 ms quand toutes les listes changent. |
+
+## Changements de comportement à la montée en `3.0.0-ALPHA30`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Champ `org.geojson` sur MongoDB | écrit champ par champ, aucun index `2dsphere` possible | écrit en GeoJSON ; l'ancienne forme se relit, mais bloque l'index tant qu'elle reste dans la collection |
+| Lecture MongoDB paginée avec `$near` | ordonnée par `_id`, compte refusé par le serveur | ordonnée par distance, comptée |
+| Écriture PostgreSQL d'une entité à collections | toutes les collections réécrites | seules celles qui changent ; colonnes `_digest__*` et déclencheurs ajoutés en `CREATE` |
+| `garganttua-api-binding-jackson` | portait `geojson-jackson` | le reçoit de `garganttua-api-binding-geojson` |

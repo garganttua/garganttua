@@ -34,7 +34,9 @@ import com.mongodb.client.MongoDatabase;
  *
  * <p>
  * When it cannot be obtained — an offline build with an empty cache, a platform with no matching
- * build — the tests are SKIPPED with a message saying so. They are never faked: a test that ran
+ * build — the tests are SKIPPED with a message saying so. {@code -Dgarganttua.test.mongodb.uri} points
+ * them at an external server instead, to replay them against another MongoDB version.
+ * They are never faked: a test that ran
  * against anything but MongoDB would prove nothing about MongoDB.
  * </p>
  */
@@ -66,6 +68,13 @@ public final class MongoTestServer {
     }
 
     private static void start() {
+        // An external server, when one is given — to replay the suite against another MongoDB version
+        // (palliad runs 4.4 and 7.0): -Dgarganttua.test.mongodb.uri=mongodb://127.0.0.1:27044
+        String external = System.getProperty("garganttua.test.mongodb.uri");
+        if (external != null && !external.isBlank()) {
+            client = MongoClients.create(external);
+            return;
+        }
         try {
             String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
             String arch = System.getProperty("os.arch");

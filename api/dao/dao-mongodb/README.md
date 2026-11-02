@@ -7,7 +7,7 @@
 **Key Features:**
 - **`IDao` implementation** — `MongoDao` fulfills the full `IDao` contract: `find`, `save`, `delete`, `count`, and `registerDomain`
 - **Declared indexes, created at startup** — `MongoIndexManager` reads the indexes the entity declares (`@EntityIndexed` / `entity().index(...)`) and asks MongoDB for them at `registerDomain`, so a declared uniqueness is held by the *database* instead of by a read-then-write check two concurrent requests walk through
-- **Filter translation** — `MongoFilterConverter` maps the framework's `IFilter` tree (logical operators `$and` / `$or` / `$nor`, field comparisons `$eq` / `$ne` / `$gt` / `$gte` / `$lt` / `$lte` / `$regex` / `$empty` / `$in` / `$nin` / `$text`, and geospatial `$geoWithin` / `$geoWithinSphere`) to native MongoDB `Bson` predicates via `com.mongodb.client.model.Filters`
+- **Filter translation** — `MongoFilterConverter` maps the framework's `IFilter` tree (logical operators `$and` / `$or` / `$nor`, field comparisons `$eq` / `$ne` / `$gt` / `$gte` / `$lt` / `$lte` / `$regex` / `$empty` / `$in` / `$nin` / `$text`, and geospatial `$geoWithin` / `$geoWithinSphere` / `$geoIntersects` / `$near` / `$nearSphere`) to native MongoDB `Bson` predicates via `com.mongodb.client.model.Filters`
 - **Sorting and pagination** — `ISort` translates to `Sorts.ascending` / `Sorts.descending`; `IPageable` applies `skip` and `limit` on the `FindIterable`
 - **Upsert-based save** — `save()` performs a `replaceOne` with `upsert(true)` when `_id` is present, and an `insertOne` otherwise. The domain uuid is projected onto `_id` on write (kept under its own field name too, so uuid filters still match), so saves upsert by uuid instead of inserting duplicates, and `delete()` always has a key
 - **Reflection-based DTO mapping** — `MongoDao` uses `garganttua-core` `IClass` / `IField` abstractions to convert between DTO instances and `Document` objects at runtime, traversing the class hierarchy and skipping `static` and `transient` fields
@@ -34,7 +34,7 @@
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`
  - `com.garganttua:garganttua-api-binding-mongodb`
- - `com.garganttua:garganttua-api-binding-jackson`
+ - `com.garganttua:garganttua-api-binding-geojson`
  - `com.garganttua.core:garganttua-crypto`
  - `com.garganttua.core:garganttua-aot-reflection`
  - `com.garganttua.core:garganttua-aot-commons`
@@ -83,6 +83,8 @@ A stateless utility class that recursively converts an `IFilter` tree into a `Bs
 | `$field` + `$in` / `$nin` | `Filters.in` / `Filters.nin` |
 | `$field` + `$text` | `Filters.text(value)` |
 | `$field` + `$geoWithin` / `$geoWithinSphere` | `Filters.geoWithin(field, {$geometry: …})` |
+| `$field` + `$geoIntersects` | `Filters.geoIntersects(field, {$geometry: …})` |
+| `$field` + `$near` / `$nearSphere` | `Filters.nearSphere(field, point, $maxDistance, $minDistance)` — counted as `$geoWithin` / `$centerSphere` (see below) |
 
 A `$field` node carries the field name as its `value` and exactly one comparison child. Logical operators require at least two children.
 
@@ -96,7 +98,9 @@ A geolocalized domain (`@EntityGeolocalized` / `.geolocalized(field)`, whose loc
 { "location": { "$geoWithin": { "$geometry": { "type": "Polygon", "coordinates": [ … ] } } } }
 ```
 
-The `org.geojson` geometry is serialised to its `{type, coordinates}` GeoJSON form via Jackson (the geojson library's own (de)serialisation), so every shape is handled uniformly. **`$geoWithin` and `$geoWithinSphere` map to the same `$geometry` query** — a `2dsphere` index already evaluates containment on the sphere, so `Sphere` is an alias. This requires a **`2dsphere` index** on the location field (create it independently — see the index note below).
+A geometry — in a filter, and in a stored document — is written as GeoJSON by `GeoJsonCodec` (`garganttua-api-binding-geojson`), without Jackson, and a stored GeoJSON sub-document is read back into its `org.geojson` type. **Up to ALPHA29 a stored geometry was written field by field** (`{coordinates: {longitude, latitude, …}}`), which no `2dsphere` index accepts; such a document still reads, but must be rewritten (saved again) for the index and the geo operators to see it.
+
+`$near` / `$nearSphere` return the nearest first, with `$maxDistance` / `$minDistance` in metres; a paginated read keeps that order (no `_id` key is appended when the read names no sort). MongoDB refuses `$near` in `countDocuments`, which a paginated read uses for its total: `count` rewrites it as the ring it selects — the field set, `$geoWithin` a `$centerSphere` of `$maxDistance`, not within one of `$minDistance` (radius in radians at MongoDB's earth radius, 6 378 100 m). Proved against MongoDB 4.4 and 7.0. **`$geoWithin` and `$geoWithinSphere` map to the same `$geometry` query** — a `2dsphere` index already evaluates containment on the sphere, so `Sphere` is an alias. This requires a **`2dsphere` index** on the location field (create it independently — see the index note below).
 
 ### DTO Composition (`@Composed` / `.composed(...)`)
 

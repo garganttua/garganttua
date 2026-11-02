@@ -1,15 +1,21 @@
 package com.garganttua.dao.postgresql;
 
 import java.lang.reflect.Array;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+
+import org.postgresql.util.PGobject;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.dao.postgresql.schema.PgChildKind;
@@ -209,12 +215,105 @@ final class PgWriteChildren {
     private void bindValues(PreparedStatement insert, int first, PgChildTable child, Object element)
             throws SQLException, ApiException {
         int index = first;
+        List<Object> values = values(child, element);
+        for (int i = 0; i < values.size(); i++) {
+            PgWriteSupport.bind(insert, index, child.valueColumns().get(i), values.get(i));
+            index++;
+        }
+    }
+
+    /** The JDBC values of one element's value columns — exactly what its row is bound with. */
+    private List<Object> values(PgChildTable child, Object element) throws ApiException {
+        List<Object> values = new ArrayList<>(child.valueColumns().size());
         for (PgColumn column : child.valueColumns()) {
             Object value = column.kind() == PgColumnKind.COMPOSITION
                     ? references.uuidOf(child.composedCollection(), element)
                     : PgWriteSupport.valueAt(element, column.fieldPath());
-            PgWriteSupport.bind(insert, index, column, PgValues.toJdbc(column, value));
-            index++;
+            values.add(PgValues.toJdbc(column, value));
+        }
+        return values;
+    }
+
+    /**
+     * The digest of what {@link #write} would insert for one top-level collection — its whole subtree.
+     *
+     * <p>
+     * It is computed from the ROWS, not from the collection object: the same traversal as the insert,
+     * the same positions and map keys, the same JDBC values (a composed entity contributes its uuid,
+     * as its row does), and the parent of a nested row identified by its rank among the rows written
+     * before it, where the insert uses the id the database generates. Two collections that would be
+     * stored as the same rows therefore have the same digest, by construction; anything that would
+     * change one row — an element, its order, an element of a sub-list, a map value — changes it.
+     * </p>
+     *
+     * @param child the top-level child table
+     * @param dto   the owning entity
+     * @return the SHA-256 of the rows, in hexadecimal
+     * @throws ApiException when an element cannot be converted — as the insert would fail
+     */
+    String digest(PgChildTable child, Object dto) throws ApiException {
+        MessageDigest sha = sha256();
+        digestLevel(sha, child, List.of(new Holder(null, dto)), new RowIds());
+        return HexFormat.of().formatHex(sha.digest());
+    }
+
+    /** The ids the digest gives the rows that hold others — standing for the ids the database generates. */
+    private static final class RowIds {
+        private long last;
+
+        long next() {
+            this.last++;
+            return this.last;
+        }
+    }
+
+    private void digestLevel(MessageDigest sha, PgChildTable child, List<Holder> holders, RowIds ids)
+            throws ApiException {
+        List<Row> rows = rows(child, holders);
+        PgColumn keyColumn = child.ordered() ? null : keyColumn(child);
+        feed(sha, "table", child.name());
+        feed(sha, "rows", rows.size());
+        List<Holder> written = new ArrayList<>();
+        for (Row row : rows) {
+            feed(sha, "parent", row.parent());
+            feed(sha, "position", keyColumn == null ? row.position() : PgValues.toJdbc(keyColumn, row.position()));
+            for (Object value : values(child, row.element())) {
+                feed(sha, "value", value);
+            }
+            if (child.hasChildren() && row.element() != null) {
+                written.add(new Holder(ids.next(), row.element()));
+            }
+        }
+        for (PgChildTable grandchild : child.children()) {
+            digestLevel(sha, grandchild, written, ids);
+        }
+    }
+
+    /**
+     * One value into the digest, length-prefixed and typed so that no two different sequences of values
+     * can feed the same bytes ({@code "ab","c"} is not {@code "a","bc"}; the string {@code "1"} is not the
+     * number 1).
+     */
+    private static void feed(MessageDigest sha, String label, Object value) {
+        String type = value == null ? "null" : value.getClass().getName();
+        byte[] content;
+        if (value instanceof byte[] bytes) {
+            content = bytes;
+        } else if (value instanceof PGobject object) {
+            content = (object.getType() + ":" + object.getValue()).getBytes(StandardCharsets.UTF_8);
+        } else {
+            content = String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+        }
+        byte[] header = (label + "|" + type + "|" + content.length + "|").getBytes(StandardCharsets.UTF_8);
+        sha.update(header);
+        sha.update(content);
+    }
+
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is mandatory on every JVM", e);
         }
     }
 

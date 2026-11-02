@@ -22,9 +22,13 @@
 			<artifactId>garganttua-api-binding-postgresql</artifactId>
 		</dependency>
 
-		<!-- JSONB columns (untyped / recursive shapes, IKey descriptors) and GeoJSON for PostGIS
-		     are (de)serialised through Jackson; the binding wrapper pins jackson-databind and
-		     geojson-jackson. -->
+		<!-- Geometries are bound and decoded as GeoJSON by GeoJsonCodec, like the MongoDB DAO's. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-geojson</artifactId>
+		</dependency>
+		<!-- JSONB columns (untyped / recursive shapes, IKey descriptors) are (de)serialised through
+		     Jackson, which the binding wrapper pins. -->
 		<dependency>
 			<groupId>com.garganttua</groupId>
 			<artifactId>garganttua-api-binding-jackson</artifactId>

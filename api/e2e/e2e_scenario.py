@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""The native proof's HTTP scenario: what the application must answer, whatever runs it.
+"""The native proofs' HTTP scenario: what the application must answer, whatever runs it and whatever
+store it runs on — the PostgreSQL and the MongoDB proof play the same checks.
 
 Run against the JVM or the native binary alike — the answers must be the same:
 
-    python3 e2e_scenario.py http://localhost:7171
+    python3 api/e2e/e2e_scenario.py http://localhost:7171
 
 Every check prints one line; the exit code is the number of failed checks.
 """
@@ -93,6 +94,13 @@ check("$near -> nearest first, within the radius",
 status, found = find({"location": {"$near": {"$geometry": {"type": "Point", "coordinates": LYON},
                                              "$maxDistance": 50000}}})
 check("$near $maxDistance in metres", status == 200 and [s["code"] for s in rows(found)] == ["LYS"], found)
+
+status, body = call("GET", BASE + "?size=1&page=0&filter=" + urllib.parse.quote(json.dumps(
+    {"location": {"$near": {"$geometry": {"type": "Point", "coordinates": LYON}, "$maxDistance": 500000}}})))
+page = json.loads(body) if status == 200 else {}
+check("$near paginated -> the nearest, and the count of the whole ring",
+      status == 200 and page.get("totalCount") == 2 and [s["code"] for s in rows(page.get("entities", []))] == ["LYS"],
+      (status, body))
 
 print("%d check(s) failed" % len(failures) if failures else "ALL CHECKS PASSED")
 sys.exit(len(failures))

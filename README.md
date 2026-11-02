@@ -40,6 +40,7 @@ Requires JDK 25.
 | [**garganttua**](././README.md) |  |
 | \|- [**api**](./api/README.md) | Declarative, annotation-driven REST API framework — multi-tenancy, pluggable security, AOT/native-ready — built on garganttua-core. |
 | \|    \|- [**bindings**](./api/bindings/README.md) | Aggregator for third-party bindings — each submodule wraps one external library (Jackson, SLF4J, JsonPath, MongoDB driver, Javalin) so consumers depend on a binding artifact, keeping library swaps a pom-level edit. |
+| \|    \|    \|- [**binding-geojson**](./api/bindings/binding-geojson/README.md) | Binding wrapping the org.geojson geometry model (geojson-jackson) — pins it, and ships GeoJsonCodec, which turns a geometry into GeoJSON and back without any JSON library, for the DAOs that store geometries. |
 | \|    \|    \|- [**binding-jackson**](./api/bindings/binding-jackson/README.md) | Binding wrapping Jackson (annotations, core, databind, dataformat-xml + geojson-jackson) — pins the JSON/XML (de)serialization library used across the API and ships the framework's JSON and XML ISerializer implementations. |
 | \|    \|    \|- [**binding-javalin**](./api/bindings/binding-javalin/README.md) | Binding wrapping Javalin (lightweight HTTP server). Ships a Javalin-backed IInterface (transport entry point) plus its companion IProtocol Context adapter. |
 | \|    \|    \|- [**binding-jsonpath**](./api/bindings/binding-jsonpath/README.md) | Binding wrapping Jayway JsonPath — isolates the json-path dependency (used by the JWT security module for claims extraction). |
@@ -51,6 +52,7 @@ Requires JDK 25.
 | \|    \|- [**dao**](./api/dao/README.md) | Data-access abstractions for entity persistence (parent module). |
 | \|    \|    \|- [**dao-mongodb**](./api/dao/dao-mongodb/README.md) | MongoDB DAO implementation — native-ready repository backed by the MongoDB driver. |
 | \|    \|    \|- [**dao-postgresql**](./api/dao/dao-postgresql/README.md) | PostgreSQL DAO implementation — relational mapping, one column per field, backed by JDBC. |
+| \|    \|    \|- [**native-mongo**](./api/e2e/native-mongo/README.md) | Native proof of the MongoDB stack: the PostgreSQL proof's application on 		starter-aot-mongo-javalin, compiled by GraalVM native-image and driven over HTTP against 		MongoDB 4.4 and 7.0. Built only with -Pnative-e2e. |
 | \|    \|    \|- [**native-postgres**](./api/e2e/native-postgres/README.md) | Native proof of the PostgreSQL stack: a pure-AOT application on 		starter-aot-postgres-javalin, compiled by GraalVM native-image and driven over HTTP 		against PostgreSQL 17 + PostGIS, through TLS. Built only with -Pnative-e2e. |
 | \|    \|- [**interface**](./api/interface/README.md) | Interface-layer abstractions for exposing domains over transport protocols (parent module). |
 | \|    \|    \|- [**interface-rest**](./api/interface/interface-rest/README.md) | REST interface binding — maps domain CRUD operations to HTTP/REST endpoints. |

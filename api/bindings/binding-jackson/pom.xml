@@ -27,24 +27,11 @@
 			<artifactId>jackson-databind</artifactId>
 			<version>${jackson.version}</version>
 		</dependency>
+		<!-- The org.geojson model, pinned by its own binding: the HTTP serializer (de)serialises
+		     geometries through the model's Jackson annotations. -->
 		<dependency>
-			<groupId>de.grundid.opendatalab</groupId>
-			<artifactId>geojson-jackson</artifactId>
-			<version>${geojson-jackson.version}</version>
-			<exclusions>
-				<exclusion>
-					<groupId>com.fasterxml.jackson.core</groupId>
-					<artifactId>jackson-core</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>com.fasterxml.jackson.core</groupId>
-					<artifactId>jackson-annotations</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>com.fasterxml.jackson.core</groupId>
-					<artifactId>jackson-databind</artifactId>
-				</exclusion>
-			</exclusions>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-geojson</artifactId>
 		</dependency>
 
 		<!-- XML (de)serialization — Jackson's XmlMapper sits beside the JSON ObjectMapper. -->

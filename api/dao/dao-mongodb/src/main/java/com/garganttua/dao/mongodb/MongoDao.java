@@ -167,7 +167,9 @@ public class MongoDao implements IDao {
 
 		FindIterable<Document> iterable = getCollection().find(mongoFilter);
 		// A page of size 0 is "no limit" (driver and PostgreSQL DAO alike): nothing to stabilise.
-		orderBy(sort.orElse(null), page != null && page.getPageSize() != 0).ifPresent(iterable::sort);
+		// A $near orders by distance itself: an _id key appended for stable pages would replace that order.
+		boolean byDistance = sort.isEmpty() && filter.map(MongoFilterConverter::hasNear).orElse(Boolean.FALSE);
+		orderBy(sort.orElse(null), page != null && page.getPageSize() != 0 && !byDistance).ifPresent(iterable::sort);
 		if (page != null) {
 			iterable.skip((int) offset);
 			iterable.limit(page.getPageSize());
@@ -361,7 +363,8 @@ public class MongoDao implements IDao {
 		if (filter == null) {
 			return getCollection().countDocuments();
 		}
-		Bson mongoFilter = MongoFilterConverter.convert(filter);
+		// A paginated read counts with its own filter, and MongoDB refuses $near in countDocuments.
+		Bson mongoFilter = MongoFilterConverter.convertForCount(filter);
 		return getCollection().countDocuments(mongoFilter);
 	}
 

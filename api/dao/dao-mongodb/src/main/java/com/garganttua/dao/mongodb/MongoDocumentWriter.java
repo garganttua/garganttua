@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.bson.Document;
+import org.geojson.GeoJsonObject;
 
+import com.garganttua.api.binding.geojson.GeoJsonCodec;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.crypto.IKey;
 import com.garganttua.core.reflection.IClass;
@@ -109,6 +111,15 @@ final class MongoDocumentWriter {
 		if (value instanceof IKey key) {
 			// No BSON codec exists for IKey — persist it as a self-describing sub-document.
 			return IKeyBsonBridge.toDocument(key);
+		}
+		if (value instanceof GeoJsonObject geometry) {
+			// GeoJSON, as a 2dsphere index and every geo operator read it — not the POJO walk below,
+			// which stored {coordinates: {longitude, latitude, altitude, …}} and made the index impossible.
+			try {
+				return new Document(GeoJsonCodec.toMap(geometry));
+			} catch (IllegalArgumentException e) {
+				throw new ApiException("Field '" + path + "' cannot be stored as GeoJSON: " + e.getMessage(), e);
+			}
 		}
 		// Map/Collection are themselves in java.util.* — they must be recursed BEFORE the
 		// "native by package" test below, else they would be handed to the driver raw.

@@ -62,7 +62,7 @@ for _ in $(seq 1 60); do
 done
 
 status=0
-python3 -I "$HERE/e2e_scenario.py" "http://localhost:$PORT_APP" || status=$?
+python3 -I "$HERE/../e2e_scenario.py" "http://localhost:$PORT_APP" || status=$?
 
 echo "--- server side"
 encrypted=$($DOCKER exec "$CONTAINER" psql -U postgres -d e2e -tAc \
