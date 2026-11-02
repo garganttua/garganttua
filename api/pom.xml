@@ -532,6 +532,15 @@
 	</modules>
 
 	<profiles>
+		<!-- Native proof of the PostgreSQL stack (GraalVM native-image + a PostgreSQL with PostGIS):
+		     slow and environment-bound, so never part of the default build. See
+		     e2e/native-postgres/run-e2e.sh. -->
+		<profile>
+			<id>native-e2e</id>
+			<modules>
+				<module>e2e/native-postgres</module>
+			</modules>
+		</profile>
 		<!-- Opt-in code-size gate (WARNING ONLY — never fails the build). Kept out
 		     of the default build so offline builds don't need the Checkstyle
 		     artifacts. Activate with `-Pquality`:

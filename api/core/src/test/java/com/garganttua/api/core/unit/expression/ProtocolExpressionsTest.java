@@ -579,6 +579,45 @@ class ProtocolExpressionsTest {
 		}
 
 		@Test
+		@DisplayName("JSON $near / $nearSphere, MongoDB's form: a parsed Point and distances in metres")
+		void jsonNear() {
+			for (String op : java.util.List.of("$near", "$nearSphere")) {
+				com.garganttua.api.commons.filter.IFilter f = filterOf("{\"location\":{\"" + op + "\":{\"$geometry\":"
+						+ "{\"type\":\"Point\",\"coordinates\":[2.35,48.85]},\"$maxDistance\":5000,\"$minDistance\":10}}}");
+				com.garganttua.api.commons.filter.IFilter near = f.getFilters().get(0);
+				assertEquals(op, near.getName());
+				com.garganttua.api.commons.filter.GeoNear value =
+						assertInstanceOf(com.garganttua.api.commons.filter.GeoNear.class, near.getValue());
+				assertInstanceOf(org.geojson.Point.class, value.geometry());
+				assertEquals(5000.0, value.maxDistance());
+				assertEquals(10.0, value.minDistance());
+			}
+		}
+
+		@Test
+		@DisplayName("JSON $near with a negative or non-numeric distance is refused")
+		void jsonNearRefusals() {
+			String point = "{\"type\":\"Point\",\"coordinates\":[2.35,48.85]}";
+			ApiException negative = assertThrows(ApiException.class, () -> filterOf(
+					"{\"location\":{\"$near\":{\"$geometry\":" + point + ",\"$maxDistance\":-1}}}"));
+			assertTrue(negative.getMessage().contains("$near"), negative.getMessage());
+			assertThrows(ApiException.class, () -> filterOf(
+					"{\"location\":{\"$near\":{\"$geometry\":" + point + ",\"$maxDistance\":\"far\"}}}"));
+		}
+
+		@Test
+		@DisplayName("JSON $geoIntersects accepts MongoDB's {$geometry: …} as well as the bare GeoJSON")
+		void jsonGeoIntersects() {
+			String point = "{\"type\":\"Point\",\"coordinates\":[2.35,48.85]}";
+			for (String operand : java.util.List.of("{\"$geometry\":" + point + "}", point)) {
+				com.garganttua.api.commons.filter.IFilter geo = filterOf("{\"area\":{\"$geoIntersects\":" + operand + "}}")
+						.getFilters().get(0);
+				assertEquals("$geoIntersects", geo.getName());
+				assertInstanceOf(org.geojson.Point.class, geo.getValue(), operand);
+			}
+		}
+
+		@Test
 		@DisplayName("malformed JSON filter raises a parlant ApiException")
 		void jsonMalformedThrows() {
 			ApiException ex = assertThrows(ApiException.class, () -> filterOf("{not valid json"));

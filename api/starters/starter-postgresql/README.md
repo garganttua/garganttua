@@ -44,6 +44,7 @@
 | `postgresql.password` | no | password |
 | `postgresql.pool.size` | no | maximum pooled connections (default 10) |
 | `postgresql.schema.auto` | no | `true` (default): create missing tables and columns — `false`: create nothing, refuse a schema that does not fit |
+| `postgresql.index.auto` | no | `create` (default): create the indexes the entities declare (`entity().index(...)` / `@EntityIndexed`) that are missing, warn about one that cannot be created and start anyway — `none`: touch no index — `strict`: as `create`, but refuse to start when a declared index cannot be held. With `postgresql.schema.auto: false`, no index is created: a missing one is reported with its `CREATE INDEX` statement (a refusal to start in `strict`). Same contract as `mongodb.index.auto` |
 
 The auto-configuration runs at `order() = 0`: persistence is wired before transport.
 

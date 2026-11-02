@@ -11,5 +11,13 @@
     "allDeclaredMethods": true,
     "allDeclaredConstructors": true,
     "allDeclaredFields": true
+  },
+  {
+    "comment": "The page a paginated read answers, serialised by Jackson through its record components. Without this, a native image answers {} to every paginated read. palliad had listed it by hand.",
+    "name": "com.garganttua.api.commons.service.Page",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
   }
 ]

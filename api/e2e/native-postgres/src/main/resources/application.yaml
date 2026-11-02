@@ -1,0 +1,13 @@
+# Native proof of the PostgreSQL stack. The database is given at run time by run-e2e.sh through
+# GARGANTTUA_POSTGRESQL_URL (TLS, sslmode=verify-full); this default only documents the shape.
+api:
+  multiTenant: false
+  packages: com.garganttua.api.e2e.nativepg
+postgresql:
+  url: jdbc:postgresql://localhost:5432/e2e
+  pool:
+    size: 4
+  index:
+    auto: strict
+server:
+  port: 7171

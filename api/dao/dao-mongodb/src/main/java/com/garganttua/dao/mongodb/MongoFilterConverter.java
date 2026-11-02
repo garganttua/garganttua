@@ -9,6 +9,7 @@ import org.bson.conversions.Bson;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.filter.GeoNear;
 import com.garganttua.api.commons.filter.IFilter;
 import com.mongodb.client.model.Filters;
 
@@ -26,6 +27,10 @@ import com.mongodb.client.model.Filters;
 public class MongoFilterConverter {
 
 	/** Serialises an {@code org.geojson} geometry to its GeoJSON {@code {type,coordinates}} form. */
+	/** The operators whose value is a GeoJSON geometry (or a $near), passed to the driver as is. */
+	private static final java.util.Set<String> GEO_OPERATORS = java.util.Set.of("$geoWithin", "$geoWithinSphere",
+			"$geoIntersects", "$near", "$nearSphere");
+
 	private static final ObjectMapper GEO_MAPPER = new ObjectMapper();
 
 	public static Bson convert(IFilter filter) throws ApiException {
@@ -81,9 +86,7 @@ public class MongoFilterConverter {
 		String op = comparison.getName();
 		Object raw = comparison.getValue();
 		// Compare in the shape the writer stored: big numbers as Decimal128, UUIDs as strings.
-		Object value = "$geoWithin".equals(op) || "$geoWithinSphere".equals(op)
-				? raw
-				: MongoBsonValues.toBson(raw, fieldName);
+		Object value = GEO_OPERATORS.contains(op) ? raw : MongoBsonValues.toBson(raw, fieldName);
 
 		return switch (op) {
 			case "$eq" -> Filters.eq(fieldName, value);
@@ -101,6 +104,10 @@ public class MongoFilterConverter {
 			// $geoWithin/$geometry query — a 2dsphere index already evaluates it on the
 			// sphere, so 'Sphere' is an alias here. Requires a 2dsphere index on the field.
 			case "$geoWithin", "$geoWithinSphere" -> convertGeoWithin(fieldName, value);
+			case "$geoIntersects" -> Filters.geoIntersects(fieldName, geoJson(fieldName, op, value));
+			// $near and $nearSphere are the same query on a 2dsphere index: distances in metres, on the
+			// sphere, nearest first. Like every geo query, they need a 2dsphere index on the field.
+			case "$near", "$nearSphere" -> convertNear(fieldName, op, value);
 			default -> throw new ApiException("Unsupported comparison operator: " + op);
 		};
 	}
@@ -120,6 +127,28 @@ public class MongoFilterConverter {
 			// raw {type,coordinates} GeoJSON — wrapping it here would double-nest $geometry.
 			Document geoJson = Document.parse(GEO_MAPPER.writeValueAsString(geometry));
 			return Filters.geoWithin(fieldName, geoJson);
+		} catch (JsonProcessingException e) {
+			throw new ApiException("Failed to serialise the GeoJSON geometry for field '" + fieldName
+					+ "' (expected an org.geojson geometry, got " + geometry.getClass().getName() + ")", e);
+		}
+	}
+
+	private static Bson convertNear(String fieldName, String op, Object value) throws ApiException {
+		if (!(value instanceof GeoNear near)) {
+			throw new ApiException(op + " filter on field '" + fieldName + "' requires a point and distances "
+					+ "({$geometry: <Point>, $maxDistance: <metres>})");
+		}
+		return Filters.nearSphere(fieldName, geoJson(fieldName, op, near.geometry()), near.maxDistance(),
+				near.minDistance());
+	}
+
+	/** A GeoJSON geometry as the raw {type, coordinates} document the driver wraps in $geometry. */
+	private static Document geoJson(String fieldName, String op, Object geometry) throws ApiException {
+		if (geometry == null) {
+			throw new ApiException(op + " filter on field '" + fieldName + "' requires a GeoJSON geometry value");
+		}
+		try {
+			return Document.parse(GEO_MAPPER.writeValueAsString(geometry));
 		} catch (JsonProcessingException e) {
 			throw new ApiException("Failed to serialise the GeoJSON geometry for field '" + fieldName
 					+ "' (expected an org.geojson geometry, got " + geometry.getClass().getName() + ")", e);

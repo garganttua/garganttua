@@ -1,11 +1,15 @@
 package com.garganttua.api.starter.postgresql;
 
+import java.util.Locale;
+import java.util.Map;
+
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.starter.AutoConfigurationContext;
 import com.garganttua.api.commons.starter.IApiAutoConfiguration;
 import com.garganttua.api.commons.starter.IConfig;
 import com.garganttua.dao.postgresql.PgDao;
 import com.garganttua.dao.postgresql.PgSchemaRegistry;
+import com.garganttua.dao.postgresql.schema.PgIndexMode;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -30,6 +34,11 @@ import com.zaxxer.hikari.HikariDataSource;
  * <tr><td>{@code postgresql.pool.size}</td><td>no</td><td>maximum pooled connections (default 10)</td></tr>
  * <tr><td>{@code postgresql.schema.auto}</td><td>no</td><td>{@code true} (default): create missing tables
  * and columns; {@code false}: create nothing and refuse to start on a schema that does not fit</td></tr>
+ * <tr><td>{@code postgresql.index.auto}</td><td>no</td><td>{@code create} (default): create the
+ * declared indexes that are missing, warn about anything that cannot be created and start anyway;
+ * {@code none}: touch no index at all; {@code strict}: as {@code create}, but refuse to start when a
+ * declared index cannot be created — or, with {@code postgresql.schema.auto: false}, is missing. The
+ * same contract as {@code mongodb.index.auto}</td></tr>
  * </table>
  *
  * <p>
@@ -38,6 +47,14 @@ import com.zaxxer.hikari.HikariDataSource;
  * </p>
  */
 public final class PostgresAutoConfiguration implements IApiAutoConfiguration {
+
+    /** The setting naming who creates the declared indexes — the twin of {@code mongodb.index.auto}. */
+    static final String INDEX_AUTO = "postgresql.index.auto";
+
+    /** The boolean spellings {@code postgresql.schema.auto} uses, mapped onto the modes they mean here. */
+    private static final Map<String, PgIndexMode> BOOLEAN_ALIASES = Map.of(
+            "true", PgIndexMode.CREATE,
+            "false", PgIndexMode.NONE);
 
     /** Default pool ceiling — enough for a small service, low enough not to exhaust a shared server. */
     static final int DEFAULT_POOL_SIZE = 10;
@@ -68,10 +85,37 @@ public final class PostgresAutoConfiguration implements IApiAutoConfiguration {
 
         SchemaMode mode = config.getBoolean("postgresql.schema.auto").orElse(Boolean.TRUE)
                 ? SchemaMode.CREATE : SchemaMode.VALIDATE;
+        PgIndexMode indexMode = indexMode(config);
         PgSchemaRegistry registry = new PgSchemaRegistry();
 
         // One PgDao per domain, all sharing the pool and the registry; the table is the domain name.
-        context.registerDefaultDao((domainName, dtoClass) -> new PgDao(dataSource, domainName, registry, mode));
+        context.registerDefaultDao(
+                (domainName, dtoClass) -> new PgDao(dataSource, domainName, registry, mode, indexMode));
+    }
+
+    /**
+     * Reads {@code postgresql.index.auto}. Unset means {@link PgIndexMode#CREATE}. A value that names no
+     * mode is an error rather than a silent fallback: a misspelt {@code strict} quietly downgraded to
+     * {@code create} would be a database not holding the constraint someone deliberately demanded.
+     *
+     * @param config the application configuration
+     * @return the mode to build every DAO with
+     * @throws ApiException when the configured value names no mode
+     */
+    static PgIndexMode indexMode(IConfig config) throws ApiException {
+        String configured = config.getString(INDEX_AUTO).orElse("");
+        if (configured.isBlank()) {
+            return PgIndexMode.CREATE;
+        }
+        PgIndexMode fromBoolean = BOOLEAN_ALIASES.get(configured.trim().toLowerCase(Locale.ROOT));
+        if (fromBoolean != null) {
+            return fromBoolean;
+        }
+        return PgIndexMode.parse(configured)
+                .orElseThrow(() -> new ApiException(INDEX_AUTO + " is '" + configured
+                        + "', which names no mode. Use 'create' (the default: create the declared indexes "
+                        + "that are missing), 'none' (touch no index), or 'strict' (create, and refuse to "
+                        + "start when one cannot be created)."));
     }
 
     /** The pool settings. Package-private so the test can check them without opening a connection. */

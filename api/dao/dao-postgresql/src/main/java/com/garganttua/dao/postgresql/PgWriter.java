@@ -6,6 +6,9 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.StringJoiner;
 
+import org.postgresql.util.PSQLException;
+import org.postgresql.util.ServerErrorMessage;
+
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.dao.postgresql.schema.PgChildTable;
@@ -75,8 +78,7 @@ public final class PgWriter {
                 children.write(connection, child, id, dto);
             }
         } catch (SQLException e) {
-            throw new ApiException("Failed to save entity " + id + " into table '" + table.name() + "': "
-                    + e.getMessage(), e);
+            throw writeFailure(id, e);
         }
         LOG.debug("Upserted {} into table '{}' with {} collection(s)", id, table.name(), table.children().size());
     }
@@ -105,6 +107,26 @@ public final class PgWriter {
                     + table.id().name() + "=" + id);
         }
         LOG.debug("Deleted {} from table '{}'", id, table.name());
+    }
+
+    /**
+     * Translates a write the database refused. A unique violation is the SAME refusal the framework's
+     * own unicity check reports, only decided by the database — under concurrency the database is the
+     * one that wins the race — so it reads as a conflict (HTTP 409), as on MongoDB. The upsert itself
+     * resolves a conflict on the primary key, so any {@code 23505} here comes from another unique
+     * index: a declared uniqueness.
+     */
+    private ApiException writeFailure(Object id, SQLException e) {
+        if (!PgIndexManager.UNIQUE_VIOLATION.equals(e.getSQLState())) {
+            return new ApiException("Failed to save entity " + id + " into table '" + table.name() + "': "
+                    + e.getMessage(), e);
+        }
+        ServerErrorMessage server = e instanceof PSQLException psql ? psql.getServerErrorMessage() : null;
+        String constraint = server == null ? null : server.getConstraint();
+        String detail = server == null ? e.getMessage() : server.getDetail();
+        return ApiException.conflict("Unicity constraint violated on table '" + table.name() + "'"
+                + (constraint == null ? "" : " (index '" + constraint + "')") + ", refused by the database: "
+                + detail);
     }
 
     /** {@return the main-row upsert statement} Package-private so a test can inspect placeholders. */

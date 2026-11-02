@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api</artifactId>
+		<version>3.0.0-ALPHA28</version>
+		<relativePath>../../pom.xml</relativePath>
+	</parent>
+	<artifactId>garganttua-api-e2e-native-postgres</artifactId>
+	<packaging>jar</packaging>
+	<description>Native proof of the PostgreSQL stack: a pure-AOT application on
+		starter-aot-postgres-javalin, compiled by GraalVM native-image and driven over HTTP
+		against PostgreSQL 17 + PostGIS, through TLS. Built only with -Pnative-e2e.</description>
+	<!--
+	  Not a library and never published: the proof that the PostgreSQL path survives native-image
+	  — JDBC driver (ServiceLoader, SSL, SCRAM), HikariCP, the JSONB / GeoJSON decoders, declared
+	  indexes and the 409 of a unique violation. run-e2e.sh builds it, starts PostGIS with TLS, runs
+	  the binary and checks every answer.
+	-->
+	<properties>
+		<maven.deploy.skip>true</maven.deploy.skip>
+		<maven.install.skip>true</maven.install.skip>
+		<native.maven.plugin.version>0.10.6</native.maven.plugin.version>
+	</properties>
+	<dependencies>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-aot-postgres-javalin</artifactId>
+			<version>${project.version}</version>
+			<exclusions>
+				<!-- Pure AOT: no runtime reflection stack, no logback (slf4j-simple below). -->
+				<exclusion>
+					<groupId>ch.qos.logback</groupId>
+					<artifactId>logback-classic</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>com.garganttua.core</groupId>
+					<artifactId>garganttua-starter-runtime</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-starter-native</artifactId>
+			<version>${garganttua.core.version}</version>
+			<type>pom</type>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-simple</artifactId>
+			<version>${slf4j.version}</version>
+		</dependency>
+	</dependencies>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.graalvm.buildtools</groupId>
+				<artifactId>native-maven-plugin</artifactId>
+				<version>${native.maven.plugin.version}</version>
+				<extensions>true</extensions>
+				<executions>
+					<execution>
+						<id>build-native</id>
+						<phase>package</phase>
+						<goals>
+							<goal>compile-no-fork</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<imageName>native-postgres</imageName>
+					<mainClass>com.garganttua.api.e2e.nativepg.NativePostgresApp</mainClass>
+					<buildArgs>
+						<buildArg>--no-fallback</buildArg>
+						<buildArg>-march=compatibility</buildArg>
+					</buildArgs>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>

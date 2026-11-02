@@ -10,6 +10,7 @@ import org.geojson.GeoJsonObject;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.filter.GeoNear;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.core.filter.Filter;
 
@@ -124,8 +125,39 @@ final class ProtocolFilterJson {
 			case "$empty":          return Filter.empty(field);
 			case "$geoWithin":       return Filter.geolocWithin(field, jsonGeometry(value));
 			case "$geoWithinSphere": return Filter.geolocWithinSphere(field, jsonGeometry(value));
+			case "$geoIntersects":   return Filter.geolocIntersects(field, jsonGeometry(unwrapGeometry(value)));
+			case "$near":            return Filter.geolocNear(field, jsonNear(value));
+			case "$nearSphere":      return Filter.geolocNearSphere(field, jsonNear(value));
 			default:                return null; // unknown operator — skip
 		}
+	}
+
+	/** MongoDB writes a geometry operand as <code>{$geometry: &lt;GeoJSON&gt;}</code>; the bare GeoJSON is accepted too. */
+	private static JsonNode unwrapGeometry(JsonNode value) {
+		return value != null && value.has("$geometry") ? value.get("$geometry") : value;
+	}
+
+	/** <code>{$geometry: &lt;Point&gt;, $maxDistance: m, $minDistance: m}</code>, distances in metres. */
+	private static GeoNear jsonNear(JsonNode value) {
+		JsonNode geometry = unwrapGeometry(value);
+		if (geometry == null || geometry.isNull()) {
+			throw new ApiException("Invalid $near filter: it requires a GeoJSON point ($geometry)");
+		}
+		try {
+			return new GeoNear(jsonGeometry(geometry), distance(value, "$maxDistance"), distance(value, "$minDistance"));
+		} catch (IllegalArgumentException e) {
+			throw new ApiException("Invalid $near filter: " + e.getMessage(), e);
+		}
+	}
+
+	private static Double distance(JsonNode value, String key) {
+		if (value == null || !value.has(key) || value.get(key).isNull()) {
+			return null;
+		}
+		if (!value.get(key).isNumber()) {
+			throw new ApiException("Invalid $near filter: " + key + " must be a number of metres, got " + value.get(key));
+		}
+		return value.get(key).doubleValue();
 	}
 
 	private static GeoJsonObject jsonGeometry(JsonNode node) {

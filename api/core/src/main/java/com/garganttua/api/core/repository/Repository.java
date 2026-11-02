@@ -5,7 +5,7 @@ import com.garganttua.api.core.filter.FilterMapper;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -179,7 +179,9 @@ public class Repository implements IRepository {
 
     private Map<String, Object> queryDtoContext(IDtoContext<?> dtoContext, Optional<IPageable> pageable,
             Optional<IFilter> filter, Optional<ISort> sort, Optional<List<String>> projection) throws ApiException {
-        Map<String, Object> map = new HashMap<>();
+        // Insertion-ordered: the DAO answers in the read's order (sort, $near distance, page) and the
+        // entities must come out in that order — a HashMap keyed by uuid used to shuffle them.
+        Map<String, Object> map = new LinkedHashMap<>();
         // Use the 3-arg find for the common no-projection path so DAOs/contexts that only implement
         // it are unaffected; the projecting 4-arg variant is reached only when fields were requested.
         boolean hasProjection = projection != null && projection.isPresent() && !projection.get().isEmpty();
@@ -260,7 +262,8 @@ public class Repository implements IRepository {
     // --- Internal: merge ---
 
     public static Map<String, List<Object>> mergeMaps(List<Map<String, Object>> maps, boolean strict) throws ApiException {
-        Map<String, List<Object>> result = new HashMap<>();
+        // Insertion-ordered, for the same reason: the first DTO context's order is the read's order.
+        Map<String, List<Object>> result = new LinkedHashMap<>();
         maps.forEach(map -> map.forEach((key, value) ->
                 result.computeIfAbsent(key, k -> new ArrayList<>()).add(value)));
 

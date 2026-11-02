@@ -54,5 +54,18 @@
     "name": "org.eclipse.jetty.io.ManagedSelector",
     "allDeclaredConstructors": true,
     "allPublicMethods": true
+  },
+  {
+    "comment": "The response envelopes JavalinResponses serialises with the domain's serializer (Jackson): read through their getters. Without this, a native image answers {} to every framework error and success status — the consumer sees an empty body, never the reason. Found by the native PostgreSQL proof (api/e2e/native-postgres); palliad had listed them by hand.",
+    "name": "com.garganttua.api.binding.javalin.JavalinResponses$ErrorEnvelope",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "com.garganttua.api.binding.javalin.JavalinResponses$StatusEnvelope",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
   }
 ]

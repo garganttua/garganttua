@@ -1,12 +1,9 @@
 package com.garganttua.dao.postgresql;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
 
 /**
  * The predicate of one comparison on one single-valued operand, with MongoDB's null and type semantics.
@@ -28,9 +25,8 @@ import com.garganttua.dao.postgresql.schema.PgColumnKind;
  *
  * <p>
  * {@code $regex} is delegated to {@link PgRegex}: the PCRE pattern is translated to an equivalent
- * PostgreSQL pattern, and matches strings only, as in MongoDB. {@code $geoWithin}/{@code $geoWithinSphere} use PostGIS
- * {@code ST_Within} in SRID 4326 — a planar test in degrees, where MongoDB's 2dsphere index tests
- * on the sphere; results differ only for shapes large enough for the curvature to matter.
+ * PostgreSQL pattern, and matches strings only, as in MongoDB. The geographic operators are delegated
+ * to {@link PgGeoPredicates}, which evaluates them on the sphere, as MongoDB's 2dsphere index does.
  * </p>
  */
 final class PgScalarPredicates {
@@ -39,9 +35,11 @@ final class PgScalarPredicates {
     private static final String JSON_ELEMENT_ALIAS = "x";
 
     private final String domain;
+    private final PgGeoPredicates geo;
 
     PgScalarPredicates(String domain) {
         this.domain = domain;
+        this.geo = new PgGeoPredicates(domain);
     }
 
     /**
@@ -64,7 +62,9 @@ final class PgScalarPredicates {
             case "$empty" -> isNull(o);
             case "$in" -> in(o, c);
             case "$nin" -> PgSql.not(in(o, c));
-            case "$geoWithin", "$geoWithinSphere" -> geoWithin(o, c);
+            case "$geoWithin", "$geoWithinSphere" -> geo.within(o, c);
+            case "$geoIntersects" -> geo.intersects(o, c);
+            case "$near", "$nearSphere" -> geo.near(o, c);
             default -> throw new ApiException("Unsupported comparison operator: " + c.op());
         };
     }
@@ -125,27 +125,5 @@ final class PgScalarPredicates {
             parts.add(o.expr(false).then(" IN (").then(PgSql.join(", ", binds)).then(")"));
         }
         return PgSql.any(parts);
-    }
-
-    private PgSql geoWithin(PgOperand o, PgCondition c) throws ApiException {
-        if (c.value() == null) {
-            throw new ApiException("$geoWithin filter on field '" + c.field() + "' requires a GeoJSON geometry value");
-        }
-        if (o.isJsonPath() || o.column().kind() != PgColumnKind.GEOMETRY) {
-            throw new ApiException("$geoWithin filter on field '" + c.field() + "' of domain '" + domain
-                    + "': the field is not a geometry (it is " + o.column().sqlType()
-                    + "); only a GeoJSON field, stored as a PostGIS geometry, can be tested for containment");
-        }
-        return o.expr(false).wrap("ST_Within(", ", ").then(bind(o, false, c.value(), c.field())).then(")");
-    }
-
-    /** One bound value: the placeholder and the value, both from {@link PgValues}. */
-    private PgSql bind(PgOperand o, boolean numeric, Object value, String field) throws ApiException {
-        PgColumn column = o.bindColumn(numeric);
-        if ((value instanceof Collection<?> || value instanceof Object[]) && column.kind() != PgColumnKind.JSONB) {
-            throw new ApiException("Field '" + field + "' of domain '" + domain + "' is compared with a list of"
-                    + " values; compare one value at a time, or use $in to match any of several");
-        }
-        return PgSql.of(PgValues.placeholder(column), PgValues.toJdbc(column, value));
     }
 }

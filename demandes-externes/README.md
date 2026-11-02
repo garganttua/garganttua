@@ -57,7 +57,7 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 Aucune.
 
-Les dix-huit fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+Les dix-neuf fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -146,3 +146,19 @@ palliad : deux fiches et un retour de mesure sur une fiche d'ALPHA24.
 Aucune signature publique ne change ; `MongoDao.readWholeDocuments()` et le constructeur à trois
 arguments d'`EntityAnnotationScanner` sont additifs.
 
+## Fiches répondues — `3.0.0-ALPHA29`
+
+Traitée le 2026-11-02, corrigée sur `main`, **à paraître dans `3.0.0-ALPHA29`**.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [le-dao-postgresql-ne-pose-aucun-index-ni-starter-aot-ni-index-geographique](le-dao-postgresql-ne-pose-aucun-index-ni-starter-aot-ni-index-geographique.md) | palliad | Les trois volets. **A** : index déclarés posés par `PgDao` (`postgresql.index.auto`, contrat de Mongo), `23505` → 409 ; leur mesure rejouée, 30 écrivains → 1 ligne, 29 × 409. Un écart voulu : les noms d'index sont préfixés par la table (PostgreSQL les nomme par schéma). **B** : `starter-aot-postgres-javalin`, et une épreuve native dans le dépôt (`api/e2e/native-postgres`, GraalVM 25, PostGIS, TLS `verify-full`) : 12/12, 4 connexions chiffrées sur 4. Elle a trouvé quatre métadonnées natives que le cadre ne livrait pas, et un défaut qui touche aussi MongoDB : `Repository` perdait l'ordre des lectures triées. **C** : GiST sur `geography`, `$geoWithin` sur la sphère (changement de comportement), `$near` trié, `$geoIntersects`, GIN pour `$text`. Non fait : le point déclaré par deux colonnes plates, avec la raison. |
+
+## Changements de comportement à la montée en `3.0.0-ALPHA29`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Lectures triées (tous DAO) | ordre du hachage des uuid | ordre rendu par le DAO |
+| `$geoWithin` / `$geoWithinSphere` (PostgreSQL) | `ST_Within` planaire | `ST_CoveredBy` sur la sphère |
+| `$text` (PostgreSQL), domaine déclarant un index texte | toutes les chaînes de l'entité | le champ déclaré seul |
+| Index déclarés (PostgreSQL) | ignorés | posés au démarrage, unicité tenue par la base |

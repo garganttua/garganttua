@@ -14,5 +14,134 @@
     "name": "com.fasterxml.jackson.databind.node.JsonNodeFactory",
     "allDeclaredConstructors": true,
     "allPublicMethods": true
+  },
+  {
+    "comment": "The GeoJSON types this binding pins (geojson-jackson): Jackson builds them reflectively — the polymorphic GeoJsonObject by its 'type' property, LngLatAlt through its own (de)serializer. Without this, a native image cannot read or write a geometry: a request body carrying one is refused (400), a stored one cannot be answered. Found by the native PostgreSQL proof (api/e2e/native-postgres).",
+    "name": "org.geojson.GeoJsonObject",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.Geometry",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.Point",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.MultiPoint",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.LineString",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.MultiLineString",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.Polygon",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.MultiPolygon",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.GeometryCollection",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.Feature",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.FeatureCollection",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.LngLatAlt",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.Crs",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.jackson.CrsType",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.jackson.LngLatAltSerializer",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.geojson.jackson.LngLatAltDeserializer",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
   }
 ]

@@ -2,6 +2,7 @@ package com.garganttua.dao.postgresql;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import com.garganttua.api.commons.ApiException;
@@ -33,21 +34,35 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * <p>
  * <b>{@code $text}</b> is delegated to {@link PgTextSearch}: MongoDB's search over every string of
  * the entity, with its restrictions (one {@code $text}, never under {@code $or} or {@code $nor}).
- * Like MongoDB, it ignores the field the filter names.
+ * Like MongoDB, it ignores the field the filter names. When the domain declares a text index, the
+ * search covers that field only — what MongoDB's text index covers — and spells the index expression,
+ * so the index serves it.
  * </p>
  */
 final class PgFilterTranslator {
 
     private static final Set<String> COMPARISONS = Set.of("$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$regex",
-            "$empty", "$in", "$nin", "$text", "$geoWithin", "$geoWithinSphere");
+            "$empty", "$in", "$nin", "$text", "$geoWithin", "$geoWithinSphere", "$geoIntersects", "$near",
+            "$nearSphere");
 
     private final PgTable table;
     private final PgFieldResolver resolver;
     private final PgScalarPredicates scalars;
     private final PgElementPredicates elements;
+    private final Optional<PgColumn> textColumn;
 
     PgFilterTranslator(PgTable table) {
+        this(table, Optional.empty());
+    }
+
+    /**
+     * @param table      the domain's relational shape
+     * @param textColumn the column a declared text index covers, which {@code $text} then searches
+     *                   alone; empty to search every string of the entity
+     */
+    PgFilterTranslator(PgTable table, Optional<PgColumn> textColumn) {
         this.table = table;
+        this.textColumn = textColumn == null ? Optional.empty() : textColumn;
         this.resolver = new PgFieldResolver(table);
         this.scalars = new PgScalarPredicates(table.name());
         this.elements = new PgElementPredicates(scalars);
@@ -62,7 +77,19 @@ final class PgFilterTranslator {
      */
     PgSql translate(IFilter filter) throws ApiException {
         PgTextSearch.validate(filter);
+        PgGeoPredicates.nearOrder(table, filter);
         return translate(filter, false);
+    }
+
+    /**
+     * The nearest-first sort key a {@code $near} asks for, when the filter holds one.
+     *
+     * @param filter the whole filter, possibly null
+     * @return the {@code ORDER BY} key, or empty
+     * @throws ApiException when the {@code $near} breaks one of MongoDB's rules
+     */
+    Optional<String> nearOrder(IFilter filter) throws ApiException {
+        return PgGeoPredicates.nearOrder(table, filter);
     }
 
     private PgSql translate(IFilter filter, boolean negated) throws ApiException {
@@ -146,8 +173,8 @@ final class PgFilterTranslator {
             case "$in" -> c.listsNull() ? o.nullish() : PgSql.FALSE;
             case "$nin" -> c.listsNull() ? PgSql.not(o.nullish()) : PgSql.TRUE;
             case "$regex" -> requireValue(c, "$regex filter on field '" + c.field() + "' requires a pattern");
-            case "$geoWithin", "$geoWithinSphere" -> requireValue(c, "$geoWithin filter on field '" + c.field()
-                    + "' requires a GeoJSON geometry value");
+            case "$geoWithin", "$geoWithinSphere", "$geoIntersects", "$near", "$nearSphere" -> requireValue(c,
+                    c.op() + " filter on field '" + c.field() + "' requires a GeoJSON geometry value");
             default -> PgSql.FALSE;
         };
     }
@@ -161,6 +188,7 @@ final class PgFilterTranslator {
     }
 
     private PgSql text(PgCondition c) throws ApiException {
-        return PgTextSearch.predicate(table, c.value());
+        return textColumn.isPresent() ? PgTextSearch.predicateOnIndexed(textColumn.get(), c.value())
+                : PgTextSearch.predicate(table, c.value());
     }
 }

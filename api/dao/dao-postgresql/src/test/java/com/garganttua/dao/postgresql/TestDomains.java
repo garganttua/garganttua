@@ -10,6 +10,8 @@ import java.util.Map;
 import com.garganttua.api.commons.definition.DtoComposition;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
+import com.garganttua.api.commons.definition.IEntityDefinition;
+import com.garganttua.api.commons.entity.EntityIndexRule;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
 
@@ -37,6 +39,25 @@ public final class TestDomains {
         when(dto.compositions()).thenReturn(composed);
         IDomainDefinition domain = mock(IDomainDefinition.class);
         when(domain.dtoDefinitions()).thenReturn(List.of(dto));
+        return domain;
+    }
+
+    /**
+     * A domain definition whose entity declares indexes, with an optional tenant field.
+     *
+     * @param dtoClass    the DTO (its fields carry the entity's names: no mapping rule)
+     * @param tenantField the DTO field holding the tenant identifier, or {@code null}
+     * @param indexes     the indexes the entity declares
+     * @return the definition
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public static IDomainDefinition indexed(Class<?> dtoClass, String tenantField, List<EntityIndexRule> indexes) {
+        IDomainDefinition domain = definition(dtoClass, Map.of());
+        IDtoDefinition dto = (IDtoDefinition) domain.dtoDefinitions().get(0);
+        when(dto.tenantId()).thenReturn(tenantField == null ? null : new ObjectAddress(tenantField));
+        IEntityDefinition entity = mock(IEntityDefinition.class);
+        when(entity.indexes()).thenReturn(indexes);
+        when(domain.entityDefinition()).thenReturn(entity);
         return domain;
     }
 }

@@ -70,7 +70,22 @@ final class PgSortClause {
      *                      reproduced (a JSONB or geometry value, a collection nested in a collection)
      */
     String orderBy(ISort sort, boolean paged) throws ApiException {
+        return orderBy(sort, paged, java.util.Optional.empty());
+    }
+
+    /**
+     * The {@code ORDER BY} of a read, with a key that comes before the requested sort — the distance
+     * a {@code $near} orders by.
+     *
+     * @param sort    the requested sort, possibly null
+     * @param paged   whether a page is requested (the uuid then ends the keys, for stable pages)
+     * @param leading a key to sort by first, possibly empty
+     * @return the clause, or an empty string
+     * @throws ApiException when the sort names an unsortable field
+     */
+    String orderBy(ISort sort, boolean paged, java.util.Optional<String> leading) throws ApiException {
         List<String> keys = new ArrayList<>();
+        leading.ifPresent(keys::add);
         boolean byId = false;
         if (sort != null) {
             String field = fieldName(sort);
