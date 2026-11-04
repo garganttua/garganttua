@@ -68,14 +68,31 @@ final class PgJdbcDecoder {
      */
     static Object decode(ResultSet rs, int index, PgColumn column, IClass<?> type, Type generic)
             throws ApiException {
+        return decode(PgCells.of(rs), index, column, type, generic);
+    }
+
+    /**
+     * Reads one cell into the declared Java type, from any carrier of cells — a result set, or a child row
+     * of the JSON aggregate.
+     *
+     * @param cells   the cells of the row
+     * @param index   the 1-based cell index
+     * @param column  the column model — its kind decides the decoding
+     * @param type    the declared type of the target field (or element)
+     * @param generic the declared generic type, for {@code JSONB}
+     * @return the value, or null for SQL NULL
+     * @throws ApiException when the stored value cannot become the declared type
+     */
+    static Object decode(PgCells cells, int index, PgColumn column, IClass<?> type, Type generic)
+            throws ApiException {
         try {
             return switch (column.kind()) {
-                case ID, COMPOSITION -> fromText(rs.getString(index), type);
-                case JSONB -> json(rs.getString(index), generic == null ? type.getType() : generic);
-                case IKEY -> key(rs.getString(index));
-                case GEOMETRY -> geometry(rs.getString(index), type);
-                case SCALAR -> scalar(rs, index, type);
-                case PRESENCE -> rs.getObject(index, Boolean.class);
+                case ID, COMPOSITION -> fromText(cells.text(index), type);
+                case JSONB -> json(cells.text(index), generic == null ? type.getType() : generic);
+                case IKEY -> key(cells.text(index));
+                case GEOMETRY -> geometry(cells.text(index), type);
+                case SCALAR -> scalar(cells, index, type);
+                case PRESENCE -> cells.bool(index);
             };
         } catch (SQLException | JsonProcessingException | RuntimeException e) {
             throw new ApiException("Cannot read column '" + column.name() + "' (" + column.sqlType()
@@ -107,15 +124,15 @@ final class PgJdbcDecoder {
         return geometry;
     }
 
-    private static Object scalar(ResultSet rs, int index, IClass<?> type) throws SQLException {
-        Object temporal = temporal(rs, index, type);
+    private static Object scalar(PgCells cells, int index, IClass<?> type) throws SQLException {
+        Object temporal = temporal(cells, index, type);
         if (temporal != null || isTemporal(type)) {
             return temporal;
         }
         if (type.represents(byte[].class)) {
-            return rs.getBytes(index);
+            return cells.bytes(index);
         }
-        Object raw = rs.getObject(index);
+        Object raw = cells.raw(index);
         return raw == null ? null : convert(raw, type);
     }
 
@@ -127,20 +144,20 @@ final class PgJdbcDecoder {
     }
 
     /** A temporal cell in the declared type, or null (also when the type is not temporal). */
-    private static Object temporal(ResultSet rs, int index, IClass<?> type) throws SQLException {
+    private static Object temporal(PgCells cells, int index, IClass<?> type) throws SQLException {
         if (type.represents(LocalDateTime.class)) {
-            return rs.getObject(index, LocalDateTime.class);
+            return cells.temporal(index, LocalDateTime.class);
         }
         if (type.represents(LocalDate.class)) {
-            return rs.getObject(index, LocalDate.class);
+            return cells.temporal(index, LocalDate.class);
         }
         if (type.represents(LocalTime.class)) {
-            return rs.getObject(index, LocalTime.class);
+            return cells.temporal(index, LocalTime.class);
         }
         if (!isTemporal(type)) {
             return null;
         }
-        OffsetDateTime stamp = rs.getObject(index, OffsetDateTime.class);
+        OffsetDateTime stamp = cells.temporal(index, OffsetDateTime.class);
         if (stamp == null) {
             return null;
         }

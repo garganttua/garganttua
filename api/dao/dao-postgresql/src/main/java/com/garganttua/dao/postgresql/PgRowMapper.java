@@ -55,7 +55,7 @@ final class PgRowMapper {
      */
     void fill(PgLoadedRow row, IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex)
             throws ApiException {
-        Cells read = read(type, rs, cells, firstIndex, row.references());
+        Cells read = read(type, PgCells.of(rs), cells, firstIndex, row.references());
         read.presence().forEach((path, present) -> row.presence().put(String.join(".", path), present));
         assign(row.instance(), type, read);
     }
@@ -88,7 +88,7 @@ final class PgRowMapper {
      * @return the element and its presence bits
      * @throws ApiException when a cell cannot be read or set
      */
-    Element readElement(IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex) throws ApiException {
+    Element readElement(IClass<?> type, PgCells rs, List<PgSelected> cells, int firstIndex) throws ApiException {
         Cells read = read(type, rs, cells, firstIndex, new LinkedHashMap<>());
         List<String> self = List.of();
         boolean exists = read.presence().containsKey(self)
@@ -112,7 +112,7 @@ final class PgRowMapper {
      * @return the presence bits by field path
      * @throws ApiException when a cell cannot be read
      */
-    Map<List<String>, Boolean> presence(ResultSet rs, List<PgSelected> cells, int firstIndex) throws ApiException {
+    Map<List<String>, Boolean> presence(PgCells rs, List<PgSelected> cells, int firstIndex) throws ApiException {
         Map<List<String>, Boolean> presence = new LinkedHashMap<>();
         for (int i = 0; i < cells.size(); i++) {
             PgSelected cell = cells.get(i);
@@ -123,7 +123,7 @@ final class PgRowMapper {
         return presence;
     }
 
-    private static Boolean bit(ResultSet rs, int index, PgSelected cell) throws ApiException {
+    private static Boolean bit(PgCells rs, int index, PgSelected cell) throws ApiException {
         return (Boolean) PgJdbcDecoder.decode(rs, index, cell.column(), IClass.getClass(Boolean.class), Boolean.class);
     }
 
@@ -131,7 +131,7 @@ final class PgRowMapper {
     private record Cells(Map<List<String>, Object> values, Map<List<String>, Boolean> presence) {
     }
 
-    private Cells read(IClass<?> type, ResultSet rs, List<PgSelected> cells, int firstIndex,
+    private Cells read(IClass<?> type, PgCells rs, List<PgSelected> cells, int firstIndex,
             Map<String, String> references) throws ApiException {
         Map<List<String>, Object> values = new LinkedHashMap<>();
         Map<List<String>, Boolean> presence = new LinkedHashMap<>();
@@ -149,7 +149,7 @@ final class PgRowMapper {
         return new Cells(values, presence);
     }
 
-    private Object decode(IClass<?> type, ResultSet rs, int index, PgSelected cell) throws ApiException {
+    private Object decode(IClass<?> type, PgCells rs, int index, PgSelected cell) throws ApiException {
         IField field = beans.leaf(type, cell.column().fieldPath());
         return PgJdbcDecoder.decode(rs, index, cell.column(), field.getType(), field.getGenericType());
     }
@@ -196,9 +196,9 @@ final class PgRowMapper {
         return false;
     }
 
-    private static String text(ResultSet rs, int index) throws ApiException {
+    private static String text(PgCells rs, int index) throws ApiException {
         try {
-            return rs.getString(index);
+            return rs.text(index);
         } catch (SQLException e) {
             throw new ApiException("Cannot read a reference uuid at column " + index + ": " + e.getMessage(), e);
         }

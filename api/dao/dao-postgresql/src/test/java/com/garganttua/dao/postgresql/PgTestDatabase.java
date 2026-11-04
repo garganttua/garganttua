@@ -65,6 +65,8 @@ public final class PgTestDatabase {
         }
         PGSimpleDataSource source = new PGSimpleDataSource();
         source.setUrl(server().getJdbcUrl("postgres", DATABASE) + "&currentSchema=" + schema);
+        // As the starter configures its pool: the suite proves the DAO's batches under rewriting.
+        source.setReWriteBatchedInserts(true);
         return source;
     }
 

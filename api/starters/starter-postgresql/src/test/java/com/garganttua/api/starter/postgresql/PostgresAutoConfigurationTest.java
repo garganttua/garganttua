@@ -97,6 +97,8 @@ class PostgresAutoConfigurationTest {
             HikariConfig pool = PostgresAutoConfiguration.poolConfig("jdbc:postgresql://db:5432/app", config);
 
             assertEquals(PostgresAutoConfiguration.DEFAULT_POOL_SIZE, pool.getMaximumPoolSize());
+            assertEquals("true", pool.getDataSourceProperties().getProperty("reWriteBatchedInserts"),
+                    "the rows of a collection must go as one multi-row INSERT");
             assertTrue(pool.getInitializationFailTimeout() > 0,
                     "a server that cannot be reached must fail the startup, not the first request");
         }

@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import java.io.IOException;
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -7,12 +8,17 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.StringJoiner;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.dao.postgresql.schema.PgChildKind;
@@ -20,14 +26,17 @@ import com.garganttua.dao.postgresql.schema.PgChildTable;
 import com.garganttua.dao.postgresql.schema.PgColumn;
 import com.garganttua.dao.postgresql.schema.PgColumnKind;
 import com.garganttua.dao.postgresql.schema.PgNaming;
+import com.garganttua.dao.postgresql.schema.PgTable;
 
 /**
  * Reads the child tables of a page of rows — a top-level table and every table below it — and puts
  * each collection back on its owner.
  *
  * <p>
- * ONE query per child table for the whole page ({@code _owner = ANY(?)}), never one per row nor one
- * per element: a page of 50 shops whose orders hold lines costs one statement for the orders and one
+ * Normally NO query at all: the main query returns each collection as a JSON aggregate
+ * ({@link PgChildAggregate}), and {@link #loadAggregated} rebuilds it. A child table too wide for an
+ * aggregate row is read the older way, ONE query per child table for the whole page
+ * ({@code _owner = ANY(?)}), never one per row nor one per element: a page of 50 shops whose orders hold lines costs one statement for the orders and one
  * for the lines, whatever the number of orders. Every row carries the ROOT's id in {@code _owner}, so
  * even a table three levels down is read by the page's ids alone; its rows are then grouped by
  * {@code _parent} — the {@code _id} of the row one level up — and the trees rebuilt bottom-up, each
@@ -47,9 +56,36 @@ final class PgChildLoader {
     private final PgBeans beans;
     private final PgRowMapper mapper;
 
-    PgChildLoader(PgBeans beans, PgRowMapper mapper) {
+    /** What decoding a row of one child table needs, computed once per table — not once per row. */
+    private record Shape(int cellCount, List<String> sqlTypes, List<PgSelected> cells, PgColumn keyColumn,
+            IClass<?> singleValueType, boolean elementIsCollection) {
+    }
+
+    /** By child table, identity-keyed, built once and never written again: read without a lock. */
+    private final Map<PgChildTable, Shape> shapes;
+
+    PgChildLoader(PgBeans beans, PgRowMapper mapper, PgTable table) {
         this.beans = beans;
         this.mapper = mapper;
+        Map<PgChildTable, Shape> byTable = new IdentityHashMap<>();
+        for (PgChildTable child : table.allChildren()) {
+            byTable.put(child, shapeOf(child));
+        }
+        this.shapes = Collections.unmodifiableMap(byTable);
+    }
+
+    private static Shape shapeOf(PgChildTable child) {
+        List<String> sqlTypes = PgChildAggregate.sqlTypes(child).stream().map(t -> t.toUpperCase(Locale.ROOT)).toList();
+        List<PgColumn> columns = child.valueColumns();
+        PgColumn keyColumn = child.kind() == PgChildKind.MAP
+                ? new PgColumn(PgChildTable.KEY, "", PgColumnKind.SCALAR, List.of(), child.keyType()) : null;
+        IClass<?> single = null;
+        if (columns.size() == 1 && columns.get(0).kind() != PgColumnKind.PRESENCE && columns.get(0).fieldPath().isEmpty()) {
+            single = child.kind() == PgChildKind.COMPOSITION_COLLECTION ? IClass.getClass(String.class) : child.elementType();
+        }
+        return new Shape(PgChildAggregate.cellCount(child), sqlTypes,
+                columns.stream().map(c -> PgSelected.of(null, c)).toList(), keyColumn, single,
+                child.elementTable().isPresent());
     }
 
     /**
@@ -96,7 +132,7 @@ final class PgChildLoader {
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     Object parent = child.nested() ? (Object) rs.getLong(scopeIndex(child)) : rs.getString(scopeIndex(child));
-                    byParent.computeIfAbsent(parent, k -> new ArrayList<>()).add(row(rs, child));
+                    byParent.computeIfAbsent(parent, k -> new ArrayList<>()).add(row(PgCells.of(rs), child));
                 }
             }
         } catch (SQLException e) {
@@ -141,29 +177,111 @@ final class PgChildLoader {
         return connection.createArrayOf("text", rows.stream().map(PgLoadedRow::id).toArray());
     }
 
+    /**
+     * Loads one top-level child table — and the whole tree below it — from the aggregates the main query
+     * returned ({@link PgChildAggregate}): no statement, the rows are already there.
+     *
+     * @param child      the top-level child table
+     * @param rows       the page, in order
+     * @param aggregates the aggregate of each row, same order — JSON text, or null when the entity has no row
+     * @throws ApiException when an aggregate cannot be read or a value cannot be rebuilt
+     */
+    void loadAggregated(PgChildTable child, List<PgLoadedRow> rows, List<String> aggregates) throws ApiException {
+        Loaded loaded = new Loaded();
+        for (int i = 0; i < rows.size(); i++) {
+            collect(child, rows.get(i).id(), parse(child, aggregates.get(i)), loaded);
+        }
+        for (PgLoadedRow row : rows) {
+            place(row, child, assemble(child, loaded.rows(child, row.id()), loaded));
+        }
+    }
+
+    /** Shared and thread-safe: a factory only creates parsers. */
+    private static final JsonFactory JSON = new JsonFactory();
+
+    /**
+     * An aggregate as nested lists — rows of TEXT cells and nested aggregates — read as a stream, without
+     * building a JSON tree: the aggregates of a page are the bulk of what a read decodes.
+     */
+    private static List<Object> parse(PgChildTable child, String json) throws ApiException {
+        if (json == null) {
+            return List.of();
+        }
+        try (JsonParser parser = JSON.createParser(json)) {
+            if (parser.nextToken() != JsonToken.START_ARRAY) {
+                throw new ApiException("The rows of child table '" + child.name() + "' are not a JSON array");
+            }
+            return array(parser);
+        } catch (IOException e) {
+            throw new ApiException("Cannot read the rows of child table '" + child.name() + "' (collection '"
+                    + child.dottedPath() + "'): " + e.getMessage(), e);
+        }
+    }
+
+    /** The array the parser stands at the start of: texts, nulls and nested arrays. */
+    private static List<Object> array(JsonParser parser) throws IOException {
+        List<Object> values = new ArrayList<>();
+        for (JsonToken token = parser.nextToken(); token != JsonToken.END_ARRAY; token = parser.nextToken()) {
+            if (token == JsonToken.START_ARRAY) {
+                values.add(array(parser));
+            } else if (token == JsonToken.VALUE_NULL) {
+                values.add(null);
+            } else {
+                values.add(parser.getText());
+            }
+        }
+        return values;
+    }
+
+    /** Files the aggregated rows of one table under their parent, then — nested in each — the rows below. */
+    private void collect(PgChildTable child, Object parent, Object aggregate, Loaded loaded) throws ApiException {
+        List<ChildRow> under = loaded.byTable.computeIfAbsent(child, k -> new HashMap<>())
+                .computeIfAbsent(parent, k -> new ArrayList<>());
+        if (!(aggregate instanceof List<?> rows)) {
+            return;
+        }
+        Shape shape = this.shapes.get(child);
+        int cellCount = shape.cellCount();
+        List<PgChildTable> grandchildren = child.children();
+        for (Object node : rows) {
+            List<?> cellsAndBelow = (List<?>) node;
+            List<String> values = new ArrayList<>(cellCount);
+            for (int i = 0; i < cellCount; i++) {
+                values.add((String) cellsAndBelow.get(i));
+            }
+            ChildRow row;
+            try {
+                row = row(PgCells.of(values, shape.sqlTypes()), child);
+            } catch (SQLException e) {
+                throw new ApiException("Cannot read a row of child table '" + child.name() + "': " + e.getMessage(), e);
+            }
+            under.add(row);
+            for (int k = 0; k < grandchildren.size(); k++) {
+                collect(grandchildren.get(k), row.id(), cellsAndBelow.get(cellCount + k), loaded);
+            }
+        }
+    }
+
     /** One child row as read: nothing is attached to its element yet. */
-    private ChildRow row(ResultSet rs, PgChildTable child) throws ApiException, SQLException {
-        Long id = child.hasChildren() ? rs.getLong(1) : null;
+    private ChildRow row(PgCells rs, PgChildTable child) throws ApiException, SQLException {
+        Shape shape = this.shapes.get(child);
+        Long id = child.hasChildren() ? rs.integer(1) : null;
         int positionIndex = scopeIndex(child) + 1;
         Object key = null;
-        if (child.kind() == PgChildKind.MAP) {
-            PgColumn keyColumn = new PgColumn(PgChildTable.KEY, "", PgColumnKind.SCALAR, List.of(), child.keyType());
-            key = PgJdbcDecoder.decode(rs, positionIndex, keyColumn, child.keyType(), child.keyType().getType());
+        if (shape.keyColumn() != null) {
+            key = PgJdbcDecoder.decode(rs, positionIndex, shape.keyColumn(), child.keyType(), child.keyType().getType());
         }
         int first = positionIndex + 1;
-        List<PgColumn> columns = child.valueColumns();
-        List<PgSelected> cells = columns.stream().map(c -> PgSelected.of(null, c)).toList();
-        if (child.elementTable().isPresent()) {
+        if (shape.elementIsCollection()) {
             // The element IS a collection: its row holds only its presence bit, its content is below.
-            return new ChildRow(id, key, null, mapper.presence(rs, cells, first));
+            return new ChildRow(id, key, null, mapper.presence(rs, shape.cells(), first));
         }
-        if (columns.size() == 1 && columns.get(0).kind() != PgColumnKind.PRESENCE
-                && columns.get(0).fieldPath().isEmpty()) {
-            IClass<?> type = child.kind() == PgChildKind.COMPOSITION_COLLECTION
-                    ? IClass.getClass(String.class) : child.elementType();
-            return new ChildRow(id, key, PgJdbcDecoder.decode(rs, first, columns.get(0), type, type.getType()), Map.of());
+        if (shape.singleValueType() != null) {
+            IClass<?> type = shape.singleValueType();
+            return new ChildRow(id, key, PgJdbcDecoder.decode(rs, first, child.valueColumns().get(0), type,
+                    type.getType()), Map.of());
         }
-        PgRowMapper.Element element = mapper.readElement(child.elementType(), rs, cells, first);
+        PgRowMapper.Element element = mapper.readElement(child.elementType(), rs, shape.cells(), first);
         return new ChildRow(id, key, element.value(), element.presence());
     }
 

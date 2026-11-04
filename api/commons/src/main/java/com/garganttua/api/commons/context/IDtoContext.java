@@ -7,6 +7,7 @@ import com.garganttua.api.commons.dao.IDao;
 import com.garganttua.api.commons.definition.IDtoDefinition;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.pageable.IPageable;
+import com.garganttua.api.commons.service.Page;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.api.commons.ApiException;
 
@@ -36,6 +37,12 @@ public interface IDtoContext<D> {
         getDao().delete(object);
     }
 	
+	/** A page and the total of its filter, in one call to the DAO — see {@link com.garganttua.api.commons.dao.IDao#findPage}. */
+	default Page findPage(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
+			Optional<List<String>> projection) throws ApiException {
+		return getDao().findPage(pageable, filter, sort, projection);
+	}
+
 	default long count(IFilter filter) throws ApiException {
         return getDao().count(filter);
     }

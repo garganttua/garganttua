@@ -175,6 +175,31 @@ public class CrudExpressions {
 				proj);
 	}
 
+	@Expression(name = "getEntitiesPage",
+			description = "A paginated read: the entities of the page AND the total the filter matches, asked of the "
+					+ "repository in ONE call — a DAO that can answer both in one round trip does (PostgreSQL). Without "
+					+ "a page, only the entities are read and the total is -1.")
+	public static Page getEntitiesPage(Object repository, Object pageable, Object filter, Object sort,
+			Object projection) {
+		IRepository repo = (IRepository) repository;
+		List<String> fields = unwrapStringList(projection);
+		Optional<List<String>> proj = (fields == null || fields.isEmpty()) ? Optional.empty() : Optional.of(fields);
+		return repo.getEntitiesPage(unwrap(pageable, IPageable.class), unwrap(filter, IFilter.class),
+				unwrap(sort, ISort.class), proj);
+	}
+
+	@Expression(name = "pageEntities", description = "The entities of a page read by getEntitiesPage, as a mutable list")
+	public static List<Object> pageEntities(Object page) {
+		Page read = (Page) unwrapOptional(page);
+		return read == null ? new ArrayList<>() : new ArrayList<>(read.entities());
+	}
+
+	@Expression(name = "pageTotal", description = "The total a page read by getEntitiesPage counted for its filter")
+	public static long pageTotal(Object page) {
+		Page read = (Page) unwrapOptional(page);
+		return read == null ? 0L : read.totalCount();
+	}
+
 	@Expression(name = "effectiveDaoProjection",
 			description = "The projection to push to the DAO: the requested entity fields when DB-level projection is "
 					+ "SAFE (no afterGet hooks, no injection, no compositions — server semantics won't read non-requested "

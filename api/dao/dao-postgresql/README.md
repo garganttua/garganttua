@@ -10,7 +10,8 @@
 - **`IDao` implementation** — `PgDao`: `find` (filter, sort, page, projection), `save` (upsert), `delete`, `count`, `registerDomain`
 - **Relational mapping** — scalars become typed columns, embedded POJOs are flattened into prefixed columns, collections and maps become child tables; see *Core Concepts*
 - **MongoDB semantics** — the full filter language (`$and` `$or` `$nor`, `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$regex` `$empty` `$text` `$geoWithin` `$geoWithinSphere` `$geoIntersects` `$near` `$nearSphere`) with MongoDB's own rules: BSON type bracketing, array "any element" semantics, absent vs null, binary string order, PCRE regular expressions, text search over every string value
-- **Atomic writes, consistent reads** — every write runs in one transaction; every read runs in one `REPEATABLE READ` snapshot, however many tables it touches
+- **Few round trips** — a read is ONE statement, collections included (they come back aggregated in the main query); a paginated read carries its total in the same statement; a write of an entity without collections, and every delete, is one statement too. Those run in autocommit: one statement is atomic and one snapshot on its own
+- **Atomic writes, consistent reads** — a write that spans several tables runs in one transaction; a read that still needs several statements (references to other domains) runs in one `REPEATABLE READ` snapshot
 - **Schema management** — tables and later-added columns are created at startup (`SchemaMode.CREATE`, the default), or only checked (`SchemaMode.VALIDATE`); safe when several instances start at once
 - **Compositions** — `@Composed` fields are stored as the referenced uuid and resolved one level deep, like MongoDB's DBRefs
 - **`IKey` persistence** — crypto key material stored as the same self-describing descriptor the MongoDB DAO uses
@@ -85,7 +86,18 @@ Identifiers are always double-quoted (reserved words such as `order` are valid f
 
 ### `PgDao`
 
-Wires four collaborators around the model: `PgSchemaManager` (DDL), `PgWriter` (upsert, delete), `PgReader` (select, rebuild) and `PgQueryBuilder` (filters, sort, pagination, projection). A read is several queries — the main table, then each child table — which is why it runs in one `REPEATABLE READ` snapshot: without it, a write committed between two of them would return an entity stitched from two moments.
+Wires four collaborators around the model: `PgSchemaManager` (DDL), `PgWriter` (upsert, delete), `PgReader` (select, rebuild) and `PgQueryBuilder` (filters, sort, pagination, projection). A read is normally ONE statement: every collection — at any depth — is aggregated into JSON over the page by common table expressions (`PgChildAggregate`), each table read once for the whole page through its owner index, and rebuilt by the same assembly as before. One statement is one snapshot, so the read runs in autocommit. Only a read that still needs several statements — references to other domains, or a collection too wide for `json_build_array` (more than 100 cells) — runs in a `REPEATABLE READ` transaction; without it, a write committed between two of its statements would return an entity stitched from two moments.
+
+Round trips per operation, pinned by `PgRoundTripTest` (they used to be 4 for any read, 13 for an entity with nested lists, 17 for a page and its total):
+
+| Operation | Round trips |
+|---|---:|
+| read — one entity or a page, collections included | 1 |
+| paginated read and its total (`findPage`) | 1 |
+| count | 1 |
+| save of an entity without collections | 1 |
+| delete | 1 |
+| save of an entity with collections, none changed | 3 (digests read and locked, main row, commit) |
 
 ### Schema modes
 
@@ -145,7 +157,7 @@ ApiBuilder.builder()
 ## Tips and best practices
 
 - **Share one `PgSchemaRegistry` across the domains of a database.** A `@Composed` field is resolved against the target domain's table, which only that domain's DAO knows. `new PgDao(dataSource, domain)` creates a private registry: fine without compositions, not with them.
-- **Share one pooled `DataSource`.** Each operation borrows a connection and returns it.
+- **Share one pooled `DataSource`.** Each operation borrows a connection and returns it. Enable `reWriteBatchedInserts` on it, as the starter does: the rows of a collection then go as one multi-row `INSERT`.
 - **Collections are rewritten only when they change.** The digest of the rows each collection would be written as is stored on the main row (`_digest__<field>`); a write whose collection has the stored digest leaves its rows untouched — a name changed on an entity with lists costs a third of what it did (measured: 12.9 → 4.2 ms on 3 + 8 × 7 lists; when every list changes, 1.3 ms more). A trigger on every child table clears the owner's digest whenever another writer touches the rows (SQL, a migration, an older instance during a rolling upgrade), so a digest never hides a change. Installed in `SchemaMode.CREATE`; under `VALIDATE` they are not required — without them every collection is rewritten, and a WARN gives the DDL.
 - **Use `SchemaMode.VALIDATE` where DDL goes through review.** It checks everything and changes nothing.
 - **Declare the indexes your filters and sorts use** — `entity().index(...)` or `@EntityIndexed` — and the DAO creates them at startup, as the MongoDB DAO does (`PgIndexMode`, `postgresql.index.auto`): `standard` is a b-tree, composed `(tenantId, field)` when tenant-scoped, partial `WHERE field IS NOT NULL` when unique; `geo` is a GiST on `(field)::geography`; `text` a GIN on the text-search vector `$text` queries. A field held in a collection is indexed on its child table; a UNIQUE index there is refused (it would compare the elements of one entity, not two entities). A unique violation answers **409**, as on MongoDB. Index names are prefixed with their table: PostgreSQL names indexes per schema, not per table.

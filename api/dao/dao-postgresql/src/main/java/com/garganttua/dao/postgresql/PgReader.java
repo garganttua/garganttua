@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.StringJoiner;
@@ -23,8 +24,9 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  * flattened POJOs, child-table collections and {@code @Composed} references included.
  *
  * <p>
- * A page is read in a FIXED number of statements whatever its size: one for the main rows, one per
- * child table ({@code _owner = ANY(?)}), one per referenced domain. Reading row by row would be the
+ * A page is read in a FIXED number of statements whatever its size — usually ONE: the collections come
+ * back inside the main query, as JSON aggregates ({@link PgChildAggregate}); only a referenced domain,
+ * or a collection too wide to aggregate, costs a statement more. Reading row by row would be the
  * classic N+1 — invisible on a test with three rows, crippling on a page of a hundred.
  * </p>
  *
@@ -44,11 +46,20 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  */
 public final class PgReader {
 
+    /** The CTE holding the page, when the collections are aggregated over it. */
+    private static final String PAGE = "page";
+
+    /** The page's own order, numbered, so the outer query can restore it. */
+    private static final String ROW_NUMBER = "_row";
+
+    /** The number of rows the filter matches, carried by every row of a page. */
+    private static final String TOTAL = "_total";
+
     private final PgTable table;
     private final IClass<?> dtoClass;
     private final PgBeans beans = new PgBeans();
     private final PgRowMapper mapper = new PgRowMapper(beans);
-    private final PgChildLoader children = new PgChildLoader(beans, mapper);
+    private final PgChildLoader children;
     private final PgCompositions compositions;
 
     /**
@@ -69,6 +80,7 @@ public final class PgReader {
     PgReader(PgTable table, IClass<?> dtoClass, PgSchemaRegistry registry, boolean resolve) {
         this.table = Objects.requireNonNull(table, "table");
         this.dtoClass = Objects.requireNonNull(dtoClass, "dtoClass");
+        this.children = new PgChildLoader(beans, mapper, table);
         this.compositions = new PgCompositions(table, dtoClass, registry == null ? new PgSchemaRegistry() : registry,
                 beans, resolve);
     }
@@ -81,25 +93,92 @@ public final class PgReader {
      * @return the DTOs — a mutable list, empty when nothing matches
      * @throws ApiException when a statement fails or a row cannot be rebuilt into the DTO
      */
+    public List<Object> find(Connection connection, PgQuery query) throws ApiException {
+        return new ArrayList<>(read(connection, query, false).dtos());
+    }
+
+    /**
+     * A page and the total its filter matches, read by the SAME statement: {@code count(*) OVER ()} is
+     * computed over every matching row before the {@code LIMIT} cuts the page. Only a page past the end
+     * — no row to carry the total — costs a count of its own.
+     *
+     * @param connection an open connection, owned by the caller
+     * @param query      the translated filter, sort, page and projection
+     * @return the DTOs of the page and the total
+     * @throws ApiException when a statement fails or a row cannot be rebuilt into the DTO
+     */
+    public Paged findPage(Connection connection, PgQuery query) throws ApiException {
+        Paged paged = read(connection, query, true);
+        if (paged.total() < 0) {
+            boolean firstPage = query.offset() == null || query.offset() == 0L;
+            return new Paged(paged.dtos(), firstPage ? 0L : count(connection, query));
+        }
+        return paged;
+    }
+
+    /**
+     * What a read returned.
+     *
+     * @param dtos  the DTOs, in the query's order
+     * @param total the number of rows the filter matches, or -1 when not asked or not known
+     */
+    public record Paged(List<Object> dtos, long total) {
+
+        /** Read-only: the reader hands the page over, it does not share a list with its caller. */
+        public Paged {
+            dtos = Collections.unmodifiableList(dtos);
+        }
+    }
+
     @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
             justification = SuppressFBWarnings.GENERATED_SQL)
-    public List<Object> find(Connection connection, PgQuery query) throws ApiException {
+    private Paged read(Connection connection, PgQuery query, boolean withTotal) throws ApiException {
         List<PgSelected> selected = selection(query.projection());
-        String sql = selectSql(selected, query);
+        List<PgChildTable> loaded = childrenToLoad(query.projection());
+        List<PgChildTable> aggregated = loaded.stream().filter(PgChildAggregate::fits).toList();
+        String sql = selectSql(selected, aggregated, query, withTotal);
         List<PgLoadedRow> rows = new ArrayList<>();
+        List<List<String>> aggregates = new ArrayList<>();
+        aggregated.forEach(c -> aggregates.add(new ArrayList<>()));
+        // After the selected columns: the page's row number (when aggregating), the total (when asked),
+        // then one aggregate per collection.
+        int extra = selected.size() + 1 + (aggregated.isEmpty() ? 0 : 1);
+        int totalIndex = withTotal ? extra : -1;
+        int firstAggregate = withTotal ? extra + 1 : extra;
+        long total = -1L;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             bindPage(statement, bind(statement, query.params()), query);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     rows.add(row(rs, selected));
+                    if (withTotal) {
+                        total = rs.getLong(totalIndex);
+                    }
+                    for (int i = 0; i < aggregated.size(); i++) {
+                        aggregates.get(i).add(rs.getString(firstAggregate + i));
+                    }
                 }
             }
         } catch (SQLException e) {
             throw failure("read", e, sql);
         }
+        return new Paged(complete(connection, rows, loaded, aggregated, aggregates), total);
+    }
+
+    /**
+     * Puts the collections and references back on the rows read: from the aggregates, then — for a
+     * collection too wide to aggregate — by a query of its own; {@return the DTOs, in order}
+     */
+    private List<Object> complete(Connection connection, List<PgLoadedRow> rows, List<PgChildTable> loaded,
+            List<PgChildTable> aggregated, List<List<String>> aggregates) throws ApiException {
         if (!rows.isEmpty()) {
-            for (PgChildTable child : childrenToLoad(query.projection())) {
-                children.load(connection, child, rows);
+            for (int i = 0; i < aggregated.size(); i++) {
+                children.loadAggregated(aggregated.get(i), rows, aggregates.get(i));
+            }
+            for (PgChildTable child : loaded) {
+                if (!aggregated.contains(child)) {
+                    children.load(connection, child, rows);
+                }
             }
             compositions.resolve(connection, rows);
         }
@@ -141,25 +220,70 @@ public final class PgReader {
 
     /** {@return the full SELECT of a query, with {@code ?} for its parameters and page} */
     String selectSql(PgQuery query) {
-        return selectSql(selection(query.projection()), query);
+        List<PgChildTable> aggregated = childrenToLoad(query.projection()).stream()
+                .filter(PgChildAggregate::fits).toList();
+        return selectSql(selection(query.projection()), aggregated, query, false);
     }
 
-    private String selectSql(List<PgSelected> selected, PgQuery query) {
+    /**
+     * Whether a query is read in ONE statement — then it needs no transaction: one statement is one
+     * snapshot. It is not when a collection is too wide to be aggregated, or when the domain has
+     * references, which are resolved against the other domains' tables afterwards.
+     *
+     * @param query the query
+     * @return {@code true} for a single statement
+     */
+    boolean singleStatement(PgQuery query) {
+        return table.compositions().isEmpty()
+                && childrenToLoad(query.projection()).stream().allMatch(PgChildAggregate::fits);
+    }
+
+    private String selectSql(List<PgSelected> selected, List<PgChildTable> aggregated, PgQuery query,
+            boolean withTotal) {
         StringJoiner list = new StringJoiner(", ");
         selected.forEach(s -> list.add(s.expression()));
-        StringBuilder sql = new StringBuilder("SELECT ").append(list).append(" FROM ")
-                .append(PgNaming.quote(table.name())).append(' ').append(PgQuery.ALIAS)
+        StringBuilder main = new StringBuilder("SELECT ").append(list);
+        if (!aggregated.isEmpty()) {
+            // The page's own order, numbered: the outer query restores it after joining the aggregates.
+            String order = query.orderBy().isBlank() ? "" : query.orderBy();
+            main.append(", row_number() OVER (").append(order).append(") AS ").append(PgNaming.quote(ROW_NUMBER));
+        }
+        if (withTotal) {
+            // Over every matching row: window functions run before the LIMIT.
+            main.append(", count(*) OVER () AS ").append(PgNaming.quote(TOTAL));
+        }
+        main.append(" FROM ").append(PgNaming.quote(table.name())).append(' ').append(PgQuery.ALIAS)
                 .append(" WHERE ").append(query.where());
         if (!query.orderBy().isBlank()) {
-            sql.append(' ').append(query.orderBy());
+            main.append(' ').append(query.orderBy());
         }
         if (query.limit() != null) {
-            sql.append(" LIMIT ?");
+            main.append(" LIMIT ?");
         }
         if (query.offset() != null) {
-            sql.append(" OFFSET ?");
+            main.append(" OFFSET ?");
         }
-        return sql.toString();
+        return aggregated.isEmpty() ? main.toString() : withAggregates(main.toString(), aggregated);
+    }
+
+    /**
+     * The page as a CTE, the aggregates of its collections beside it, joined back in the page's own order.
+     */
+    private String withAggregates(String main, List<PgChildTable> aggregated) {
+        List<String> ctes = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        String pageId = PgNaming.quote(table.id().name());
+        PgChildAggregate.ctes(aggregated, PAGE, pageId, ctes, names);
+        StringJoiner outer = new StringJoiner(", ");
+        StringBuilder joins = new StringBuilder();
+        for (int i = 0; i < names.size(); i++) {
+            String join = "a" + i;
+            outer.add(join + ".agg");
+            joins.append(" LEFT JOIN ").append(names.get(i)).append(' ').append(join).append(" ON ").append(join)
+                    .append(".k = ").append(PAGE).append('.').append(pageId);
+        }
+        return "WITH " + PAGE + " AS (" + main + "), " + String.join(", ", ctes) + " SELECT " + PAGE + ".*, " + outer
+                + " FROM " + PAGE + joins + " ORDER BY " + PAGE + "." + PgNaming.quote(ROW_NUMBER);
     }
 
     /**

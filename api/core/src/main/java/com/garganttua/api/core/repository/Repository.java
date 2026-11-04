@@ -25,6 +25,7 @@ import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.filter.IFilterMapper;
 import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.repository.IRepository;
+import com.garganttua.api.commons.service.Page;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.core.mapper.IMapper;
 import com.garganttua.core.mapper.MapperException;
@@ -79,6 +80,42 @@ public class Repository implements IRepository {
         log.debug("Fetching entities with filter={} projection={}", filter.orElse(null), projection.orElse(null));
         List<Map<String, Object>> dtoMaps = queryAllDtos(pageable, filter, sort, projection);
         return mergeAndMapToEntities(dtoMaps);
+    }
+
+    /**
+     * A page and the total its filter matches, in ONE call to the DAO when the domain has one DTO — the
+     * case of every domain the starters build. The filter is mapped to the DTO's fields as for the read,
+     * so the total counts exactly what the page is cut from (the separate count used to receive the
+     * ENTITY filter).
+     */
+    @Override
+    public Page getEntitiesPage(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
+            Optional<List<String>> projection) throws ApiException {
+        if (pageable == null || pageable.isEmpty() || this.dtoContexts.size() != 1) {
+            return IRepository.super.getEntitiesPage(pageable, filter, sort, projection);
+        }
+        IDtoContext<?> dtoContext = this.dtoContexts.get(0);
+        Optional<IFilter> mapped = mappedFilter(dtoContext, filter);
+        Page page = dtoContext.findPage(pageable, mapped, sort, projection);
+        Map<String, Object> dtos = new LinkedHashMap<>();
+        for (Object dto : page.entities()) {
+            dtos.put(dtoContext.getUuid(dto), dto);
+        }
+        return new Page(page.totalCount(), mergeAndMapToEntities(List.of(dtos)));
+    }
+
+    /** The filter as the read of one DTO context receives it: mapped to its fields when the domain is known. */
+    private Optional<IFilter> mappedFilter(IDtoContext<?> dtoContext, Optional<IFilter> filter) throws ApiException {
+        IDomain<?> dc = getDomain();
+        if (dc == null) {
+            return filter;
+        }
+        for (Pair<IClass<?>, IFilter> mapped : this.filterMapper.map(dc.getDomainDefinition(), filter.orElse(null))) {
+            if (dtoContext.equals(findDtoContextByClass(mapped.getValue0()))) {
+                return Optional.ofNullable(mapped.getValue1());
+            }
+        }
+        return filter;
     }
 
     // --- Write operations ---
