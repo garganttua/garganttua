@@ -88,6 +88,13 @@ A stateless utility class that recursively converts an `IFilter` tree into a `Bs
 
 A `$field` node carries the field name as its `value` and exactly one comparison child. Logical operators require at least two children.
 
+### Paginated reads and their total
+
+A paginated read asks the DAO for the page and the total its filter matches (`IDao.findPage`). This DAO keeps
+the default — a `find`, then a `countDocuments` — on purpose: answering both in one round trip would take an
+aggregation with `$facet`, whose result is ONE document, capped at 16 MB by the server; a large page that reads
+fine today would then fail. One round trip saved does not pay for a new way to fail.
+
 ### Geospatial queries (`$geoWithin` / `$geoWithinSphere`)
 
 A geolocalized domain (`@EntityGeolocalized` / `.geolocalized(field)`, whose location field is forced to `org.geojson.Point`) can be queried with the framework's geo filters `Filter.geolocWithin(field, geometry)` and `Filter.geolocWithinSphere(field, geometry)`, where `geometry` is any `org.geojson` GeoJSON shape (`Point`, `Polygon`, `MultiPolygon`, …).

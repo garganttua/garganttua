@@ -126,6 +126,9 @@ public final class PostgresAutoConfiguration implements IApiAutoConfiguration {
         config.getString("postgresql.password").ifPresent(pool::setPassword);
         pool.setMaximumPoolSize(config.getInt("postgresql.pool.size").orElse(DEFAULT_POOL_SIZE));
         pool.setPoolName("garganttua-postgresql");
+        // A batch of INSERTs — the rows of a collection — goes as ONE multi-row INSERT rather than one
+        // statement per row: the server parses, plans and executes once.
+        pool.addDataSourceProperty("reWriteBatchedInserts", "true");
         // Fail at startup on a server that cannot be reached, not at the first request.
         pool.setInitializationFailTimeout(1);
         return pool;

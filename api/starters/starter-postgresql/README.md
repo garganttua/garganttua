@@ -61,6 +61,7 @@ postgresql:
 
 - Set `postgresql.schema.auto: false` where the schema is migrated by a reviewed process: the application then checks the schema and changes nothing.
 - Keep `postgresql.pool.size` below the server's `max_connections` divided by the number of instances.
+- The pool sets `reWriteBatchedInserts=true` on the driver: the rows of a collection are written as one multi-row `INSERT`.
 
 ## Parameters
 

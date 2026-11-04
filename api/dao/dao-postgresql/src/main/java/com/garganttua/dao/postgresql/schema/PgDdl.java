@@ -9,9 +9,11 @@ import java.util.StringJoiner;
  *
  * <p>
  * Child tables reference their owner with {@code ON DELETE CASCADE}: deleting an entity removes its
- * collections in the same statement, so a delete can never leave orphan rows behind. Their primary
- * key is {@code (_owner, _ord)} for lists and sets — which also indexes the owner lookup every read
- * performs — and {@code (_owner, _key)} for maps. References to OTHER domains carry no foreign key:
+ * collections in the same statement, so a delete can never leave orphan rows behind. A top-level child
+ * table's primary key is {@code (_owner, _ord)} for lists and sets and {@code (_owner, _key)} for maps,
+ * which indexes its owner too; a NESTED table's is {@code (_parent, …)}, so it gets an index of its own on
+ * {@code _owner} ({@link #ownerIndex}) — without it, the cascade that deletes an entity scans every nested
+ * table in full, once per entity. References to OTHER domains carry no foreign key:
  * the target may live in another store, and MongoDB's DBRefs are not enforced either.
  * </p>
  *
@@ -38,8 +40,24 @@ public final class PgDdl {
         statements.add(createMain(table));
         for (PgChildTable child : table.allChildren()) {
             statements.add(createChild(table, child));
+            if (child.nested()) {
+                statements.add(ownerIndex(child));
+            }
         }
         return statements;
+    }
+
+    /**
+     * The index on {@code _owner} of a nested child table, whose primary key starts with {@code _parent}:
+     * what the {@code ON DELETE CASCADE} from the root row looks rows up by. Idempotent, so an existing
+     * table gets it at the next start in CREATE mode.
+     *
+     * @param child a nested child table
+     * @return the statement
+     */
+    public static String ownerIndex(PgChildTable child) {
+        return "CREATE INDEX IF NOT EXISTS " + PgNaming.quote(PgNaming.index(child.name(), PgChildTable.OWNER))
+                + " ON " + PgNaming.quote(child.name()) + " (" + PgNaming.quote(PgChildTable.OWNER) + ")";
     }
 
     /** {@return the CREATE TABLE of the main table} */

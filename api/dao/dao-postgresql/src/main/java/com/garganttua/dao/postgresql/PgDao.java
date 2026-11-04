@@ -3,6 +3,7 @@ package com.garganttua.dao.postgresql;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ import com.garganttua.api.commons.definition.IDtoDefinition;
 import com.garganttua.api.commons.definition.IEntityDefinition;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.pageable.IPageable;
+import com.garganttua.api.commons.service.Page;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
@@ -40,11 +42,17 @@ import com.garganttua.dao.postgresql.schema.SchemaMode;
  * </p>
  *
  * <p>
- * <b>Transactions.</b> An entity spans several tables, so every write runs in ONE transaction: the
- * main row and every child row land together or not at all. Reads also run in one transaction, at
- * {@code REPEATABLE READ}: a read is several queries (the main table, then each child table), and
- * without a snapshot a write committed between two of them would hand back an entity stitched from
- * two different moments — the exact interleaving a multi-instance deployment produces.
+ * <b>Round trips, and transactions only where they are needed.</b> Over a network, what an operation
+ * costs is mostly how many times it waits for the server. A read is ONE statement — the collections come
+ * back inside the main query, aggregated ({@link PgChildAggregate}) — and a paginated read carries its
+ * total in the same statement ({@link #findPage}); one statement is one snapshot, so these run in
+ * autocommit, with no {@code BEGIN}, {@code COMMIT} or {@code SET}. So do the writes that are one
+ * statement: an entity without collections, and every delete (the collections go by cascade). An entity
+ * WITH collections spans several tables, so its write runs in ONE transaction: the main row and every
+ * child row land together or not at all. A read that still needs several statements — references to
+ * other domains, a collection too wide to aggregate — runs in one {@code REPEATABLE READ} snapshot, set
+ * for that transaction only ({@code SET TRANSACTION}), so the pooled connection's session is left as it
+ * was lent.
  * </p>
  *
  * <p>
@@ -64,6 +72,9 @@ public class PgDao implements IDao {
     private final PgSchemaRegistry registry;
     private final SchemaMode schemaMode;
     private final PgIndexMode indexMode;
+
+    /** The transaction a read of several statements runs in: one snapshot, nothing written. */
+    private static final String SNAPSHOT = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY";
 
     private volatile Wiring wiring;
 
@@ -205,23 +216,45 @@ public class PgDao implements IDao {
             Optional<List<String>> projection) throws ApiException {
         Wiring w = wired();
         PgQuery query = w.queries().build(pageable, filter, sort, projection);
-        return inSnapshot(c -> w.reader().find(c, query));
+        return w.reader().singleStatement(query) ? single(c -> w.reader().find(c, query))
+                : inSnapshot(c -> w.reader().find(c, query));
+    }
+
+    /**
+     * The page and the total its filter matches, in ONE statement — {@code count(*) OVER ()} on the page —
+     * where the default made a read and a count.
+     */
+    @Override
+    public Page findPage(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
+            Optional<List<String>> projection) throws ApiException {
+        Wiring w = wired();
+        PgQuery query = w.queries().build(pageable, filter, sort, projection);
+        PgReader.Paged paged = w.reader().singleStatement(query) ? single(c -> w.reader().findPage(c, query))
+                : inSnapshot(c -> w.reader().findPage(c, query));
+        return new Page(paged.total(), paged.dtos());
     }
 
     @Override
     public Object save(Object object) throws ApiException {
         Wiring w = wired();
-        inTransaction(c -> {
+        Work<Object> write = c -> {
             w.writer().upsert(c, object);
             return null;
-        });
+        };
+        // An entity without collections is one statement: atomic on its own, no BEGIN nor COMMIT.
+        if (w.table().children().isEmpty()) {
+            single(write);
+        } else {
+            inTransaction(write);
+        }
         return object;
     }
 
     @Override
     public void delete(Object object) throws ApiException {
         Wiring w = wired();
-        inTransaction(c -> {
+        // One statement — the collections go by ON DELETE CASCADE, inside it: atomic on its own.
+        single(c -> {
             w.writer().delete(c, object);
             return null;
         });
@@ -231,7 +264,7 @@ public class PgDao implements IDao {
     public long count(IFilter filter) throws ApiException {
         Wiring w = wired();
         PgQuery query = w.queries().count(filter);
-        return inSnapshot(c -> w.reader().count(c, query));
+        return single(c -> w.reader().count(c, query));
     }
 
     private Wiring wired() throws ApiException {
@@ -254,20 +287,41 @@ public class PgDao implements IDao {
         return transactional(work, false);
     }
 
-    /** Runs a read on one consistent snapshot, however many queries it takes. */
+    /**
+     * Runs a read of several statements on one consistent snapshot. The isolation is set for THIS
+     * transaction only ({@code SET TRANSACTION}), which costs one statement and leaves the pooled
+     * connection's session as it found it — {@code setTransactionIsolation} costs a round trip to set and
+     * another to restore.
+     */
     private <T> T inSnapshot(Work<T> work) throws ApiException {
         return transactional(work, true);
     }
 
-    private <T> T transactional(Work<T> work, boolean readOnly) throws ApiException {
+    /**
+     * Runs ONE statement in autocommit. A single statement is atomic and sees one snapshot on its own:
+     * wrapped in a transaction it would only cost a {@code BEGIN} and a {@code COMMIT} more.
+     */
+    private <T> T single(Work<T> work) throws ApiException {
+        try (Connection connection = this.dataSource.getConnection()) {
+            if (!connection.getAutoCommit()) {
+                connection.setAutoCommit(true);
+            }
+            return work.run(connection);
+        } catch (SQLException e) {
+            throw new ApiException("PostgreSQL error on domain '" + this.domainName + "': " + e.getMessage(), e);
+        }
+    }
+
+    private <T> T transactional(Work<T> work, boolean snapshot) throws ApiException {
         try (Connection connection = this.dataSource.getConnection()) {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
-            if (readOnly) {
-                connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                connection.setReadOnly(true);
-            }
             try {
+                if (snapshot) {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute(SNAPSHOT);
+                    }
+                }
                 T result = work.run(connection);
                 connection.commit();
                 return result;
@@ -275,19 +329,10 @@ public class PgDao implements IDao {
                 connection.rollback();
                 throw e;
             } finally {
-                restore(connection, autoCommit, readOnly);
+                connection.setAutoCommit(autoCommit);
             }
         } catch (SQLException e) {
             throw new ApiException("PostgreSQL error on domain '" + this.domainName + "': " + e.getMessage(), e);
         }
-    }
-
-    /** Hands a pooled connection back as it was lent: pools reuse it for the next caller. */
-    private static void restore(Connection connection, boolean autoCommit, boolean readOnly) throws SQLException {
-        if (readOnly) {
-            connection.setReadOnly(false);
-            connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
-        }
-        connection.setAutoCommit(autoCommit);
     }
 }

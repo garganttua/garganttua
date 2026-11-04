@@ -37,8 +37,10 @@ filter <- buildFilter(@caller, @filter, @2)
 // it is safe (no afterGet hooks / injection / compositions could read a non-requested field);
 // otherwise the projection is empty here and the output is shaped post-fetch below.
 daoProjection <- effectiveDaoProjection(@2, @projection)
-entities <- getEntitiesProjected(@1, @pageable, @filter, @sort, @daoProjection)
+// The page AND the total its filter matches, in one call: a DAO that can count in the same round trip does.
+page <- getEntitiesPage(@1, @pageable, @filter, @sort, @daoProjection)
 ! => recordCaughtException(@0, @exception) -> 500
+entities <- pageEntities(@page)
 
 entities <- if(equals(@outputMode, "full"), (
     entities <- doInjection(@0, @entities)
@@ -62,7 +64,7 @@ entities <- if(equals(@outputMode, "id"), (
 ! => recordCaughtException(@0, @exception) -> 500
 
 entities <- if(notNull(@pageable), (
-    totalCount <- getCount(@1, @filter)
+    totalCount <- pageTotal(@page)
     entities <- encapsulateInPage(@entities, @totalCount)
 ), @entities)
 ! => recordCaughtException(@0, @exception) -> 500

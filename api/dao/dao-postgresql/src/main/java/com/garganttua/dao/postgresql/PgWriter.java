@@ -76,8 +76,7 @@ public final class PgWriter {
         this.digestColumns = digests && !table.children().isEmpty() ? PgListDigests.columns(table) : Map.of();
         this.upsertSql = buildUpsertSql(table, this.digestColumns.values());
         this.digestsSql = this.digestColumns.isEmpty() ? "" : buildDigestsSql(table, this.digestColumns.values());
-        this.deleteSql = "DELETE FROM " + PgNaming.quote(table.name()) + " AS " + PgQuery.ALIAS + " WHERE "
-                + PgQuery.ALIAS + "." + PgNaming.quote(table.id().name()) + " = ?";
+        this.deleteSql = buildDeleteSql(table);
     }
 
     /**
@@ -113,7 +112,8 @@ public final class PgWriter {
                 if (digest != null && digest.equals(stored.get(child))) {
                     continue;
                 }
-                if (rewritten == 0) {
+                if (rewritten == 0 && digestsSql.isEmpty()) {
+                    // With digests, the flag rode with the digest read; without, it costs a statement.
                     raiseFlag(connection);
                 }
                 children.write(connection, child, id, dto);
@@ -142,7 +142,7 @@ public final class PgWriter {
             statement.setObject(1, id);
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
-                    int index = 1;
+                    int index = 2;
                     for (PgChildTable child : digestColumns.keySet()) {
                         stored.put(child, rs.getString(index));
                         index++;
@@ -180,8 +180,6 @@ public final class PgWriter {
         Object id = idOf(dto, "delete");
         int deleted;
         try (PreparedStatement statement = connection.prepareStatement(deleteSql)) {
-            // The child rows go by ON DELETE CASCADE: the digest triggers have nothing to keep true.
-            raiseFlag(connection);
             statement.setObject(1, id);
             deleted = statement.executeUpdate();
         } catch (SQLException e) {
@@ -247,11 +245,31 @@ public final class PgWriter {
         return index;
     }
 
+    /**
+     * Reads the stored digests, locking the row, and raises the DAO's flag for the transaction — in ONE
+     * statement, and always one row: a new entity has no row to lock, yet its collections are written too.
+     */
     private static String buildDigestsSql(PgTable table, Collection<String> digestColumns) {
         StringJoiner columns = new StringJoiner(", ");
-        digestColumns.forEach(c -> columns.add(PgNaming.quote(c)));
-        return "SELECT " + columns + " FROM " + PgNaming.quote(table.name()) + " WHERE "
-                + PgNaming.quote(table.id().name()) + " = ? FOR UPDATE";
+        digestColumns.forEach(c -> columns.add("d." + PgNaming.quote(c)));
+        StringJoiner stored = new StringJoiner(", ");
+        digestColumns.forEach(c -> stored.add(PgNaming.quote(c)));
+        return "SELECT " + PgListDigests.FLAG_EXPRESSION + ", " + columns + " FROM (SELECT 1) one LEFT JOIN (SELECT "
+                + stored + " FROM " + PgNaming.quote(table.name()) + " WHERE " + PgNaming.quote(table.id().name())
+                + " = ? FOR UPDATE) d ON TRUE";
+    }
+
+    /**
+     * Deletes the main row; its collections go by {@code ON DELETE CASCADE}. With collections, the DAO's
+     * flag is raised by the same statement — evaluated while the row is matched, so before the cascade
+     * runs: the digest triggers have nothing to keep true for rows that disappear with their owner.
+     */
+    private static String buildDeleteSql(PgTable table) {
+        String delete = "DELETE FROM " + PgNaming.quote(table.name()) + " AS " + PgQuery.ALIAS + " WHERE "
+                + PgQuery.ALIAS + "." + PgNaming.quote(table.id().name()) + " = ?";
+        return table.children().isEmpty() ? delete
+                : "WITH flag AS (SELECT " + PgListDigests.FLAG_EXPRESSION + ") " + delete
+                        + " AND EXISTS (SELECT 1 FROM flag)";
     }
 
     private static String buildUpsertSql(PgTable table, Collection<String> digestColumns) {

@@ -28,8 +28,8 @@ import com.garganttua.dao.postgresql.schema.SchemaMode;
  * upgrade — a trigger on every child table, at every depth, sets the owner's digest to NULL whenever
  * a row is inserted, updated or deleted, and every digest of the table on a {@code TRUNCATE}. A NULL
  * digest is never equal to anything, so the next write through the DAO rewrites that collection.
- * The DAO's own writes set a transaction-local flag ({@link #FLAG}) that the trigger honours, so they
- * do not erase the digest they have just written.
+ * The DAO's own writes set a transaction-local flag ({@link #FLAG}); the trigger's {@code WHEN} tests it,
+ * so they neither erase the digest they have just written nor pay a function call per child row.
  * </p>
  *
  * <p>
@@ -46,8 +46,11 @@ final class PgListDigests {
     /** The transaction-local setting the DAO raises before writing child rows itself. */
     static final String FLAG = "garganttua.dao_writes_lists";
 
+    /** The expression raising it, for the current transaction only. */
+    static final String FLAG_EXPRESSION = "set_config('" + FLAG + "', 'on', true)";
+
     /** The statement raising it, for the current transaction only. */
-    static final String RAISE_FLAG = "SELECT set_config('" + FLAG + "', 'on', true)";
+    static final String RAISE_FLAG = "SELECT " + FLAG_EXPRESSION;
 
     private static final String FUNCTION = "garganttua_list_digest_invalidate";
     private static final String DIGEST_PREFIX = "_digest";
@@ -77,9 +80,17 @@ final class PgListDigests {
     private static final String FUNCTION_EXISTS = "SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
             + "WHERE n.nspname = current_schema() AND p.proname = ?";
 
-    private static final String TRIGGER_EXISTS = "SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
-            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+    /** Whether a trigger exists, and whether it carries the {@code WHEN} that spares the DAO's own writes. */
+    private static final String TRIGGER_STATE = "SELECT t.tgqual IS NOT NULL FROM pg_trigger t "
+            + "JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
             + "WHERE n.nspname = current_schema() AND c.relname = ? AND t.tgname = ?";
+
+    /**
+     * The condition under which a trigger fires: the DAO has not raised its flag. Tested by the trigger
+     * itself, before any function is called — the DAO's own writes, which touch hundreds of child rows,
+     * do not pay one PL/pgSQL call per row.
+     */
+    private static final String WHEN = " WHEN (current_setting('" + FLAG + "', true) IS DISTINCT FROM 'on')";
 
     private static final String COLUMN_EXISTS = "SELECT 1 FROM information_schema.columns "
             + "WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?";
@@ -119,59 +130,85 @@ final class PgListDigests {
         if (table.children().isEmpty()) {
             return false;
         }
-        List<String> missing = missing(connection, table);
-        if (missing.isEmpty()) {
+        List<String> missing = new ArrayList<>();
+        List<String> outdated = new ArrayList<>();
+        inspect(connection, table, missing, outdated);
+        if (missing.isEmpty() && outdated.isEmpty()) {
             return true;
         }
         if (mode == SchemaMode.VALIDATE) {
-            log.warn("Table '{}': the list digests are not installed, so every write rewrites every collection of "
-                    + "the entity. Schema mode VALIDATE issues no DDL; apply this to turn them on:\n  {}", table.name(),
-                    String.join(";\n  ", missing) + ";");
-            return false;
+            List<String> ddl = new ArrayList<>(missing);
+            ddl.addAll(outdated);
+            log.warn("Table '{}': the list digests are {}. Schema mode VALIDATE issues no DDL; apply this:\n  {}",
+                    table.name(), missing.isEmpty() ? "installed without the trigger condition of ALPHA31, so every "
+                            + "write of a collection calls the trigger function once per row"
+                            : "not installed, so every write rewrites every collection of the entity",
+                    String.join(";\n  ", ddl) + ";");
+            return missing.isEmpty();
         }
         try (Statement statement = connection.createStatement()) {
             for (String ddl : missing) {
                 statement.execute(ddl);
             }
+            for (String ddl : outdated) {
+                statement.execute(ddl);
+            }
         }
-        log.info("Table '{}': list digests installed ({} statement(s))", table.name(), missing.size());
+        log.info("Table '{}': list digests installed ({} statement(s))", table.name(), missing.size() + outdated.size());
         return true;
     }
 
-    /** The DDL still to apply — empty when everything is in place. */
-    private static List<String> missing(Connection connection, PgTable table) throws SQLException {
-        List<String> ddl = new ArrayList<>();
+    /**
+     * Sorts what is not in place: {@code missing} — without it the digests cannot be used at all —
+     * and {@code outdated} — a trigger of ALPHA30, correct but without its {@code WHEN}, replaced.
+     */
+    private static void inspect(Connection connection, PgTable table, List<String> missing, List<String> outdated)
+            throws SQLException {
         Map<PgChildTable, String> columns = columns(table);
         for (String column : columns.values()) {
             if (!exists(connection, COLUMN_EXISTS, table.name(), column)) {
-                ddl.add("ALTER TABLE " + PgNaming.quote(table.name()) + " ADD COLUMN IF NOT EXISTS "
+                missing.add("ALTER TABLE " + PgNaming.quote(table.name()) + " ADD COLUMN IF NOT EXISTS "
                         + PgNaming.quote(column) + " TEXT");
             }
         }
         if (!exists(connection, FUNCTION_EXISTS, FUNCTION)) {
-            ddl.add(CREATE_FUNCTION);
+            missing.add(CREATE_FUNCTION);
         }
         for (Map.Entry<PgChildTable, String> top : columns.entrySet()) {
             for (PgChildTable child : subtree(top.getKey())) {
-                triggers(connection, table, child, top.getValue(), ddl);
+                triggers(connection, table, child, top.getValue(), missing, outdated);
             }
         }
-        return ddl;
     }
 
     private static void triggers(Connection connection, PgTable table, PgChildTable child, String digestColumn,
-            List<String> ddl) throws SQLException {
+            List<String> missing, List<String> outdated) throws SQLException {
         String arguments = "('" + table.name().replace("'", "''") + "', '" + digestColumn.replace("'", "''") + "', '"
                 + table.id().name().replace("'", "''") + "')";
-        String rowTrigger = PgNaming.index(child.name(), TRIGGER_SUFFIX);
-        if (!exists(connection, TRIGGER_EXISTS, child.name(), rowTrigger)) {
-            ddl.add("CREATE TRIGGER " + PgNaming.quote(rowTrigger) + " AFTER INSERT OR UPDATE OR DELETE ON "
-                    + PgNaming.quote(child.name()) + " FOR EACH ROW EXECUTE FUNCTION " + FUNCTION + arguments);
-        }
-        String truncateTrigger = PgNaming.index(child.name(), TRUNCATE_TRIGGER_SUFFIX);
-        if (!exists(connection, TRIGGER_EXISTS, child.name(), truncateTrigger)) {
-            ddl.add("CREATE TRIGGER " + PgNaming.quote(truncateTrigger) + " AFTER TRUNCATE ON "
-                    + PgNaming.quote(child.name()) + " FOR EACH STATEMENT EXECUTE FUNCTION " + FUNCTION + arguments);
+        trigger(connection, child, PgNaming.index(child.name(), TRIGGER_SUFFIX),
+                " AFTER INSERT OR UPDATE OR DELETE ON " + PgNaming.quote(child.name()) + " FOR EACH ROW" + WHEN
+                        + " EXECUTE FUNCTION " + FUNCTION + arguments,
+                missing, outdated);
+        trigger(connection, child, PgNaming.index(child.name(), TRUNCATE_TRIGGER_SUFFIX),
+                " AFTER TRUNCATE ON " + PgNaming.quote(child.name()) + " FOR EACH STATEMENT" + WHEN
+                        + " EXECUTE FUNCTION " + FUNCTION + arguments,
+                missing, outdated);
+    }
+
+    private static void trigger(Connection connection, PgChildTable child, String name, String definition,
+            List<String> missing, List<String> outdated) throws SQLException {
+        String create = "CREATE TRIGGER " + PgNaming.quote(name) + definition;
+        try (PreparedStatement statement = connection.prepareStatement(TRIGGER_STATE)) {
+            statement.setString(1, child.name());
+            statement.setString(2, name);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (!rs.next()) {
+                    missing.add(create);
+                } else if (!rs.getBoolean(1)) {
+                    outdated.add("DROP TRIGGER " + PgNaming.quote(name) + " ON " + PgNaming.quote(child.name()));
+                    outdated.add(create);
+                }
+            }
         }
     }
 
