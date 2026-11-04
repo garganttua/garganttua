@@ -24,12 +24,12 @@
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-dao-mongodb</artifactId>
-    <version>3.0.0-ALPHA32</version>
+    <version>3.0.0-ALPHA33</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA32
+3.0.0-ALPHA33
 
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`

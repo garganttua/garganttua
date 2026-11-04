@@ -17,12 +17,12 @@ builders (`ContextBuilder`, `RouteBuilder`, …) and JSON context I/O (`JsonCont
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-core</artifactId>
-    <version>3.0.0-ALPHA32</version>
+    <version>3.0.0-ALPHA33</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA32
+3.0.0-ALPHA33
 
 ### Dependencies
  - `com.garganttua:garganttua-events-api`

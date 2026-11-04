@@ -23,12 +23,12 @@ The `garganttua-console` module provides a terminal-based interactive console (R
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-console</artifactId>
-    <version>3.0.0-ALPHA32</version>
+    <version>3.0.0-ALPHA33</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA32
+3.0.0-ALPHA33
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
