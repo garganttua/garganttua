@@ -14,12 +14,12 @@ The Garganttua Crypto module provides a comprehensive cryptographic framework fo
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-crypto</artifactId>
-    <version>3.0.0-ALPHA31</version>
+    <version>3.0.0-ALPHA32</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA31
+3.0.0-ALPHA32
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
