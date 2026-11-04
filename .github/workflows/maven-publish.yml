@@ -190,6 +190,10 @@ jobs:
       # `clean` is required so the AOT annotation processor re-runs and the published
       # artifacts carry their AOTClass_* descriptors (built-in @Expression functions
       # need them to resolve in downstream native builds). See the build job note.
-      run: mvn -B -ntp clean deploy
+      #
+      # GitHub Packages computes every artifact's checksums itself (.sha1/.md5/.sha256) and answers
+      # 409 to the client's own .sha1/.md5 upload. Maven Resolver 2 (Maven 3.10) fails the deploy on
+      # that 409 where Resolver 1 only warned: keep it a warning — the checksums served are GitHub's.
+      run: mvn -B -ntp clean deploy -Daether.connector.basic.failOnChecksumUploadFailure=false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
