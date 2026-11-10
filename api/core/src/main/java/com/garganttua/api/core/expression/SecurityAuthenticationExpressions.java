@@ -360,7 +360,7 @@ public class SecurityAuthenticationExpressions {
 				"No domain registered for entity class: " + target.getName());
 	}
 
-	@Expression(name = "verifyAuthorization", description = "Single server-side verification step used by VERIFY_AUTHORIZATION.gs. The decoded authorization (token) verifies ITSELF: it must be a registered, authenticator-enabled domain. Resolves the token's own domain from the entity class, forges an AuthenticationRequest (login = token uuid, credentials = decoded token, tenantId = token's tenant) and runs that domain's authenticate pipeline — the user-declared @AuthenticationAuthenticate method enforces signature / expiration / revocation / custom rules. On success the framework resolves the OWNER from the token's qualified ownerId and returns it as the principal (carrying the token's type + authorities). Throws ApiException (→ 401) when the token is not a verifiable authenticator domain, fails its authenticate method, or its owner cannot be resolved.")
+	@Expression(name = "verifyAuthorization", description = "Single server-side verification step used by VERIFY_AUTHORIZATION.gs. The decoded authorization (token) verifies ITSELF: it must be a registered, authenticator-enabled domain. Resolves the token's own domain from the entity class, forges an AuthenticationRequest (login = token uuid, credentials = decoded token, tenantId = token's tenant) and runs that domain's authentication strategies — the user-declared @AuthenticationAuthenticate method enforces signature / expiration / revocation / custom rules. On success the framework resolves the OWNER from the token's qualified ownerId and returns it as the principal (carrying the token's type + authorities). Throws ApiException (→ 401) when the token is not a verifiable authenticator domain, fails its authenticate method, or its owner cannot be resolved.")
 	public static IAuthentication verifyAuthorization(@Nullable Object apiContext,
 			@Nullable Object authorization, @Nullable Object operationRequest) {
 		IApi api = (IApi) unwrapOptional(apiContext);
@@ -383,14 +383,17 @@ public class SecurityAuthenticationExpressions {
 		// 2. Framework-owned intrinsic checks (expiration + revocation) — reject fast (→ 401).
 		SecurityVerificationSupport.validateAuthorizationFromDefinition(authz, authzDomain);
 
-		// 3. Verify the token — custom (authenticator declared → run its authenticate pipeline) or
+		// The token's stored record, read at most once whichever of the steps below asks for it first.
+		SecurityVerificationSupport.StoredRecord stored = new SecurityVerificationSupport.StoredRecord(authzDomain, authz);
+
+		// 3. Verify the token — custom (authenticator declared → run its strategies, directly) or
 		//    default (framework verifies the signature itself; no-op when not signable).
 		DomainDefinition<?> domDef = toDomainDefinition(authzDomain);
 		boolean hasAuthenticator = domDef != null
 				&& domDef.domainSecurityDefinition() != null
 				&& domDef.domainSecurityDefinition().authenticatorDefinition() != null;
 		if (hasAuthenticator) {
-			verifyViaAuthenticator(api, authzDomain, authz, operationRequest);
+			TokenSelfVerification.verify(api, authzDomain, authz, operationRequest, stored);
 		} else if (!SecuritySigningExpressions.verifyIfSignable(authz, authzDomain, operationRequest)) {
 			throw new ApiException("Authorization signature verification failed");
 		}
@@ -399,36 +402,15 @@ public class SecurityAuthenticationExpressions {
 		//    authorization becomes the server-authoritative stored record, re-validated against its
 		//    CURRENT revoked/expiration state and fail-closed (→ 401) when absent. Default off →
 		//    effective stays the decoded token, behaviour strictly unchanged.
-		Object effective = SecurityVerificationSupport.effectiveAuthorizationForVerify(authzDomain, authz);
+		Object effective = SecurityVerificationSupport.effectiveAuthorizationForVerify(authzDomain, authz, stored);
 
 		// 5. Server resolves the OWNER as the final principal (SERVER-AUTHORITATIVE: a storable token's
 		//    persisted record wins over the decoded payload to prevent privilege escalation).
 		//    serverAuthoritativeAuthorization already returns that stored record when present, so it is
 		//    the trusted source for both the checkStored path and the default path.
 		Object owner = SecurityVerificationSupport.resolveOwnerPrincipal(api, authzDomain, effective);
-		Object trusted = SecurityVerificationSupport.serverAuthoritativeAuthorization(authzDomain, authz);
+		Object trusted = SecurityVerificationSupport.serverAuthoritativeAuthorization(authzDomain, authz, stored);
 		return synthAuthFromPrincipal(owner, trusted, authzDomain);
-	}
-
-	/**
-	 * Verifies a token whose domain declares an authenticator: framework-owned signature check
-	 * (against the key resolved from the token's qualified signedBy; no-op when not signable), then
-	 * the user authenticate pipeline (BUSINESS rules only) forged from the token's uuid/credentials/
-	 * tenant. Throws (→ 401) on a tampered signature or a rejecting authenticate.
-	 */
-	private static void verifyViaAuthenticator(IApi api, IDomain<?> authzDomain, Object authz,
-			Object operationRequest) {
-		if (SecurityAuthorizationExpressions.isAuthorizationSignable(authzDomain)
-				&& !SecuritySigningExpressions.verifyTokenSignature(authz, authzDomain, operationRequest)) {
-			throw new ApiException("Authorization signature verification failed");
-		}
-		String login = SecurityExpressions.readField(authz, authzDomain.getEntityDefinition().uuid());
-		ObjectAddress tenantAddr = authzDomain.getEntityDefinition().tenantId();
-		String tenantId = tenantAddr != null ? SecurityExpressions.readField(authz, tenantAddr) : null;
-		IAuthenticationRequest authRequest =
-				new com.garganttua.api.core.security.authentication.AuthenticationRequest(login, authz);
-		// The token's own tenant drives the lookup (verify flow), not the request body.
-		invokeAuthenticate(api, authzDomain, authRequest, tenantId);
 	}
 
 

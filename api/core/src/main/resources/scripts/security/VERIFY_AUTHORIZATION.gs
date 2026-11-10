@@ -17,8 +17,9 @@
 #    - resolve the target authenticator domain (Mode A: protocol.targetDomain;
 #      Mode B: from the IAuthorization instance's class — null tolerated)
 #    - verify the cryptographic signature (no-op when not signable)
-#    - if an authenticator is wired on the target domain, invoke the
-#      authenticate pipeline (account status + principal resolution)
+#    - if an authenticator is wired on the target domain, run its
+#      authentication strategies directly (principal resolution + account
+#      status), in this pipeline — no nested authenticate workflow
 #    - otherwise fall back to IAuthorization.validate() (intrinsic checks:
 #      expiration, revocation, user-defined rules)
 #    - returns the resolved IAuthentication, which carries the principal

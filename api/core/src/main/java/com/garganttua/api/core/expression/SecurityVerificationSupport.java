@@ -29,33 +29,61 @@ final class SecurityVerificationSupport {
 	private SecurityVerificationSupport() {
 	}
 
-	static Object serverAuthoritativeAuthorization(IDomain<?> authzDomain, Object authz) {
-		Object defObj = SecurityExpressions.authorizationDefinition(authzDomain);
-		if (!(defObj instanceof IDomainAuthorizationDefinition d) || !d.storable()) {
-			return authz;
+	/**
+	 * The stored record of the token being verified, read at most ONCE per verification.
+	 *
+	 * <p>
+	 * Three steps want it: the principal of a self-verifying token (its login is its uuid), the
+	 * {@code checkStoredOnVerify} revocation check and the server-authoritative copy the principal is
+	 * built from. Each used to read it for itself — three identical queries per request.
+	 * </p>
+	 *
+	 * <p>
+	 * Not thread-safe, and need not be: one instance lives for one verification, on one thread. A failed
+	 * read is not remembered, so the lenient step that falls back on a hiccup does not hide a failure from
+	 * a strict one that must see it.
+	 * </p>
+	 */
+	static final class StoredRecord {
+
+		private final IDomain<?> authzDomain;
+		private final Object authz;
+		private Optional<Object> record;
+
+		StoredRecord(IDomain<?> authzDomain, Object authz) {
+			this.authzDomain = authzDomain;
+			this.authz = authz;
 		}
-		ObjectAddress uuidAddr = authzDomain.getEntityDefinition() != null
-				? authzDomain.getEntityDefinition().uuid() : null;
-		if (uuidAddr == null) {
-			return authz;
+
+		/** {@return whether the token has a stored record to read: a storable domain with a uuid field} */
+		boolean exists() {
+			return SecurityExpressions.authorizationDefinition(this.authzDomain)
+					instanceof IDomainAuthorizationDefinition d && d.storable()
+					&& this.authzDomain.getEntityDefinition() != null
+					&& this.authzDomain.getEntityDefinition().uuid() != null;
 		}
-		String uuid = SecurityExpressions.readField(authz, uuidAddr);
-		if (uuid == null) {
+
+		/** {@return the stored record, empty when absent} — a repository error propagates. */
+		Optional<Object> strict() {
+			if (this.record == null) {
+				this.record = serverAuthoritativeAuthorizationStrict(this.authzDomain, this.authz);
+			}
+			return this.record;
+		}
+	}
+
+	static Object serverAuthoritativeAuthorization(IDomain<?> authzDomain, Object authz, StoredRecord stored) {
+		if (!stored.exists()) {
 			return authz;
 		}
 		try {
-			IFilter filter = Filter.eq(uuidAddr.toString(), uuid);
-			List<Object> results = authzDomain.getRepository()
-					.getEntities(Optional.empty(), Optional.of(filter), Optional.empty());
-			if (results != null && !results.isEmpty()) {
-				return results.get(0);
-			}
+			return stored.strict().orElse(authz);
 		} catch (RuntimeException e) {
 			// The authenticate step already proved the token exists; on a lookup hiccup
 			// fall back to the decoded (signature-verified) payload rather than failing open.
 			log.trace("serverAuthoritativeAuthorization: lookup hiccup, using decoded payload: {}", e.getMessage());
+			return authz;
 		}
-		return authz;
 	}
 
 	/**
@@ -97,15 +125,15 @@ final class SecurityVerificationSupport {
 	 * record. Otherwise returns the decoded token unchanged — the SAME instance, so the caller can tell
 	 * the two apart by identity.
 	 */
-	static Object effectiveAuthorizationForVerify(IDomain<?> authzDomain, Object authz) {
+	static Object effectiveAuthorizationForVerify(IDomain<?> authzDomain, Object authz, StoredRecord stored) {
 		Object defObj = SecurityExpressions.authorizationDefinition(authzDomain);
 		if (!(defObj instanceof IDomainAuthorizationDefinition d) || !d.checkStoredOnVerify() || !d.storable()) {
 			return authz;
 		}
-		Object stored = serverAuthoritativeAuthorizationStrict(authzDomain, authz)
+		Object record = stored.strict()
 				.orElseThrow(() -> new ApiException("Authorization not found or revoked"));
-		validateAuthorizationFromDefinition(stored, authzDomain);
-		return stored;
+		validateAuthorizationFromDefinition(record, authzDomain);
+		return record;
 	}
 
 	/** Resolves the registered domain whose entity class matches the runtime class of {@code entity}. Null when none. */
