@@ -7,6 +7,7 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.garganttua.api.commons.event.IEvent;
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.core.observability.Logger;
 
@@ -37,7 +38,45 @@ public final class ApiEventCodec {
 	 * @return the JSON representation as UTF-8 bytes, never {@code null}
 	 */
 	public byte[] toBytes(IEvent event) {
-		Map<String, Object> json = describe(event);
+		return write(describe(event));
+	}
+
+	/**
+	 * Serialise a business event with its place in its consumer's sequence: {@code bootId} names the
+	 * consumer's run, {@code seq} counts, from 1 and without gap, the events it took — so a consumer
+	 * downstream sees a lost event as a jump. The event's identity and source node are the journey's
+	 * ({@code JourneyStep}): the envelope carries them.
+	 *
+	 * @param event  the business event
+	 * @param bootId the run of the consumer that took it
+	 * @param seq    its number in that run
+	 * @return the JSON representation as UTF-8 bytes, never {@code null}
+	 */
+	public byte[] toBytes(IEvent event, String bootId, long seq) {
+		Map<String, Object> json = new LinkedHashMap<>();
+		json.put("bootId", bootId);
+		json.put("seq", seq);
+		json.putAll(describe(event));
+		return write(json);
+	}
+
+	/**
+	 * The last message of a run, sent on a clean stop: a run whose end never arrives ended abruptly, and
+	 * whatever its queue still held is lost from {@code lastSeq + 1} on.
+	 *
+	 * @param bootId  the run
+	 * @param lastSeq the number of the last event it took, 0 when none
+	 * @return the JSON representation as UTF-8 bytes
+	 */
+	public byte[] endOfSequence(String bootId, long lastSeq) {
+		Map<String, Object> json = new LinkedHashMap<>();
+		json.put("type", "endOfSequence");
+		json.put("bootId", bootId);
+		json.put("lastSeq", lastSeq);
+		return write(json);
+	}
+
+	private byte[] write(Map<String, Object> json) {
 		try {
 			return this.mapper.writeValueAsBytes(json);
 		} catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
@@ -65,6 +104,9 @@ public final class ApiEventCodec {
 		json.put("entityUuid", event.getEntityUuid());
 		json.put("ownerId", event.getOwnerId());
 		json.put("userId", event.getUserId());
+		// Where the operation came from: client address, agent, verified session (never the token).
+		RequestOrigin origin = event.getOrigin();
+		json.put("origin", origin == null ? null : origin(origin));
 		json.put("inDate", str(event.getInDate()));
 		json.put("outDate", str(event.getOutDate()));
 		// Deep-serialise the business payloads so they nest as JSON objects (json_path navigable).
@@ -87,6 +129,14 @@ public final class ApiEventCodec {
 			LOG.debug("Falling back to toString() for non-serialisable payload: {}", e.getMessage());
 			return this.mapper.getNodeFactory().textNode(String.valueOf(value));
 		}
+	}
+
+	private static Map<String, Object> origin(RequestOrigin origin) {
+		Map<String, Object> json = new LinkedHashMap<>();
+		json.put("address", origin.address());
+		json.put("userAgent", origin.userAgent());
+		json.put("sessionId", origin.sessionId());
+		return json;
 	}
 
 	private String str(Object value) {

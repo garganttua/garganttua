@@ -1,6 +1,7 @@
 package com.garganttua.events.connectors.api;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.garganttua.core.lifecycle.AbstractLifecycle;
 import com.garganttua.core.lifecycle.ILifecycle;
@@ -41,7 +42,13 @@ import com.garganttua.events.api.context.SubscriptionDef;
  *       different domains (e.g. {@code create} on {@code contacts} vs {@code newsletters}).</li>
  *   <li>{@code operations} — optional operation-key filter; only events whose source operation
  *       segment matches this value are forwarded (default: all operations).</li>
+ *   <li>{@code delivery}, {@code deliveryTimeout}, {@code overflow}, {@code overflowTimeout},
+ *       {@code queueCapacity} — how events reach the routes: queued or synchronous, and what a full
+ *       queue does ({@link ApiEventsSettings}).</li>
  * </ul>
+ *
+ * <p>Every event a consumer keeps is numbered in its run ({@code bootId}, {@code seq}) before any queue,
+ * so that a loss shows as a gap; {@link #droppedEvents()} counts those its consumers dropped.</p>
  *
  * <p>For finer discrimination (technical verb, business operation, use case) the forwarded JSON
  * payload is self-describing — {@link ApiEventCodec} emits {@code domain}, {@code businessOperation}
@@ -70,6 +77,9 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	private String domain;
 	private IFilter eventFilter;
 	private boolean programmaticFilterSet;
+	private ApiEventsSettings settings = ApiEventsSettings.DEFAULTS;
+	/** Every event this connector's consumers dropped, across their runs. */
+	private final AtomicLong dropped = new AtomicLong();
 
 	@Override
 	public IReflection reflection() {
@@ -105,6 +115,7 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 		this.name = configuration.getOrDefault("name", "api-events");
 		this.operations = configuration.get("operations");
 		this.domain = configuration.get("domain");
+		this.settings = ApiEventsSettings.of(configuration);
 		configureFilter(configuration.get("filter"));
 		LOG.debug("Configured api events connector {} (domain={}, operations={})",
 				this.name, this.domain, this.operations);
@@ -131,7 +142,23 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 
 	@Override
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
-		return new ApiEventsConsumer(this.operations, this.domain, this.eventFilter);
+		return new ApiEventsConsumer(this.operations, this.domain, this.eventFilter, this.settings, this.dropped);
+	}
+
+	/**
+	 * The events this connector's consumers could not queue (a full queue, under {@code drop} or past
+	 * {@code overflowTimeout} under {@code block}) since it was created. Each kept its number: downstream sees
+	 * them as gaps in {@code seq}.
+	 *
+	 * @return the count
+	 */
+	public long droppedEvents() {
+		return this.dropped.get();
+	}
+
+	/** {@return how this connector delivers events} — read from its configuration ({@link ApiEventsSettings}). */
+	public ApiEventsSettings settings() {
+		return this.settings;
 	}
 
 	@Override
