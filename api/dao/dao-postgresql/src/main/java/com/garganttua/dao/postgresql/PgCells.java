@@ -84,11 +84,11 @@ interface PgCells {
      * column — temporals from their exact epoch form, binary from hexadecimal, numbers in the Java type
      * JDBC would hand back.
      *
-     * @param values   the cells, as text (null for SQL NULL)
+     * @param values   the cells, as text (null for SQL NULL); items past the last cell are never read
      * @param sqlTypes the SQL type of each cell, same order, UPPER-CASE
      * @return the cells
      */
-    static PgCells of(List<String> values, List<String> sqlTypes) {
+    static PgCells of(List<?> values, List<String> sqlTypes) {
         return new JsonRow(values, sqlTypes);
     }
 
@@ -98,16 +98,16 @@ interface PgCells {
         private static final long MICROS = 1_000_000L;
         private static final long NANOS_PER_MICRO = 1_000L;
 
-        private final List<String> values;
+        private final List<?> values;
         private final List<String> sqlTypes;
 
-        JsonRow(List<String> values, List<String> sqlTypes) {
+        JsonRow(List<?> values, List<String> sqlTypes) {
             this.values = values;
             this.sqlTypes = sqlTypes;
         }
 
         private String cell(int index) {
-            return this.values.get(index - 1);
+            return (String) this.values.get(index - 1);
         }
 
         /** The SQL type of a cell — given upper-case, so the hot path never case-folds. */

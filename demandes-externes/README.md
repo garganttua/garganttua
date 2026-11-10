@@ -68,12 +68,11 @@ de mesuré. Les quatre premières conditionnent la présentation du journal à l
 | [un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation](un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation.md) | core, events | souhait : un connecteur `api` synchrone dont l'échec fait échouer l'opération |
 | [le-verrou-de-route-ne-se-cle-pas-sur-le-message](le-verrou-de-route-ne-se-cle-pas-sur-le-message.md) | events | optionnel : `lockObject` évalué sur le message |
 
-Quatre fiches de palliad, déposées les 2026-11-05 et 06 : trois **mesurées** sur la capacité d'un serveur
+Trois fiches de palliad encore ouvertes, déposées les 2026-11-05 et 06 : deux **mesurées** sur la capacité d'un serveur
 (ALPHA33, natif et JVM), une évolution bloquante pour l'hébergement HDS.
 
 | Fiche | À l'attention de | En une ligne |
 |---|---|---|
-| [le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ](le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ.md) | api | décoder le JSONB en une passe : tout l'écart de débit avec MongoDB |
 | [le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage](le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage.md) | core, api | résoudre les membres une fois par type, pas à chaque appel ; la sonde `HotPathProbe` se dispute ses compteurs |
 | [un-cache-du-cadre-local-et-distribue](un-cache-du-cadre-local-et-distribue.md) | core, api | `ICache` local et Redis, invalidé par les écritures du pipeline |
 | [authentification-a-deux-facteurs](authentification-a-deux-facteurs.md) | api | une étape entre l'authentification et l'émission du jeton, et une réutilisation qui tient compte du niveau |
@@ -205,11 +204,12 @@ arrivées ensemble.
 
 ## Fiches répondues — `3.0.0-ALPHA34`
 
-Traitée le 2026-11-10, sur la branche `perf/token-verification`, **à paraître dans `3.0.0-ALPHA34`**.
+Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraître dans `3.0.0-ALPHA34`**.
 
 | Fiche | Émise par | Réponse |
 |---|---|---|
 | [la-verification-du-jeton-coute-la-moitie-de-chaque-requete](la-verification-du-jeton-coute-la-moitie-de-chaque-requete.md) | palliad | Cause confirmée : l'opération `authenticate` complète du domaine du jeton à chaque requête, dont la recherche du principal était elle-même un `readAll` imbriqué, et la même ligne stockée lue trois fois. Le passage par ces pipelines reste le **défaut** ; deux réglages du DSL, `authenticateOnVerify` et `lookupOnVerify`, choisissent séparément un chemin `DIRECT` : stratégies exécutées dans la requête, avec les mêmes contrôles dans le même ordre, et principal lu dans le dépôt, puisque c'est la ligne déjà lue. En `DIRECT` : 3 lectures → 1, 2 workflows imbriqués → 0, vérification 2,9 → 0,2–0,8 ms au banc JVM. Révocation identique partout, sans cache. |
+| [le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ](le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ.md) | palliad | Traitée, sur une autre cause que celle supposée : la ligne principale n'est pas un JSONB, mais chaque cellule résolvait son chemin de champs par nom, dans des maps à clés de listes, et les agrégats passaient par un parseur générique. Un plan par table, calculé une fois (`PgRowPlan`), des bits de présence lus par indice et un lecteur d'agrégats sans Jackson : CPU Java d'une lecture de 500 activités 22,9 → 10,2 ms (−55 %). Lecteur Jackson mis en cache par type pour les vraies colonnes JSONB. |
 
 ## Changements de comportement à la montée en `3.0.0-ALPHA34`
 
