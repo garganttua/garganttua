@@ -55,9 +55,30 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 ## Fiches ouvertes
 
-Aucune.
+Six fiches de palliad, déposées le 2026-11-02 ensemble : elles servent toutes le journal des accès aux données de
+santé exigé par la certification HDS, alimenté par le connecteur `api`. Toutes **lues** dans les sources ALPHA30, rien
+de mesuré. Les quatre premières conditionnent la présentation du journal à l'audit.
 
-Les vingt et une fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+| Fiche | À l'attention de | En une ligne |
+|---|---|---|
+| [le-connecteur-api-abandonne-des-evenements-quand-sa-file-est-pleine](le-connecteur-api-abandonne-des-evenements-quand-sa-file-est-pleine.md) | events | une politique de débordement (bloquer plutôt que jeter) et un compteur des abandons |
+| [les-evenements-du-connecteur-api-ne-sont-pas-numerotes](les-evenements-du-connecteur-api-ne-sont-pas-numerotes.md) | events | `eventId`, nœud, démarrage et numéro d'ordre continu, pour rendre toute perte détectable |
+| [kafka-et-bigqueue-acquittent-avant-la-reussite-de-la-route](kafka-et-bigqueue-acquittent-avant-la-reussite-de-la-route.md) | events | `IAcknowledgingConsumer` sur les deux transports durables |
+| [levenement-dapi-ne-porte-ni-adresse-ip-ni-session](levenement-dapi-ne-porte-ni-adresse-ip-ni-session.md) | api | l'origine de la requête dans l'`IEvent` |
+| [un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation](un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation.md) | core, events | souhait : un connecteur `api` synchrone dont l'échec fait échouer l'opération |
+| [le-verrou-de-route-ne-se-cle-pas-sur-le-message](le-verrou-de-route-ne-se-cle-pas-sur-le-message.md) | events | optionnel : `lockObject` évalué sur le message |
+
+Quatre fiches de palliad, déposées les 2026-11-05 et 06 : trois **mesurées** sur la capacité d'un serveur
+(ALPHA33, natif et JVM), une évolution bloquante pour l'hébergement HDS.
+
+| Fiche | À l'attention de | En une ligne |
+|---|---|---|
+| [le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ](le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ.md) | api | décoder le JSONB en une passe : tout l'écart de débit avec MongoDB |
+| [le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage](le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage.md) | core, api | résoudre les membres une fois par type, pas à chaque appel ; la sonde `HotPathProbe` se dispute ses compteurs |
+| [un-cache-du-cadre-local-et-distribue](un-cache-du-cadre-local-et-distribue.md) | core, api | `ICache` local et Redis, invalidé par les écritures du pipeline |
+| [authentification-a-deux-facteurs](authentification-a-deux-facteurs.md) | api | une étape entre l'authentification et l'émission du jeton, et une réutilisation qui tient compte du niveau |
+
+Les fiches précédentes, déposées par palliad et autonom, ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -181,3 +202,17 @@ arrivées ensemble.
 | Lecture MongoDB paginée avec `$near` | ordonnée par `_id`, compte refusé par le serveur | ordonnée par distance, comptée |
 | Écriture PostgreSQL d'une entité à collections | toutes les collections réécrites | seules celles qui changent ; colonnes `_digest__*` et déclencheurs ajoutés en `CREATE` |
 | `garganttua-api-binding-jackson` | portait `geojson-jackson` | le reçoit de `garganttua-api-binding-geojson` |
+
+## Fiches répondues — `3.0.0-ALPHA34`
+
+Traitée le 2026-11-10, sur la branche `perf/token-verification`, **à paraître dans `3.0.0-ALPHA34`**.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [la-verification-du-jeton-coute-la-moitie-de-chaque-requete](la-verification-du-jeton-coute-la-moitie-de-chaque-requete.md) | palliad | Cause confirmée : l'opération `authenticate` complète du domaine du jeton à chaque requête, dont la recherche du principal était elle-même un `readAll` imbriqué, et la même ligne stockée lue trois fois. La stratégie s'exécute maintenant directement, avec les mêmes contrôles dans le même ordre, et la ligne est lue une fois, puisqu'elle **est** le principal. 3 lectures → 1, 2 workflows imbriqués → 0 ; vérification 2,9 → 0,2–0,8 ms au banc JVM. Révocation inchangée, sans cache : le cache distribué reste à la fiche qui le demande. |
+
+## Changements de comportement à la montée en `3.0.0-ALPHA34`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Vérification d'un jeton dont le domaine déclare un authentificateur | opération `authenticate` imbriquée, visible des observateurs | stratégies exécutées dans le pipeline de la requête, sans opération imbriquée |
