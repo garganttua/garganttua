@@ -16,6 +16,7 @@ import com.garganttua.api.commons.service.OperationResponseCode;
 final class FakeEvent implements IEvent {
 
 	private String tenantId;
+	private com.garganttua.api.commons.event.RequestOrigin origin;
 	private String ownerId;
 	private String userId;
 	private Object in;
@@ -167,5 +168,15 @@ final class FakeEvent implements IEvent {
 	@Override
 	public void setEntityUuid(String entityUuid) {
 		this.entityUuid = entityUuid;
+	}
+
+	@Override
+	public com.garganttua.api.commons.event.RequestOrigin getOrigin() {
+		return this.origin;
+	}
+
+	@Override
+	public void setOrigin(com.garganttua.api.commons.event.RequestOrigin origin) {
+		this.origin = origin;
 	}
 }

@@ -82,13 +82,27 @@ public class PrincipalSupplier implements IContextualSupplier<Object, IRuntimeCo
         }
         IAuthenticationRequest authRequest = (IAuthenticationRequest) entityOpt.get();
 
-        // 5. Find the authenticator entity by login in the repository
-        Object principal = findPrincipal(request, domainContext, domDef, authDef, authRequest.login());
+        // 5. Find the authenticator entity by login in the repository — unless the caller already knows it
+        Object principal = request.arg(KnownPrincipal.ARG).orElse(null) instanceof KnownPrincipal known
+                ? knownPrincipal(known, domainContext, authRequest.login())
+                : findPrincipal(request, domainContext, domDef, authDef, authRequest.login());
 
         // 6. Check account status (enabled, non-locked, non-expired) unless alwaysEnabled
         checkAccountStatus(authDef, principal);
 
         return Optional.of(principal);
+    }
+
+    private Object knownPrincipal(KnownPrincipal known, IDomain<?> domainContext, String login)
+            throws SupplyException {
+        Optional<Object> principal;
+        try {
+            principal = known.lookup().get();
+        } catch (RuntimeException e) {
+            throw new SupplyException("PrincipalSupplier: failed to query authenticator domain '"
+                    + domainContext.getDomainName() + "' for login '" + login + "': " + e.getMessage(), e);
+        }
+        return principal.orElseThrow(() -> new SupplyException("User not found for login: " + login));
     }
 
     private Object findPrincipal(IOperationRequest request, IDomain<?> domainContext,

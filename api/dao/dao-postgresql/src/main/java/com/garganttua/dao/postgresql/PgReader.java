@@ -146,11 +146,13 @@ public final class PgReader {
         int totalIndex = withTotal ? extra : -1;
         int firstAggregate = withTotal ? extra + 1 : extra;
         long total = -1L;
+        PgRowPlan plan = mapper.plan(dtoClass, selected);
+        int idIndex = 1 + indexOfId(selected);
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             bindPage(statement, bind(statement, query.params()), query);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
-                    rows.add(row(rs, selected));
+                    rows.add(row(rs, plan, idIndex));
                     if (withTotal) {
                         total = rs.getLong(totalIndex);
                     }
@@ -351,11 +353,9 @@ public final class PgReader {
         return false;
     }
 
-    private PgLoadedRow row(ResultSet rs, List<PgSelected> selected) throws ApiException, SQLException {
-        Object dto = beans.instantiate(dtoClass);
-        int idIndex = 1 + indexOfId(selected);
-        PgLoadedRow row = new PgLoadedRow(rs.getString(idIndex), dto);
-        mapper.fill(row, dtoClass, rs, selected, 1);
+    private PgLoadedRow row(ResultSet rs, PgRowPlan plan, int idIndex) throws ApiException, SQLException {
+        PgLoadedRow row = new PgLoadedRow(rs.getString(idIndex), plan.instantiate());
+        mapper.fill(row, plan, rs, 1);
         return row;
     }
 

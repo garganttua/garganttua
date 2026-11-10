@@ -80,8 +80,14 @@ curl localhost:7000/users
 | Key | Default | Effect |
 |---|---|---|
 | `server.port` | `7000` | port the shared Javalin server binds to |
+| `server.trustedProxies` | — | reverse proxies whose `X-Forwarded-For` is believed, addresses or CIDR ranges, comma-separated (`10.0.0.0/8,::1`). Unset: an operation's origin is the address of its connection, whatever the headers |
 
-Overridable via `GARGANTTUA_SERVER_PORT`.
+Overridable via `GARGANTTUA_SERVER_PORT` and `GARGANTTUA_SERVER_TRUSTEDPROXIES`.
+
+The client address and user agent of every request land in its business event (`IEvent.getOrigin()`), with
+the session of the authorization it was verified with — what an access log needs. Behind a proxy, the address
+is the first hop from the right of `X-Forwarded-For` that is not a trusted proxy: what the client wrote on the
+left proves nothing. Addresses are read as literals, never resolved.
 
 ## Security note
 

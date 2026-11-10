@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.caller.ICaller;
 
 import io.javalin.http.Context;
@@ -230,6 +231,94 @@ class JavalinProtocolTest {
 			verify(ctx).status(201);
 			verify(ctx).result(body);
 			verify(ctx, never()).contentType(anyString());
+		}
+	}
+
+	@Nested
+	@DisplayName("getOrigin — the client address a request resolves to, and its agent")
+	class GetOrigin {
+
+		private void connection(String remote, String... forwardedFor) {
+			jakarta.servlet.http.HttpServletRequest request = mock(jakarta.servlet.http.HttpServletRequest.class);
+			when(ctx.req()).thenReturn(request);
+			when(request.getRemoteAddr()).thenReturn(remote);
+			when(request.getHeaders(JavalinProtocol.FORWARDED_FOR_HEADER))
+					.thenReturn(java.util.Collections.enumeration(List.of(forwardedFor)));
+		}
+
+		@Test
+		@DisplayName("no trusted proxy: the connection's address, whatever X-Forwarded-For claims")
+		void noTrustedProxy() {
+			connection("203.0.113.7", "1.2.3.4");
+			when(ctx.header("User-Agent")).thenReturn("Mozilla/5.0");
+
+			RequestOrigin origin = protocol.getOrigin(ctx);
+
+			assertEquals("203.0.113.7", origin.address());
+			assertEquals("Mozilla/5.0", origin.userAgent());
+			assertNull(origin.sessionId(), "the session is VERIFY_AUTHORIZATION's to set, not the transport's");
+		}
+
+		@Test
+		@DisplayName("through a trusted proxy: the client it forwarded for")
+		void throughATrustedProxy() {
+			protocol.trustedProxies(List.of("127.0.0.1"));
+			connection("127.0.0.1", "198.51.100.20");
+
+			assertEquals("198.51.100.20", protocol.getOrigin(ctx).address());
+		}
+
+		@Test
+		@DisplayName("a chain: the first untrusted hop from the right — what the client wrote on the left proves nothing")
+		void chain() {
+			protocol.trustedProxies(List.of("127.0.0.1", "10.0.0.0/8"));
+			connection("127.0.0.1", "6.6.6.6, 198.51.100.20", "10.1.2.3");
+
+			assertEquals("198.51.100.20", protocol.getOrigin(ctx).address());
+		}
+
+		@Test
+		@DisplayName("a connection that is not a trusted proxy is the client, headers or not")
+		void untrustedConnection() {
+			protocol.trustedProxies(List.of("10.0.0.0/8"));
+			connection("203.0.113.7", "1.2.3.4");
+
+			assertEquals("203.0.113.7", protocol.getOrigin(ctx).address());
+		}
+
+		@Test
+		@DisplayName("IPv6 ranges, and every hop trusted: the leftmost")
+		void ipv6() {
+			protocol.trustedProxies(List.of("fd00::/8", "::1"));
+			connection("::1", "fd12::5");
+
+			assertEquals("fd12::5", protocol.getOrigin(ctx).address(), "every hop trusted: the leftmost is the client");
+		}
+
+		@Test
+		@DisplayName("a hostname in the header is not resolved: it is an untrusted hop, kept as it was written")
+		void noResolution() {
+			protocol.trustedProxies(List.of("127.0.0.1"));
+			connection("127.0.0.1", "localhost");
+
+			assertEquals("localhost", protocol.getOrigin(ctx).address());
+		}
+
+		@Test
+		@DisplayName("a long user agent is cut: it lands in every event")
+		void longAgent() {
+			connection("203.0.113.7");
+			when(ctx.header("User-Agent")).thenReturn("x".repeat(5000));
+
+			assertEquals(JavalinProtocol.MAX_USER_AGENT, protocol.getOrigin(ctx).userAgent().length());
+		}
+
+		@Test
+		@DisplayName("an entry that is neither an address nor a range is refused at configuration")
+		void badEntry() {
+			assertThrows(IllegalArgumentException.class, () -> protocol.trustedProxies(List.of("proxy.local")));
+			assertThrows(IllegalArgumentException.class, () -> protocol.trustedProxies(List.of("10.0.0.0/33")));
+			assertThrows(IllegalArgumentException.class, () -> protocol.trustedProxies(List.of("10.0.0.0/x")));
 		}
 	}
 }

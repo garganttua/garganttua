@@ -146,6 +146,12 @@ public class MethodResolver {
                                 .distinct().toList();
 
                 if (found.size() > 1) {
+                        // Assignable is not identical: foo(Object) accepts what foo(String) declares. The method
+                        // asked for is the one whose signature IS its own — so that another method of the same
+                        // name, annotated or not, public or not, can never make it ambiguous.
+                        found = found.stream().filter(m -> sameSignature(m, method)).toList();
+                }
+                if (found.size() > 1) {
                         throw new ReflectionException("Multiple overloads of method " + method.getName()
                                         + IN_OWNERTYPE + ownerType.getName() + " match the exact signature");
                 }
@@ -154,6 +160,29 @@ public class MethodResolver {
                                         + IN_OWNERTYPE + ownerType.getName() + " matches the exact signature");
                 }
                 return found.get(0);
+        }
+
+        /**
+         * Whether a candidate declares exactly the signature of a method — same return and parameter types, by
+         * name: the two may come from different reflection providers (a runtime method and an AOT descriptor), so
+         * their type objects cannot be compared by identity.
+         */
+        private static boolean sameSignature(ResolvedMethod candidate, IMethod method) {
+                IMethod own = candidate;
+                if (!own.getReturnType().getName().equals(method.getReturnType().getName())) {
+                        return false;
+                }
+                IClass<?>[] ownParams = own.getParameterTypes();
+                IClass<?>[] wanted = method.getParameterTypes();
+                if (ownParams.length != wanted.length) {
+                        return false;
+                }
+                for (int i = 0; i < ownParams.length; i++) {
+                        if (!ownParams[i].getName().equals(wanted[i].getName())) {
+                                return false;
+                        }
+                }
+                return true;
         }
 
         /**

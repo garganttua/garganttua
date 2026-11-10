@@ -90,6 +90,11 @@ class EventsRouteE2ETest {
 		static final java.util.concurrent.atomic.AtomicInteger PUBLISH_MAX =
 				new java.util.concurrent.atomic.AtomicInteger();
 		static volatile long PUBLISH_DELAY_MS;
+		/** Per payload: how many publish calls of that same payload ran at once, at most. */
+		static final java.util.Map<String, java.util.concurrent.atomic.AtomicInteger> CONCURRENT_BY_VALUE =
+				new java.util.concurrent.ConcurrentHashMap<>();
+		static final java.util.Map<String, java.util.concurrent.atomic.AtomicInteger> MAX_BY_VALUE =
+				new java.util.concurrent.ConcurrentHashMap<>();
 
 		public MemConnector() {
 			// public no-arg ctor for the reflective registry path
@@ -134,6 +139,11 @@ class EventsRouteE2ETest {
 				public void publish(byte[] value) {
 					int now = PUBLISH_CONCURRENT.incrementAndGet();
 					PUBLISH_MAX.accumulateAndGet(now, Math::max);
+					String key = new String(value, StandardCharsets.UTF_8);
+					int sameNow = CONCURRENT_BY_VALUE.computeIfAbsent(key,
+							k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+					MAX_BY_VALUE.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicInteger())
+							.accumulateAndGet(sameNow, Math::max);
 					long delay = PUBLISH_DELAY_MS;
 					if (delay > 0) {
 						try {
@@ -143,6 +153,7 @@ class EventsRouteE2ETest {
 						}
 					}
 					PRODUCED.add(value);
+					CONCURRENT_BY_VALUE.get(key).decrementAndGet();
 					PUBLISH_CONCURRENT.decrementAndGet();
 				}
 
@@ -186,6 +197,8 @@ class EventsRouteE2ETest {
 		MemConnector.PUBLISH_CONCURRENT.set(0);
 		MemConnector.PUBLISH_MAX.set(0);
 		MemConnector.PUBLISH_DELAY_MS = 0;
+		MemConnector.CONCURRENT_BY_VALUE.clear();
+		MemConnector.MAX_BY_VALUE.clear();
 
 		reflectionBuilder = ReflectionBuilder.builder()
 				.withProvider(new RuntimeReflectionProvider())
@@ -387,6 +400,43 @@ class EventsRouteE2ETest {
 				"every message is still produced under synchronization");
 		assertEquals(1, MemConnector.PUBLISH_MAX.get(),
 				"the route mutex serializes processing: never more than one message in flight at once");
+	}
+
+	@Test
+	@DisplayName("a lockObject that is a JSON path locks per message: one key at a time, different keys at once")
+	void synchronizationPerMessageKey() throws Exception {
+		MemConnector.PUBLISH_DELAY_MS = 80;
+		ConsumerConfigurationDef parallel = new ConsumerConfigurationDef(
+				ProcessMode.EVERYBODY, OriginPolicy.FROM_ANY, DestinationPolicy.TO_ANY, null, 4);
+		ContextDef context = new ContextDef("tenant", "cluster",
+				List.of(new TopicDef("events.in"), new TopicDef("events.out")),
+				List.of(new DataflowDef("df-1", "flow", "mem", false, "1", false)),
+				List.of(new ConnectorDef("mem1", "mem", "1.0", Map.of())),
+				List.of(
+						new SubscriptionDef("in", "df-1", "events.in", "mem1", null, parallel, null, null),
+						new SubscriptionDef("out", "df-1", "events.out", "mem1", null, null, null, null)),
+				List.of(new RouteDef("route-1", "in", List.of("out"),
+						List.of(new RouteStageDef("tag", "set_header(@exchange, \"k\", \"v\")", null, null, null)),
+						null, new RouteSyncDef("journal", "$.team"))),
+				null);
+		engine = new Events("asset", List.of(context), Map.of("mem:1.0", IClass.getClass(MemConnector.class)),
+				injectionContextBuilder, scriptsBuilder);
+		engine.onInit();
+		engine.onStart();
+
+		Consumer<byte[]> handler = awaitHandler();
+		for (int i = 0; i < 4; i++) {
+			handler.accept("{\"team\":\"A\"}".getBytes(StandardCharsets.UTF_8));
+			handler.accept("{\"team\":\"B\"}".getBytes(StandardCharsets.UTF_8));
+		}
+		for (int i = 0; i < 200 && MemConnector.PRODUCED.size() < 8; i++) {
+			TimeUnit.MILLISECONDS.sleep(40);
+		}
+
+		assertEquals(8, MemConnector.PRODUCED.size());
+		assertEquals(1, MemConnector.MAX_BY_VALUE.get("{\"team\":\"A\"}").get(), "team A never ran twice at once");
+		assertEquals(1, MemConnector.MAX_BY_VALUE.get("{\"team\":\"B\"}").get(), "nor team B");
+		assertEquals(2, MemConnector.PUBLISH_MAX.get(), "A and B did not wait for each other");
 	}
 
 	@Test

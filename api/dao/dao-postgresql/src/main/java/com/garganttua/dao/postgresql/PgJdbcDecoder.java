@@ -11,11 +11,14 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.geojson.GeoJsonObject;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.garganttua.api.binding.geojson.GeoJsonCodec;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
@@ -100,11 +103,18 @@ final class PgJdbcDecoder {
         }
     }
 
+    /**
+     * A JSONB reader per declared type: what it needs depends on the type alone — the same on every row,
+     * every node and for the life of the process — so it is resolved once.
+     */
+    private static final Map<Type, ObjectReader> READERS = new ConcurrentHashMap<>();
+
     private static Object json(String json, Type generic) throws JsonProcessingException {
         if (json == null) {
             return null;
         }
-        return PgJson.MAPPER.readValue(json, PgJson.MAPPER.getTypeFactory().constructType(generic));
+        return READERS.computeIfAbsent(generic,
+                t -> PgJson.MAPPER.readerFor(PgJson.MAPPER.getTypeFactory().constructType(t))).readValue(json);
     }
 
     private static Object key(String json) throws JsonProcessingException, ApiException {

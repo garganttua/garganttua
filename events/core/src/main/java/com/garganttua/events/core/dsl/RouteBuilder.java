@@ -45,7 +45,12 @@ public class RouteBuilder implements IRouteBuilder {
 
 	@Override
 	public IRouteBuilder exceptions(String toSubscription, String cast, String label) {
-		this.exceptions = new RouteExceptionsDef(toSubscription, cast, label);
+		return exceptions(toSubscription, cast, label, 1);
+	}
+
+	@Override
+	public IRouteBuilder exceptions(String toSubscription, String cast, String label, int attempts) {
+		this.exceptions = new RouteExceptionsDef(toSubscription, cast, label, attempts);
 		return this;
 	}
 

@@ -1,6 +1,5 @@
 package com.garganttua.dao.postgresql;
 
-import java.io.IOException;
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -15,10 +14,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.concurrent.atomic.AtomicReference;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.dao.postgresql.schema.PgChildKind;
@@ -56,9 +53,28 @@ final class PgChildLoader {
     private final PgBeans beans;
     private final PgRowMapper mapper;
 
-    /** What decoding a row of one child table needs, computed once per table — not once per row. */
+    /**
+     * What decoding a row of one child table needs, computed once per table — not once per row. Its
+     * {@link Planned} part resolves fields on the element class, so it is built on first use, where a
+     * mismatch between table model and class is reported like any read failure.
+     */
     private record Shape(int cellCount, List<String> sqlTypes, List<PgSelected> cells, PgColumn keyColumn,
-            IClass<?> singleValueType, boolean elementIsCollection) {
+            IClass<?> singleValueType, boolean elementIsCollection, AtomicReference<Planned> planned) {
+    }
+
+    /**
+     * The row plan of a child table, and for each table below it — in {@code children()} order — the slot
+     * of the presence bit its field has in a row of this one, or -1 when none is selected.
+     */
+    @SuppressWarnings("PMD.UseVarargs") // positional slots, built once per table
+    private static final class Planned {
+        private final PgRowPlan plan;
+        private final int[] slots;
+
+        private Planned(PgRowPlan plan, int[] slots) {
+            this.plan = plan;
+            this.slots = slots;
+        }
     }
 
     /** By child table, identity-keyed, built once and never written again: read without a lock. */
@@ -85,15 +101,52 @@ final class PgChildLoader {
         }
         return new Shape(PgChildAggregate.cellCount(child), sqlTypes,
                 columns.stream().map(c -> PgSelected.of(null, c)).toList(), keyColumn, single,
-                child.elementTable().isPresent());
+                child.elementTable().isPresent(), new AtomicReference<>());
+    }
+
+    /** The plan of a child table, built once — two threads racing build the same one, either is kept. */
+    private Planned planned(PgChildTable child) throws ApiException {
+        Shape shape = this.shapes.get(child);
+        Planned planned = shape.planned().get();
+        if (planned == null) {
+            PgRowPlan plan = null;
+            if (shape.elementIsCollection()) {
+                plan = PgRowPlan.presenceOnly(this.beans, child.elementType(), shape.cells());
+            } else if (shape.singleValueType() == null) {
+                plan = this.mapper.plan(child.elementType(), shape.cells());
+            }
+            List<PgChildTable> below = child.children();
+            int[] slots = new int[below.size()];
+            for (int k = 0; k < slots.length; k++) {
+                slots[k] = plan == null ? -1 : plan.slot(below.get(k).fieldPath());
+            }
+            planned = new Planned(plan, slots);
+            shape.planned().set(planned);
+        }
+        return planned;
     }
 
     /**
      * One child row, read: its own id (tables with children only), its map key, its element and the
      * presence bits of the structures the element holds (the element's own bit under the empty path).
      */
-    private record ChildRow(Long id, Object key, Object element, Map<List<String>, Boolean> presence) {
+    @SuppressWarnings("PMD.UseVarargs") // the row's bits by plan slot, read by index
+    private static final class ChildRow {
+        private final Long id;
+        private final Object key;
+        private final Object element;
+        /** By slot of the table's row plan; empty for a single-value table. */
+        private final Boolean[] presence;
+
+        private ChildRow(Long id, Object key, Object element, Boolean[] presence) {
+            this.id = id;
+            this.key = key;
+            this.element = element;
+            this.presence = presence;
+        }
     }
+
+    private static final Boolean[] NO_PRESENCE = new Boolean[0];
 
     /** The rows of every table of one tree, grouped by the key of their parent: root id or parent row id. */
     private static final class Loaded {
@@ -196,41 +249,20 @@ final class PgChildLoader {
         }
     }
 
-    /** Shared and thread-safe: a factory only creates parsers. */
-    private static final JsonFactory JSON = new JsonFactory();
-
     /**
-     * An aggregate as nested lists — rows of TEXT cells and nested aggregates — read as a stream, without
-     * building a JSON tree: the aggregates of a page are the bulk of what a read decodes.
+     * An aggregate as nested lists — rows of TEXT cells and nested aggregates ({@link PgAggregateText}):
+     * the aggregates of a page are the bulk of what a read decodes.
      */
     private static List<Object> parse(PgChildTable child, String json) throws ApiException {
         if (json == null) {
             return List.of();
         }
-        try (JsonParser parser = JSON.createParser(json)) {
-            if (parser.nextToken() != JsonToken.START_ARRAY) {
-                throw new ApiException("The rows of child table '" + child.name() + "' are not a JSON array");
-            }
-            return array(parser);
-        } catch (IOException e) {
+        try {
+            return PgAggregateText.parse(json);
+        } catch (IllegalArgumentException e) {
             throw new ApiException("Cannot read the rows of child table '" + child.name() + "' (collection '"
                     + child.dottedPath() + "'): " + e.getMessage(), e);
         }
-    }
-
-    /** The array the parser stands at the start of: texts, nulls and nested arrays. */
-    private static List<Object> array(JsonParser parser) throws IOException {
-        List<Object> values = new ArrayList<>();
-        for (JsonToken token = parser.nextToken(); token != JsonToken.END_ARRAY; token = parser.nextToken()) {
-            if (token == JsonToken.START_ARRAY) {
-                values.add(array(parser));
-            } else if (token == JsonToken.VALUE_NULL) {
-                values.add(null);
-            } else {
-                values.add(parser.getText());
-            }
-        }
-        return values;
     }
 
     /** Files the aggregated rows of one table under their parent, then — nested in each — the rows below. */
@@ -244,20 +276,18 @@ final class PgChildLoader {
         int cellCount = shape.cellCount();
         List<PgChildTable> grandchildren = child.children();
         for (Object node : rows) {
+            // The row's cells come first, the aggregates of the tables below after them: the cells read
+            // the list as it is, past them nothing is a cell.
             List<?> cellsAndBelow = (List<?>) node;
-            List<String> values = new ArrayList<>(cellCount);
-            for (int i = 0; i < cellCount; i++) {
-                values.add((String) cellsAndBelow.get(i));
-            }
             ChildRow row;
             try {
-                row = row(PgCells.of(values, shape.sqlTypes()), child);
+                row = row(PgCells.of(cellsAndBelow, shape.sqlTypes()), child);
             } catch (SQLException e) {
                 throw new ApiException("Cannot read a row of child table '" + child.name() + "': " + e.getMessage(), e);
             }
             under.add(row);
             for (int k = 0; k < grandchildren.size(); k++) {
-                collect(grandchildren.get(k), row.id(), cellsAndBelow.get(cellCount + k), loaded);
+                collect(grandchildren.get(k), row.id, cellsAndBelow.get(cellCount + k), loaded);
             }
         }
     }
@@ -272,17 +302,18 @@ final class PgChildLoader {
             key = PgJdbcDecoder.decode(rs, positionIndex, shape.keyColumn(), child.keyType(), child.keyType().getType());
         }
         int first = positionIndex + 1;
-        if (shape.elementIsCollection()) {
-            // The element IS a collection: its row holds only its presence bit, its content is below.
-            return new ChildRow(id, key, null, mapper.presence(rs, shape.cells(), first));
-        }
         if (shape.singleValueType() != null) {
             IClass<?> type = shape.singleValueType();
             return new ChildRow(id, key, PgJdbcDecoder.decode(rs, first, child.valueColumns().get(0), type,
-                    type.getType()), Map.of());
+                    type.getType()), NO_PRESENCE);
         }
-        PgRowMapper.Element element = mapper.readElement(child.elementType(), rs, shape.cells(), first);
-        return new ChildRow(id, key, element.value(), element.presence());
+        PgRowPlan plan = planned(child).plan;
+        if (shape.elementIsCollection()) {
+            // The element IS a collection: its row holds only its presence bit, its content is below.
+            return new ChildRow(id, key, null, plan.decodePresence(rs, first));
+        }
+        PgRowMapper.Element element = mapper.readElement(plan, rs, first);
+        return new ChildRow(id, key, element.value, element.presence);
     }
 
     /**
@@ -292,12 +323,16 @@ final class PgChildLoader {
     private List<Map.Entry<Object, Object>> assemble(PgChildTable child, List<ChildRow> rows, Loaded loaded)
             throws ApiException {
         List<Map.Entry<Object, Object>> entries = new ArrayList<>(rows.size());
+        List<PgChildTable> below = child.children();
+        int[] slots = below.isEmpty() ? null : planned(child).slots;
         for (ChildRow row : rows) {
-            Object element = row.element();
-            for (PgChildTable grandchild : row.id() == null ? List.<PgChildTable>of() : child.children()) {
-                element = attach(row, element, grandchild, loaded);
+            Object element = row.element;
+            if (row.id != null) {
+                for (int k = 0; k < below.size(); k++) {
+                    element = attach(row, element, below.get(k), slots[k], loaded);
+                }
             }
-            entries.add(new AbstractMap.SimpleEntry<>(row.key(), element));
+            entries.add(new AbstractMap.SimpleEntry<>(row.key, element));
         }
         return entries;
     }
@@ -308,15 +343,16 @@ final class PgChildLoader {
      *
      * @return the element, possibly replaced
      */
-    private Object attach(ChildRow row, Object element, PgChildTable grandchild, Loaded loaded) throws ApiException {
+    private Object attach(ChildRow row, Object element, PgChildTable grandchild, int slot, Loaded loaded)
+            throws ApiException {
         List<String> path = grandchild.fieldPath();
-        Boolean bit = row.presence().get(path);
-        boolean known = row.presence().containsKey(path);
+        boolean known = slot >= 0 && slot < row.presence.length;
+        Boolean bit = known ? row.presence[slot] : null;
         if (path.isEmpty()) {
             return known && bit == null ? null : build(grandchild, assemble(grandchild,
-                    loaded.rows(grandchild, row.id()), loaded));
+                    loaded.rows(grandchild, row.id), loaded));
         }
-        List<ChildRow> rows = loaded.rows(grandchild, row.id());
+        List<ChildRow> rows = loaded.rows(grandchild, row.id);
         if (element == null || (known && bit == null) || (!known && rows.isEmpty())) {
             return element;
         }
@@ -328,8 +364,15 @@ final class PgChildLoader {
     private static Object build(PgChildTable child, List<Map.Entry<Object, Object>> entries) throws ApiException {
         return child.kind() == PgChildKind.MAP
                 ? PgCollections.map(child.collectionType(), entries)
-                : PgCollections.collection(child.collectionType(), child.elementType(),
-                        entries.stream().map(Map.Entry::getValue).toList());
+                : PgCollections.collection(child.collectionType(), child.elementType(), values(entries));
+    }
+
+    private static List<Object> values(List<Map.Entry<Object, Object>> entries) {
+        List<Object> values = new ArrayList<>(entries.size());
+        for (Map.Entry<Object, Object> entry : entries) {
+            values.add(entry.getValue());
+        }
+        return values;
     }
 
     /** Puts one owner's elements on its DTO — or hands reference uuids to the composition pass. */

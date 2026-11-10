@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.IConstructor;
 import com.garganttua.core.reflection.IField;
 
 /**
@@ -26,6 +27,9 @@ final class PgBeans {
 
     private final Map<IClass<?>, Map<String, IField>> fields = new ConcurrentHashMap<>();
 
+    /** The no-arg constructor of each class instantiated, made accessible once: a read asks once per row. */
+    private final Map<IClass<?>, IConstructor<?>> constructors = new ConcurrentHashMap<>();
+
     /**
      * A fresh instance through the no-arg constructor — as the MongoDB reader builds its DTOs.
      *
@@ -35,8 +39,12 @@ final class PgBeans {
      */
     Object instantiate(IClass<?> type) throws ApiException {
         try {
-            var constructor = type.getDeclaredConstructor();
-            constructor.setAccessible(true);
+            IConstructor<?> constructor = constructors.get(type);
+            if (constructor == null) {
+                constructor = type.getDeclaredConstructor();
+                constructor.setAccessible(true);
+                constructors.put(type, constructor);
+            }
             return constructor.newInstance();
         } catch (ReflectiveOperationException | RuntimeException e) {
             throw new ApiException("Cannot instantiate " + type.getName() + " while reading PostgreSQL rows: "
@@ -81,6 +89,56 @@ final class PgBeans {
             throw new ApiException("An empty field path has no field (root " + root.getName() + ")");
         }
         return field;
+    }
+
+    /**
+     * The fields along a path, resolved once — for a reader that sets the same paths on every row.
+     *
+     * @param root the class the path starts from
+     * @param path the field names, at least one
+     * @return one field per segment, each resolved on the declared type of the previous one
+     * @throws ApiException when a segment does not exist
+     */
+    IField[] chain(IClass<?> root, List<String> path) throws ApiException {
+        IField[] chain = new IField[path.size()];
+        IClass<?> current = root;
+        for (int i = 0; i < chain.length; i++) {
+            chain[i] = field(current, path.get(i));
+            current = chain[i].getType();
+        }
+        if (chain.length == 0) {
+            throw new ApiException("An empty field path has no field (root " + root.getName() + ")");
+        }
+        return chain;
+    }
+
+    /**
+     * Sets the value at the end of a resolved {@link #chain}, as {@link #set} does along a path.
+     *
+     * @param root   the object the chain starts from, an instance of the class it was resolved on
+     * @param chain  the fields, at least one
+     * @param value  the value to set, possibly null
+     * @param create whether to instantiate missing intermediate objects
+     * @throws ApiException when a field cannot be set
+     */
+    void set(Object root, IField[] chain, Object value, boolean create) throws ApiException {
+        Object current = root;
+        for (int i = 0; i < chain.length - 1; i++) {
+            Object next = read(chain[i], current);
+            if (next == null) {
+                if (!create) {
+                    return;
+                }
+                next = instantiate(chain[i].getType());
+                write(chain[i], current, next);
+            }
+            current = next;
+        }
+        IField last = chain[chain.length - 1];
+        if (value == null && last.getType().isPrimitive()) {
+            return;
+        }
+        write(last, current, value);
     }
 
     /**

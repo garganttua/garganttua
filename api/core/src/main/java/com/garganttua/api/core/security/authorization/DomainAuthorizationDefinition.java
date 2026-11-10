@@ -1,6 +1,7 @@
 package com.garganttua.api.core.security.authorization;
 
 import com.garganttua.api.commons.definition.IDomainAuthorizationDefinition;
+import com.garganttua.api.commons.security.authorization.VerificationPath;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.binders.IMethodBinder;
 
@@ -21,6 +22,8 @@ public record DomainAuthorizationDefinition(
 		ObjectAddress decodeMethod,
 		ObjectAddress signedBy,
 		IMethodBinder<?> reconcileBinder,
-		boolean checkStoredOnVerify) implements IDomainAuthorizationDefinition {
+		boolean checkStoredOnVerify,
+		VerificationPath authenticateOnVerify,
+		VerificationPath lookupOnVerify) implements IDomainAuthorizationDefinition {
 
 }

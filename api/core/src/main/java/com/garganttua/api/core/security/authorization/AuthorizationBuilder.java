@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Objects;
 
 import com.garganttua.api.core.security.authorization.AuthorizationContext;
+import com.garganttua.api.commons.security.authorization.VerificationPath;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.security.context.IAuthorizationContext;
 import com.garganttua.api.commons.context.dsl.security.IAuthorizationBuilder;
@@ -53,6 +54,8 @@ public class AuthorizationBuilder<E>
     private IRefreshableAuthorizationBuilder<E> refreshable;
     private boolean storable = false;
     private boolean checkStoredOnVerify = false;
+    private VerificationPath authenticateOnVerify = VerificationPath.PIPELINE;
+    private VerificationPath lookupOnVerify = VerificationPath.PIPELINE;
     private IAuthorizationMethodBinderBuilder<E> reconcile;
 
     public AuthorizationBuilder(IDomainSecurityBuilder<E> domainBuilder, IClass<?> entityClass) {
@@ -301,6 +304,18 @@ public class AuthorizationBuilder<E>
     }
 
     @Override
+    public IAuthorizationBuilder<E> authenticateOnVerify(VerificationPath path) {
+        this.authenticateOnVerify = Objects.requireNonNull(path, "Verification path cannot be null");
+        return this;
+    }
+
+    @Override
+    public IAuthorizationBuilder<E> lookupOnVerify(VerificationPath path) {
+        this.lookupOnVerify = Objects.requireNonNull(path, "Verification path cannot be null");
+        return this;
+    }
+
+    @Override
     public Boolean isCheckStoredOnVerify() {
         return this.checkStoredOnVerify;
     }
@@ -364,7 +379,7 @@ public class AuthorizationBuilder<E>
                 signatureField, getDataToSignMethod,
                 refreshExpiration, refreshRevoked,
                 encodeMethod, decodeMethod, this.signedBy, reconcileBinder,
-                this.checkStoredOnVerify);
+                this.checkStoredOnVerify, this.authenticateOnVerify, this.lookupOnVerify);
     }
 
     @Override

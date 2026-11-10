@@ -38,6 +38,7 @@ import com.garganttua.core.lifecycle.ILifecycle;
 import com.garganttua.core.observability.GlobalObservers;
 import com.garganttua.core.observability.IObserver;
 import com.garganttua.core.observability.ObservabilityEmitter;
+import com.garganttua.core.observability.ObserverFailureException;
 import com.garganttua.core.observability.ObservableEvent;
 import com.garganttua.core.observability.ObservableRegistry;
 import com.garganttua.core.reflection.IReflection;
@@ -258,9 +259,6 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
 
     @Override
     @SuppressWarnings("unchecked")
-    @SuppressFBWarnings(value = "THROWS_METHOD_THROWS_RUNTIMEEXCEPTION",
-            justification = "Observability pattern: the original RuntimeException is rethrown unchanged "
-                    + "after firing the api:operation Error event, to propagate the failure to the caller.")
     public IOperationResponse invoke(IOperationRequest request, WorkflowExecutionOptions options) {
         ensureStarted();
         long startNanos = System.nanoTime();
@@ -290,26 +288,61 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         String source = "api:operation:" + this.domainDefinition.domainName()
                 + ":" + (operation != null ? operation.toString() : "<no-op>");
 
-        java.util.Date inDate = new java.util.Date();
         try (var scope = ObservabilityEmitter.open(this.observableRegistry, executionUuid)) {
-            scope.fireStart(source);
             try {
-                OperationResponse response = doInvoke(request, options);
-                java.time.Duration duration =
-                        java.time.Duration.ofNanos(System.nanoTime() - startNanos);
-                Integer code = response.getResponseCode() != null
-                        ? response.getResponseCode().ordinal() : null;
-                // Carry the rich business IEvent as the End-event payload so the
-                // .events(...) publishers (bridged as observers) receive it.
-                scope.fireEnd(source, code,
-                        DomainEventBuilder.buildEvent(request, operation, inDate, response, null));
-                return response.withProcessingTime(duration);
-            } catch (RuntimeException e) {
+                scope.fireStart(source);
+            } catch (ObserverFailureException e) {
+                return unobserved(e, startNanos);
+            }
+            return observed(scope, source, request, operation, options, startNanos);
+        }
+    }
+
+    /**
+     * The operation between its start and its end event: run, then end (or error) event — whose BLOCKING
+     * observer, when it cannot record, turns the answer into {@link #unobserved}.
+     */
+    @SuppressFBWarnings(value = "THROWS_METHOD_THROWS_RUNTIMEEXCEPTION",
+            justification = "The original RuntimeException is rethrown unchanged after the Error event.")
+    private IOperationResponse observed(ObservabilityEmitter.Scope scope, String source, IOperationRequest request,
+            OperationDefinition operation, WorkflowExecutionOptions options, long startNanos) {
+        java.util.Date inDate = new java.util.Date();
+        try {
+            OperationResponse response = doInvoke(request, options);
+            java.time.Duration duration =
+                    java.time.Duration.ofNanos(System.nanoTime() - startNanos);
+            Integer code = response.getResponseCode() != null
+                    ? response.getResponseCode().ordinal() : null;
+            // Carry the rich business IEvent as the End-event payload so the
+            // .events(...) publishers (bridged as observers) receive it.
+            scope.fireEnd(source, code,
+                    DomainEventBuilder.buildEvent(request, operation, inDate, response, null));
+            return response.withProcessingTime(duration);
+        } catch (ObserverFailureException e) {
+            // Emitted before the response leaves: what a blocking observer could not record is
+            // not served. A write has already happened by then — the caller is told it failed.
+            return unobserved(e, startNanos);
+        } catch (RuntimeException e) {
+            try {
                 scope.fireError(source, e,
                         DomainEventBuilder.buildEvent(request, operation, inDate, null, e));
-                throw e;
+            } catch (ObserverFailureException unrecorded) {
+                e.addSuppressed(unrecorded);
             }
+            throw e;
         }
+    }
+
+    /**
+     * The answer to an operation a BLOCKING observer could not record
+     * ({@link com.garganttua.core.observability.GlobalObservers#addBlockingObserver}): not available,
+     * without its result — an access that leaves no trace must not be served.
+     */
+    private static OperationResponse unobserved(ObserverFailureException failure, long startNanos) {
+        log.error("Operation not served: it could not be recorded ({})", failure.getMessage());
+        return OperationResponse.notAvailable(new ApiException(
+                "The operation could not be recorded, so it is not served: " + failure.getMessage(), failure))
+                .withProcessingTime(java.time.Duration.ofNanos(System.nanoTime() - startNanos));
     }
 
     OperationResponse doInvoke(IOperationRequest request, WorkflowExecutionOptions options) {

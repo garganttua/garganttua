@@ -4,6 +4,7 @@ import com.garganttua.core.reflection.IField;
 import com.garganttua.core.reflection.IMethod;
 
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.security.authorization.VerificationPath;
 import com.garganttua.api.commons.security.context.IAuthorizationContext;
 import com.garganttua.core.dsl.IAutomaticLinkedBuilder;
 import com.garganttua.core.reflection.ObjectAddress;
@@ -90,6 +91,46 @@ public interface IAuthorizationBuilder<E>
      * @return this builder
      */
     IAuthorizationBuilder<E> checkStoredOnVerify(boolean b);
+
+    /**
+     * How the authenticator of a self-verifying token runs on verify — the token domain declaring its
+     * own {@code .authenticator()}, so that a presented token verifies itself through a strategy.
+     *
+     * <ul>
+     *   <li>{@link VerificationPath#PIPELINE} (default): the domain's {@code authenticate} operation is
+     *       invoked, a workflow nested in the request's, seen by observers like any operation.</li>
+     *   <li>{@link VerificationPath#DIRECT}: the strategies run in the request's pipeline, with the
+     *       same checks in the same order — signature, tenant of a tenant-scoped authenticator,
+     *       principal, account status, strategies in declared order — and the same outcome. Costs no
+     *       nested workflow; nothing outside the verification sees it.</li>
+     * </ul>
+     *
+     * <p>No effect on a token domain without an authenticator.
+     *
+     * @param path the path
+     * @return this builder
+     */
+    IAuthorizationBuilder<E> authenticateOnVerify(VerificationPath path);
+
+    /**
+     * How the record of a self-verifying token — the principal its strategies receive — is read on
+     * verify.
+     *
+     * <ul>
+     *   <li>{@link VerificationPath#PIPELINE} (default): through the domain's {@code readAll}
+     *       operation, a nested workflow: DTO rules and hooks of that operation apply.</li>
+     *   <li>{@link VerificationPath#DIRECT}: from the repository. For a {@link #storable(boolean)
+     *       storable} token whose login is its uuid, the record IS the stored row that
+     *       {@link #checkStoredOnVerify(boolean)} reads: one read serves both.</li>
+     * </ul>
+     *
+     * <p>Revocation is enforced the same way on both paths. No effect on a token domain without an
+     * authenticator.
+     *
+     * @param path the path
+     * @return this builder
+     */
+    IAuthorizationBuilder<E> lookupOnVerify(VerificationPath path);
 
     /**
      * Declares a custom caller-reconciliation method, overriding the default

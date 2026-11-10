@@ -14,6 +14,7 @@ import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.SubscriptionDef;
 import com.leansoft.bigqueue.BigQueueImpl;
@@ -46,6 +47,8 @@ public class BusConnector extends AbstractLifecycle implements IConnector {
 	private int pollInterval = 10;
 	private TimeUnit pollIntervalUnit = TimeUnit.SECONDS;
 	private final Map<String, IBigQueue> queues = new HashMap<>();
+	/** One lock per queue: an acknowledging consumer reads and removes the head under it. */
+	private final Map<String, Object> locks = new HashMap<>();
 
 	@Override
 	public void configure(Map<String, String> configuration, ConnectorContext ctx) {
@@ -64,6 +67,11 @@ public class BusConnector extends AbstractLifecycle implements IConnector {
 		return topicRef.replace("/", "-").substring(1);
 	}
 
+	/** The lock of a topic's queue — the same for every consumer of it, whatever its quality of service. */
+	private Object lockOf(String topicRef) {
+		return locks.computeIfAbsent(topicRef, ref -> new Object());
+	}
+
 	private IBigQueue getOrCreateQueue(String topicRef) {
 		return queues.computeIfAbsent(topicRef, ref -> {
 			try {
@@ -79,7 +87,11 @@ public class BusConnector extends AbstractLifecycle implements IConnector {
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
 		IBigQueue queue = getOrCreateQueue(sub.topic());
 		long pollMs = TimeUnit.MILLISECONDS.convert(pollInterval, pollIntervalUnit);
-		return new BusConsumer(queue, pollMs);
+		if (sub.consumerConfiguration() != null
+				&& sub.consumerConfiguration().qualityOfService() == QualityOfService.AT_LEAST_ONCE) {
+			return new BusAcknowledgingConsumer(queue, lockOf(sub.topic()), pollMs);
+		}
+		return new BusConsumer(queue, lockOf(sub.topic()), pollMs);
 	}
 
 	@Override
@@ -101,6 +113,7 @@ public class BusConnector extends AbstractLifecycle implements IConnector {
 	@Override
 	protected ILifecycle doFlush() throws LifecycleException {
 		queues.clear();
+		locks.clear();
 		return this;
 	}
 

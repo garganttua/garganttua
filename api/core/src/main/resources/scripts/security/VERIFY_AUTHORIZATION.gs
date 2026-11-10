@@ -17,8 +17,9 @@
 #    - resolve the target authenticator domain (Mode A: protocol.targetDomain;
 #      Mode B: from the IAuthorization instance's class — null tolerated)
 #    - verify the cryptographic signature (no-op when not signable)
-#    - if an authenticator is wired on the target domain, invoke the
-#      authenticate pipeline (account status + principal resolution)
+#    - if an authenticator is wired on the target domain, run its
+#      authentication strategies directly (principal resolution + account
+#      status), in this pipeline — no nested authenticate workflow
 #    - otherwise fall back to IAuthorization.validate() (intrinsic checks:
 #      expiration, revocation, user-defined rules)
 #    - returns the resolved IAuthentication, which carries the principal
@@ -70,6 +71,10 @@ _authResult <- verifyAuthorization(@3, @authz, @0)
 ! => recordCaughtException(@0, @exception) -> 401
 
 setRequestArg(@0, "principal", authResultPrincipal(@_authResult))
+
+// The session an access log records: the uuid of the authorization just VERIFIED — set only here,
+// after verification, so an unverified or forged token never names a session. Never the token itself.
+setRequestArg(@0, "sessionId", verifiedSessionId(@3, @authz))
 
 // Reconcile the (untrusted) protocol caller with the verified, trusted authentication.
 // The token's identity (tenant / owner / super) wins over the headers; a header that

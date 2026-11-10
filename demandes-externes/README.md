@@ -55,9 +55,16 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 ## Fiches ouvertes
 
-Aucune.
+Trois fiches de palliad encore ouvertes, déposées les 2026-11-05 et 06 : deux **mesurées** sur la capacité d'un serveur
+(ALPHA33, natif et JVM), une évolution bloquante pour l'hébergement HDS.
 
-Les vingt et une fiches déposées par palliad et autonom ont été traitées — voir ci-dessous.
+| Fiche | À l'attention de | En une ligne |
+|---|---|---|
+| [le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage](le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage.md) | core, api | résoudre les membres une fois par type, pas à chaque appel ; la sonde `HotPathProbe` se dispute ses compteurs |
+| [un-cache-du-cadre-local-et-distribue](un-cache-du-cadre-local-et-distribue.md) | core, api | `ICache` local et Redis, invalidé par les écritures du pipeline |
+| [authentification-a-deux-facteurs](authentification-a-deux-facteurs.md) | api | une étape entre l'authentification et l'émission du jeton, et une réutilisation qui tient compte du niveau |
+
+Les fiches précédentes, déposées par palliad et autonom, ont été traitées — voir ci-dessous.
 
 Ce n'est pas une invitation à se taire : le dossier existe pour ce que les consommateurs
 constatent, et il est fait pour se remplir de nouveau. Deux points explicitement laissés ouverts
@@ -181,3 +188,32 @@ arrivées ensemble.
 | Lecture MongoDB paginée avec `$near` | ordonnée par `_id`, compte refusé par le serveur | ordonnée par distance, comptée |
 | Écriture PostgreSQL d'une entité à collections | toutes les collections réécrites | seules celles qui changent ; colonnes `_digest__*` et déclencheurs ajoutés en `CREATE` |
 | `garganttua-api-binding-jackson` | portait `geojson-jackson` | le reçoit de `garganttua-api-binding-geojson` |
+
+## Fiches répondues — `3.0.0-ALPHA34`
+
+Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraître dans `3.0.0-ALPHA34`** : les deux fiches de performance et les six du journal d'accès HDS.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [la-verification-du-jeton-coute-la-moitie-de-chaque-requete](la-verification-du-jeton-coute-la-moitie-de-chaque-requete.md) | palliad | Cause confirmée : l'opération `authenticate` complète du domaine du jeton à chaque requête, dont la recherche du principal était elle-même un `readAll` imbriqué, et la même ligne stockée lue trois fois. Le passage par ces pipelines reste le **défaut** ; deux réglages du DSL, `authenticateOnVerify` et `lookupOnVerify`, choisissent séparément un chemin `DIRECT` : stratégies exécutées dans la requête, avec les mêmes contrôles dans le même ordre, et principal lu dans le dépôt, puisque c'est la ligne déjà lue. En `DIRECT` : 3 lectures → 1, 2 workflows imbriqués → 0, vérification 2,9 → 0,2–0,8 ms au banc JVM. Révocation identique partout, sans cache. |
+| [le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ](le-dao-postgresql-convertit-chaque-ligne-par-jackson-puis-champ-par-champ.md) | palliad | Traitée, sur une autre cause que celle supposée : la ligne principale n'est pas un JSONB, mais chaque cellule résolvait son chemin de champs par nom, dans des maps à clés de listes, et les agrégats passaient par un parseur générique. Un plan par table, calculé une fois (`PgRowPlan`), des bits de présence lus par indice et un lecteur d'agrégats sans Jackson : CPU Java d'une lecture de 500 activités 22,9 → 10,2 ms (−55 %). Lecteur Jackson mis en cache par type pour les vraies colonnes JSONB. |
+| [le-connecteur-api-abandonne-des-evenements-quand-sa-file-est-pleine](le-connecteur-api-abandonne-des-evenements-quand-sa-file-est-pleine.md) | palliad | `overflow` `drop` (défaut) ou `block` avec `overflowTimeout`, `queueCapacity`, `droppedEvents()` ; un événement jeté garde son numéro. Pas de `SPILL`, avec la raison. |
+| [les-evenements-du-connecteur-api-ne-sont-pas-numerotes](les-evenements-du-connecteur-api-ne-sont-pas-numerotes.md) | palliad | `eventId` et `source` sont ceux du `JourneyStep` de l'enveloppe ; `bootId` + `seq` posés avant la file ; à l'arrêt, file vidée puis `endOfSequence`. |
+| [kafka-et-bigqueue-acquittent-avant-la-reussite-de-la-route](kafka-et-bigqueue-acquittent-avant-la-reussite-de-la-route.md) | palliad | Qualité de service par souscription dans le DSL (`AT_MOST_ONCE` / `AT_LEAST_ONCE`, refus au démarrage d'une promesse intenable) ; « succès » = en lieu sûr ; `attempts` avant la file d'erreur ; Kafka et BigQueue acquittés après la route. Deux défauts trouvés : `produce` avalait l'échec d'une publication, BigQueue exigeait log4j 1.x. |
+| [levenement-dapi-ne-porte-ni-adresse-ip-ni-session](levenement-dapi-ne-porte-ni-adresse-ip-ni-session.md) | palliad | `IEvent.getOrigin()` : adresse et agent posés par le transport, session (uuid de l'autorisation vérifiée) par `VERIFY_AUTHORIZATION` ; `server.trustedProxies` pour `X-Forwarded-For`, lu depuis la droite, sans DNS. |
+| [un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation](un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation.md) | palliad | Observateur bloquant (`GlobalObservers.addBlockingObserver`) ; l'opération rend 503 sans sa donnée ; connecteur `api` `delivery=sync`. |
+| [le-verrou-de-route-ne-se-cle-pas-sur-le-message](le-verrou-de-route-ne-se-cle-pas-sur-le-message.md) | palliad | `lockObject` `$.chemin` évalué sur chaque message, dans l'enveloppe quand le flux est encapsulé ; valeur absente : le verrou de la route. |
+| [en-natif-deux-invokeauthenticate-empechent-lapi-de-monter](en-natif-deux-invokeauthenticate-empechent-lapi-de-monter.md) | palliad | Bogue de la branche ALPHA34 locale, reproduit sur leur binaire natif puis corrigé : la méthode interne renommée, la résolution qui préfère la signature identique à une signature seulement assignable, et un garde-fou de compilation contre toute méthode qui porte le nom et l'arité d'une expression. |
+
+## Changements de comportement à la montée en `3.0.0-ALPHA34`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Vérification d'un jeton stockable avec `checkStoredOnVerify` | la ligne stockée lue deux fois en dehors de l'opération imbriquée | lue une fois |
+| `.authorization().authenticateOnVerify(…)`, `.lookupOnVerify(…)` | n'existaient pas | nouveaux, `PIPELINE` par défaut : le comportement d'avant |
+| Connecteur `api`, arrêt propre | la file restante était abandonnée | vidée, puis `endOfSequence` |
+| Connecteur `api`, contenu de chaque événement | — | `bootId`, `seq`, `origin` en plus |
+| Issue rendue à un `IAcknowledgingConsumer` d'un message déposé en file d'erreur | `false` (rendu au transport, relivré) | `true` (en lieu sûr) |
+| `produce` vers les destinations d'une route, une publication en échec | journalisée, route réussie, message perdu | la route échoue (essais, file d'erreur, acquittement) |
+| `garganttua-events-connector-bus` | exigeait log4j 1.x sur le classpath | apporte `log4j-over-slf4j` |
+| Opération dont un observateur bloquant n'a pas pu enregistrer l'événement | (n'existait pas) | 503, sans la donnée |
