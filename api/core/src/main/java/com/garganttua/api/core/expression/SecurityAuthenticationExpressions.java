@@ -436,14 +436,18 @@ public class SecurityAuthenticationExpressions {
 		}
 		Object tenantUnwrapped = unwrapOptional(tenantId);
 		String tenant = tenantUnwrapped == null ? null : tenantUnwrapped.toString();
-		return invokeAuthenticate(domain, req, tenant, null);
+		return authenticateThroughOperation(domain, req, tenant, null);
 	}
 
 	/**
 	 * The {@code authenticate} invocation, optionally handing its principal supplier a principal it need not
 	 * look up ({@link com.garganttua.api.core.security.authentication.KnownPrincipal}, null for none).
+	 *
+	 * <p>Not named {@code invokeAuthenticate}: a second method of an expression's name and arity made the
+	 * expression ambiguous to its native binding (3.0.0-ALPHA34, local build) — an expression class keeps one
+	 * method per expression name.</p>
 	 */
-	static IAuthentication invokeAuthenticate(IDomain<?> domain, IAuthenticationRequest req, String tenant,
+	static IAuthentication authenticateThroughOperation(IDomain<?> domain, IAuthenticationRequest req, String tenant,
 			com.garganttua.api.core.security.authentication.KnownPrincipal knownPrincipal) {
 		@SuppressWarnings({"unchecked", "rawtypes"})
 		IClass<?> entityClass = ((IDomain) domain).getEntityClass();

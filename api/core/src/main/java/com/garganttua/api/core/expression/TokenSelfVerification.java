@@ -90,7 +90,7 @@ final class TokenSelfVerification {
 		if (authzDef == null || authzDef.authenticateOnVerify() == VerificationPath.PIPELINE || runtime == null) {
 			// The domain's authenticate operation — chosen, or the only place a strategy can run outside a
 			// pipeline. The token's own tenant drives the lookup (verify flow), not the request body.
-			SecurityAuthenticationExpressions.invokeAuthenticate(authzDomain,
+			SecurityAuthenticationExpressions.authenticateThroughOperation(authzDomain,
 					new AuthenticationRequest(login, authz), tenantId, known.orElse(null));
 			return;
 		}

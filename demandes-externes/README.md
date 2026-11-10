@@ -203,6 +203,8 @@ Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraîtr
 | [levenement-dapi-ne-porte-ni-adresse-ip-ni-session](levenement-dapi-ne-porte-ni-adresse-ip-ni-session.md) | palliad | `IEvent.getOrigin()` : adresse et agent posés par le transport, session (uuid de l'autorisation vérifiée) par `VERIFY_AUTHORIZATION` ; `server.trustedProxies` pour `X-Forwarded-For`, lu depuis la droite, sans DNS. |
 | [un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation](un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation.md) | palliad | Observateur bloquant (`GlobalObservers.addBlockingObserver`) ; l'opération rend 503 sans sa donnée ; connecteur `api` `delivery=sync`. |
 | [le-verrou-de-route-ne-se-cle-pas-sur-le-message](le-verrou-de-route-ne-se-cle-pas-sur-le-message.md) | palliad | `lockObject` `$.chemin` évalué sur chaque message, dans l'enveloppe quand le flux est encapsulé ; valeur absente : le verrou de la route. |
+| [en-natif-deux-invokeauthenticate-empechent-lapi-de-monter](en-natif-deux-invokeauthenticate-empechent-lapi-de-monter.md) | palliad | Bogue de la branche ALPHA34 locale, reproduit sur leur binaire natif puis corrigé : la méthode interne renommée, la résolution qui préfère la signature identique à une signature seulement assignable, et un garde-fou de compilation contre toute méthode qui porte le nom et l'arité d'une expression. |
+
 ## Changements de comportement à la montée en `3.0.0-ALPHA34`
 
 | Élément | Avant | Après |

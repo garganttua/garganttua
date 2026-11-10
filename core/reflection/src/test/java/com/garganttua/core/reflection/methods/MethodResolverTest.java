@@ -189,4 +189,38 @@ public class MethodResolverTest {
         });
     }
 
+
+    /** An expression-like class: a public method, and an internal one of the same name and arity. */
+    static class Overloaded {
+        public static Object pick(Object first, Object second) {
+            return first;
+        }
+
+        static Object pick(String first, String second) {
+            return second;
+        }
+    }
+
+    @Test
+    public void methodByMethodPrefersTheIdenticalSignatureOverAMerelyAssignableOne()
+            throws ReflectionException, NoSuchMethodException {
+        // pick(Object, Object) accepts what pick(String, String) declares: both are assignable, only one IS it.
+        Method internal = Overloaded.class.getDeclaredMethod("pick", String.class, String.class);
+
+        ResolvedMethod resolved = MethodResolver.methodByMethod(RuntimeClass.of(Overloaded.class), provider,
+                RuntimeMethod.of(internal));
+
+        assertEquals("java.lang.String", resolved.getParameterTypes()[0].getName());
+    }
+
+    @Test
+    public void methodByMethodBindsThePublicMethodDespiteAnInternalOneOfItsNameAndArity()
+            throws ReflectionException, NoSuchMethodException {
+        Method expression = Overloaded.class.getDeclaredMethod("pick", Object.class, Object.class);
+
+        ResolvedMethod resolved = MethodResolver.methodByMethod(RuntimeClass.of(Overloaded.class), provider,
+                RuntimeMethod.of(expression));
+
+        assertEquals("java.lang.Object", resolved.getParameterTypes()[0].getName());
+    }
 }
