@@ -16,13 +16,16 @@ public record RouteExceptionsDef(
 		String label,
 		int attempts) {
 
+	/** The fewest attempts a route makes: one, and a failure goes to the error subscription at once. */
+	public static final int SINGLE_ATTEMPT = 1;
+
 	/** One attempt: a failure goes to the error subscription at once. */
 	public RouteExceptionsDef(String to, String cast, String label) {
-		this(to, cast, label, 1);
+		this(to, cast, label, SINGLE_ATTEMPT);
 	}
 
 	public RouteExceptionsDef {
-		if (attempts < 1) {
+		if (attempts < SINGLE_ATTEMPT) {
 			throw new IllegalArgumentException("A route makes at least one attempt, got " + attempts);
 		}
 	}

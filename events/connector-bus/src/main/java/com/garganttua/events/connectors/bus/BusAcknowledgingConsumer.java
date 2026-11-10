@@ -45,14 +45,10 @@ public class BusAcknowledgingConsumer implements IAcknowledgingConsumer {
 	 * @param lock           the queue's lock, shared by every consumer of the queue
 	 * @param pollIntervalMs how long an empty queue is left before it is looked at again
 	 */
-	@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
-			justification = "queue and its lock are shared, connector-managed resources handed off by reference")
 	public BusAcknowledgingConsumer(IBigQueue queue, Object lock, long pollIntervalMs) {
 		this(queue, lock, pollIntervalMs, FIRST_RETRY_DELAY_MILLIS, MAX_RETRY_DELAY_MILLIS);
 	}
 
-	@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
-			justification = "queue and its lock are shared, connector-managed resources handed off by reference")
 	BusAcknowledgingConsumer(IBigQueue queue, Object lock, long pollIntervalMs, long firstDelayMs, long maxDelayMs) {
 		this.queue = queue;
 		this.lock = lock;

@@ -128,31 +128,42 @@ public final class KafkaAcknowledgingConsumer implements IAcknowledgingConsumer 
 		Map<TopicPartition, OffsetAndMetadata> commits = new HashMap<>();
 		boolean allSafe = true;
 		for (Map.Entry<TopicPartition, List<Pending>> entry : byPartition.entrySet()) {
-			long nextToRead = -1L;
-			Long firstUnsafe = null;
-			for (Pending pending : entry.getValue()) {
-				// Awaited even past an unsafe one: none of this poll may still be running when its copy is re-read.
-				boolean safe = safe(pending.outcome());
-				if (firstUnsafe == null && safe) {
-					nextToRead = pending.offset() + 1;
-				} else if (firstUnsafe == null) {
-					firstUnsafe = pending.offset();
-				}
-			}
-			if (nextToRead >= 0) {
-				commits.put(entry.getKey(), new OffsetAndMetadata(nextToRead));
-			}
-			if (firstUnsafe != null) {
-				this.consumer.seek(entry.getKey(), firstUnsafe);
-				LOG.warn("Kafka consumer: message {} of {} is not safe — it will be read again", firstUnsafe,
-						entry.getKey());
-				allSafe = false;
-			}
+			allSafe &= settle(entry.getKey(), entry.getValue(), commits);
 		}
 		if (!commits.isEmpty()) {
 			this.consumer.commitSync(commits);
 		}
 		return allSafe;
+	}
+
+	/**
+	 * Decides one partition of a poll: the offset to commit — past the last message safe without a gap — and,
+	 * when one is not safe, a seek back to it.
+	 *
+	 * @return whether every message of the partition was safe
+	 */
+	private boolean settle(TopicPartition partition, List<Pending> pendings,
+			Map<TopicPartition, OffsetAndMetadata> commits) {
+		long nextToRead = -1L;
+		Long firstUnsafe = null;
+		for (Pending pending : pendings) {
+			// Awaited even past an unsafe one: none of this poll may still be running when its copy is re-read.
+			boolean safe = safe(pending.outcome());
+			if (firstUnsafe == null && safe) {
+				nextToRead = pending.offset() + 1;
+			} else if (firstUnsafe == null) {
+				firstUnsafe = pending.offset();
+			}
+		}
+		if (nextToRead >= 0) {
+			commits.put(partition, new OffsetAndMetadata(nextToRead));
+		}
+		if (firstUnsafe == null) {
+			return true;
+		}
+		this.consumer.seek(partition, firstUnsafe);
+		LOG.warn("Kafka consumer: message {} of {} is not safe — it will be read again", firstUnsafe, partition);
+		return false;
 	}
 
 	private static CompletableFuture<Boolean> outcomeOf(Function<byte[], CompletionStage<Boolean>> handler, byte[] value) {

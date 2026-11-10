@@ -77,8 +77,8 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 	private String operations;
 	private String domain;
 	private IFilter eventFilter;
-	private boolean programmaticFilterSet;
-	private ApiEventsSettings settings = ApiEventsSettings.DEFAULTS;
+	private volatile boolean programmaticFilterSet;
+	private ApiEventsSettings delivery = ApiEventsSettings.DEFAULTS;
 	/** Every event this connector's consumers dropped, across their runs. */
 	private final AtomicLong dropped = new AtomicLong();
 
@@ -116,7 +116,7 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 		this.name = configuration.getOrDefault("name", "api-events");
 		this.operations = configuration.get("operations");
 		this.domain = configuration.get("domain");
-		this.settings = ApiEventsSettings.of(configuration);
+		this.delivery = ApiEventsSettings.of(configuration);
 		configureFilter(configuration.get("filter"));
 		LOG.debug("Configured api events connector {} (domain={}, operations={})",
 				this.name, this.domain, this.operations);
@@ -143,13 +143,13 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 
 	@Override
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
-		if (this.settings.delivery() == ApiEventsSettings.Delivery.SYNC && sub.consumerConfiguration() != null
+		if (this.delivery.delivery() == ApiEventsSettings.Delivery.SYNC && sub.consumerConfiguration() != null
 				&& sub.consumerConfiguration().qualityOfService() == QualityOfService.AT_MOST_ONCE) {
 			throw new IllegalStateException("api connector " + this.name + ": 'delivery' is 'sync', which fails an "
 					+ "operation whose route fails — subscription " + sub.id() + " declares AT_MOST_ONCE, so the "
 					+ "route's outcome would never be known");
 		}
-		return new ApiEventsConsumer(this.operations, this.domain, this.eventFilter, this.settings, this.dropped);
+		return new ApiEventsConsumer(this.operations, this.domain, this.eventFilter, this.delivery, this.dropped);
 	}
 
 	/**
@@ -165,7 +165,7 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 
 	/** {@return how this connector delivers events} — read from its configuration ({@link ApiEventsSettings}). */
 	public ApiEventsSettings settings() {
-		return this.settings;
+		return this.delivery;
 	}
 
 	@Override

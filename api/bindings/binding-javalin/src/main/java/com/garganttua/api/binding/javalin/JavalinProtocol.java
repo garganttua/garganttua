@@ -67,7 +67,7 @@ public class JavalinProtocol implements IProtocol<Context, Context> {
 	/** A user agent is kept to this length: it lands in every operation's event. */
 	static final int MAX_USER_AGENT = 512;
 
-	private volatile TrustedProxies trustedProxies = TrustedProxies.NONE;
+	private volatile TrustedProxies proxies = TrustedProxies.NONE;
 
 	/**
 	 * Declares the reverse proxies whose {@code X-Forwarded-For} is believed — addresses or CIDR ranges.
@@ -80,7 +80,7 @@ public class JavalinProtocol implements IProtocol<Context, Context> {
 	 * @since 3.0.0-ALPHA34
 	 */
 	public JavalinProtocol trustedProxies(List<String> proxies) {
-		this.trustedProxies = proxies == null ? TrustedProxies.NONE : TrustedProxies.of(proxies);
+		this.proxies = proxies == null ? TrustedProxies.NONE : TrustedProxies.of(proxies);
 		return this;
 	}
 
@@ -109,7 +109,7 @@ public class JavalinProtocol implements IProtocol<Context, Context> {
 	public RequestOrigin getOrigin(Context ctx) throws ApiException {
 		String remote = ctx.req().getRemoteAddr();
 		Enumeration<String> forwarded = ctx.req().getHeaders(FORWARDED_FOR_HEADER);
-		String address = this.trustedProxies.client(remote,
+		String address = this.proxies.client(remote,
 				forwarded == null ? List.of() : Collections.list(forwarded));
 		String agent = ctx.header("User-Agent");
 		if (agent != null && agent.length() > MAX_USER_AGENT) {

@@ -17,10 +17,10 @@ public class BusConsumer implements IConsumer {
 	private final long pollIntervalMs;
 	private volatile boolean running;
 
-	// EI_EXPOSE_REP2: the IBigQueue is a shared resource owned and lifecycle-managed by the
-	// connector; it is deliberately handed off (not copied) so consumer and connector share it.
-	@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
-			justification = "queue is a shared, connector-managed resource handed off by reference")
+	/**
+	 * @param queue          the topic's queue, shared with the connector
+	 * @param pollIntervalMs how long an empty queue is left before it is looked at again
+	 */
 	public BusConsumer(IBigQueue queue, long pollIntervalMs) {
 		this(queue, new Object(), pollIntervalMs);
 	}

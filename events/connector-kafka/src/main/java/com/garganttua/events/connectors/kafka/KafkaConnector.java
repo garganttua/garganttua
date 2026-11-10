@@ -125,12 +125,7 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
 		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
 		props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecordsConfig);
-		boolean atLeastOnce = sub.consumerConfiguration() != null
-				&& sub.consumerConfiguration().qualityOfService() == QualityOfService.AT_LEAST_ONCE;
-		if (atLeastOnce && Boolean.parseBoolean(enableAutoCommitConfig)) {
-			log.warn("Kafka connector {}: subscription {} declares AT_LEAST_ONCE — auto-commit is turned off for it, "
-					+ "an offset is committed only once its message is safe", this.name, sub.id());
-		}
+		boolean atLeastOnce = atLeastOnce(sub);
 		props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, atLeastOnce ? "false" : enableAutoCommitConfig);
 		props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetResetConfig);
 		props.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RoundRobinAssignor.class.getName());
@@ -146,6 +141,20 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 			return new KafkaAcknowledgingConsumer(consumer, pollMs);
 		}
 		return new KafkaConsumer_(consumer, Boolean.parseBoolean(enableAutoCommitConfig), pollMs);
+	}
+
+	/**
+	 * Whether a subscription declares AT_LEAST_ONCE — then auto-commit is off for it, whatever the connector says:
+	 * an offset is committed only once its message is safe.
+	 */
+	private boolean atLeastOnce(SubscriptionDef sub) {
+		boolean atLeastOnce = sub.consumerConfiguration() != null
+				&& sub.consumerConfiguration().qualityOfService() == QualityOfService.AT_LEAST_ONCE;
+		if (atLeastOnce && Boolean.parseBoolean(enableAutoCommitConfig)) {
+			log.warn("Kafka connector {}: subscription {} declares AT_LEAST_ONCE — auto-commit is turned off for it, "
+					+ "an offset is committed only once its message is safe", this.name, sub.id());
+		}
+		return atLeastOnce;
 	}
 
 	@Override

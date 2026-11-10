@@ -124,7 +124,8 @@ public final class ApiEventsConsumer implements IAcknowledgingConsumer {
 		this.codec = new ApiEventCodec();
 		this.settings = Objects.requireNonNull(settings, "settings cannot be null");
 		this.dropped = Objects.requireNonNull(dropped, "dropped counter cannot be null");
-		this.queue = settings.delivery() == Delivery.ASYNC ? new ArrayBlockingQueue<>(settings.queueCapacity()) : null;
+		// sync has no queue to speak of: one slot, never used.
+		this.queue = new ArrayBlockingQueue<>(settings.delivery() == Delivery.ASYNC ? settings.queueCapacity() : 1);
 	}
 
 	private static String normalize(String operation) {
@@ -231,7 +232,7 @@ public final class ApiEventsConsumer implements IAcknowledgingConsumer {
 			throw new IllegalStateException("the route did not answer within " + this.settings.deliveryTimeoutMs()
 					+ " ms", e);
 		} catch (ExecutionException e) {
-			throw new IllegalStateException("the route failed: " + e.getCause(), e.getCause());
+			throw new IllegalStateException("the route failed: " + e.getCause(), e);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("interrupted while waiting for the route", e);
@@ -324,7 +325,7 @@ public final class ApiEventsConsumer implements IAcknowledgingConsumer {
 			Thread.onSpinWait();
 		}
 		byte[] end = this.codec.endOfSequence(this.bootId, this.seq.get());
-		if (this.queue == null) {
+		if (this.settings.delivery() == Delivery.SYNC) {
 			try {
 				if (!awaitRoute(end)) {
 					LOG.warn("Api events consumer: the end of run {} could not be delivered", this.bootId);
