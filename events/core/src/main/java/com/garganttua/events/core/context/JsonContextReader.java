@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.garganttua.events.api.context.ConnectorDef;
 import com.garganttua.events.api.context.ConsumerConfigurationDef;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.context.ContextDef;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.LockDef;
@@ -189,7 +190,8 @@ public class JsonContextReader {
 				cc.has("originPolicy") ? OriginPolicy.valueOf(cc.get("originPolicy").asText()) : OriginPolicy.FROM_ANY,
 				cc.has(FIELD_DESTINATION_POLICY) ? DestinationPolicy.valueOf(cc.get(FIELD_DESTINATION_POLICY).asText()) : DestinationPolicy.TO_ANY,
 				cc.has("highAvailabilityMode") ? HighAvailabilityMode.valueOf(cc.get("highAvailabilityMode").asText()) : null,
-				cc.has("concurrency") ? cc.get("concurrency").asInt() : 1);
+				cc.has("concurrency") ? cc.get("concurrency").asInt() : 1,
+				cc.hasNonNull("qualityOfService") ? QualityOfService.valueOf(cc.get("qualityOfService").asText()) : null);
 	}
 
 	private static ProducerConfigurationDef parseProducerConfig(JsonNode n) {
@@ -263,7 +265,8 @@ public class JsonContextReader {
 		return new RouteExceptionsDef(
 				textOrNull(ex, "to"),
 				textOrNull(ex, "cast"),
-				textOrNull(ex, "label"));
+				textOrNull(ex, "label"),
+				ex.has("attempts") ? ex.get("attempts").asInt() : 1);
 	}
 
 	private static RouteSyncDef parseRouteSync(JsonNode n) {

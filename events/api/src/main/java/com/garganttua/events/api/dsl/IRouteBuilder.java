@@ -19,5 +19,19 @@ public interface IRouteBuilder extends ILinkedBuilder<IContextBuilder, RouteDef>
 
 	IRouteBuilder exceptions(String toSubscription, String cast, String label);
 
+	/**
+	 * Where a failed message goes, after how many attempts: the route runs it up to {@code attempts} times,
+	 * waiting longer between each (from 200 ms, doubling, at most 5 s), before handing it to the error
+	 * subscription — so that a transient failure does not send it there.
+	 *
+	 * @param toSubscription the error subscription
+	 * @param cast           the cast applied to the failed exchange
+	 * @param label          the label of the failure
+	 * @param attempts       at least 1
+	 * @return this builder
+	 * @since 3.0.0-ALPHA34
+	 */
+	IRouteBuilder exceptions(String toSubscription, String cast, String label, int attempts);
+
 	IRouteBuilder synchronization(String lock, String lockObject);
 }

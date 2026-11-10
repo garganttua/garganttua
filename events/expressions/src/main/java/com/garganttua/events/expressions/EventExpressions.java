@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -204,27 +205,50 @@ public class EventExpressions {
 	/**
 	 * Broadcasts the processed exchange to every outbound target: for an encapsulated target the
 	 * exchange is wrapped in a per-target {@code Message} envelope, otherwise its raw value is
-	 * published. One failed destination is logged and does not abort the others, so a multi-{@code .to()}
-	 * route delivers to as many destinations as possible. The expression engine dispatches by argument
-	 * types, so this coexists with the single-producer {@link #produce(Exchange, IProducer)} builtin.
+	 * published. One failed destination does not keep the exchange from the others, so a
+	 * multi-{@code .to()} route delivers to as many destinations as possible — and then FAILS, naming
+	 * those it missed: a message that did not reach its destination is not processed, and the route's
+	 * attempts, error subscription and acknowledgement must know it. Until 3.0.0-ALPHA34 the failure was
+	 * only logged: the route succeeded and the message was lost. The expression engine dispatches by
+	 * argument types, so this coexists with the single-producer {@link #produce(Exchange, IProducer)}
+	 * builtin.
 	 *
 	 * @param exchange  the processed exchange to broadcast
 	 * @param outbounds the resolved destinations to publish to
 	 * @param assetId   the engine asset id (for the OUT journey step when encapsulating)
 	 * @param clusterId the cluster id (for the OUT journey step when encapsulating)
 	 * @return the exchange, unchanged
+	 * @throws HandlingException once every target was tried, when at least one could not be published to
 	 */
 	@Expression(name = "produce", description = "Broadcast exchange to every outbound target")
 	public static Exchange produce(Exchange exchange, List<OutboundTarget> outbounds,
-			String assetId, String clusterId) {
+			String assetId, String clusterId) throws HandlingException {
+		HandlingException missed = null;
+		List<String> missedTargets = new ArrayList<>();
 		for (OutboundTarget target : outbounds) {
-			publishToTarget(exchange, target, assetId, clusterId);
+			Exception failure = publishToTarget(exchange, target, assetId, clusterId);
+			if (failure != null) {
+				missedTargets.add(target.subscriptionId());
+				if (missed == null) {
+					missed = new HandlingException(failure);
+				} else {
+					missed.addSuppressed(failure);
+				}
+			}
+		}
+		if (missed != null) {
+			LOGGER.warn("Exchange not published to {}: the route fails", missedTargets);
+			throw missed;
 		}
 		return exchange;
 	}
 
-	/** Publishes the exchange to one target, encapsulating first when required; failures are logged. */
-	private static void publishToTarget(Exchange exchange, OutboundTarget target,
+	/**
+	 * Publishes the exchange to one target, encapsulating first when required.
+	 *
+	 * @return the failure, or null when published
+	 */
+	private static Exception publishToTarget(Exchange exchange, OutboundTarget target,
 			String assetId, String clusterId) {
 		try {
 			// filter_out (legacy GGOutFilterProcessor): per-target address normalisation —
@@ -238,9 +262,11 @@ public class EventExpressions {
 				bytes = addressed.value();
 			}
 			target.producer().publish(bytes);
+			return null;
 		} catch (ConnectorException | HandlingException e) {
 			LOGGER.warn("Failed to publish exchange to outbound subscription {}",
 					target.subscriptionId(), e);
+			return e;
 		}
 	}
 

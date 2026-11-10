@@ -1,6 +1,7 @@
 package com.garganttua.events.api.dsl;
 
 import com.garganttua.core.dsl.ILinkedBuilder;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.context.ConsumerConfigurationDef;
 import com.garganttua.events.api.enums.DestinationPolicy;
 import com.garganttua.events.api.enums.HighAvailabilityMode;
@@ -25,4 +26,21 @@ public interface IConsumerConfigBuilder extends ILinkedBuilder<ISubscriptionBuil
 	 * @return this builder
 	 */
 	IConsumerConfigBuilder concurrency(int concurrency);
+
+	/**
+	 * When this subscription's consumer acknowledges a message to its transport. Not declared: each
+	 * connector's own behaviour.
+	 *
+	 * <ul>
+	 *   <li>{@link QualityOfService#AT_MOST_ONCE} — on receipt; a message whose route fails is lost.</li>
+	 *   <li>{@link QualityOfService#AT_LEAST_ONCE} — once the message is safe (route succeeded, or handed to the
+	 *       route's error subscription); else delivered again. The connector must be able to acknowledge after
+	 *       the route — Kafka and BigQueue can — or the engine refuses to start the route.</li>
+	 * </ul>
+	 *
+	 * @param qualityOfService the quality of service
+	 * @return this builder
+	 * @since 3.0.0-ALPHA34
+	 */
+	IConsumerConfigBuilder qualityOfService(QualityOfService qualityOfService);
 }

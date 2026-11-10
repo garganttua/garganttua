@@ -1,6 +1,7 @@
 package com.garganttua.events.core.dsl;
 
 import com.garganttua.core.dsl.DslException;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.context.ConsumerConfigurationDef;
 import com.garganttua.events.api.dsl.IConsumerConfigBuilder;
 import com.garganttua.events.api.dsl.ISubscriptionBuilder;
@@ -20,6 +21,13 @@ public class ConsumerConfigBuilder implements IConsumerConfigBuilder {
 	private DestinationPolicy destinationPolicy = DestinationPolicy.TO_ANY;
 	private HighAvailabilityMode highAvailabilityMode;
 	private int concurrency = 1;
+	private QualityOfService qualityOfService;
+
+	@Override
+	public IConsumerConfigBuilder qualityOfService(QualityOfService qualityOfService) {
+		this.qualityOfService = qualityOfService;
+		return this;
+	}
 
 	@Override
 	public IConsumerConfigBuilder concurrency(int concurrency) {
@@ -67,6 +75,6 @@ public class ConsumerConfigBuilder implements IConsumerConfigBuilder {
 	@Override
 	public ConsumerConfigurationDef build() throws DslException {
 		return new ConsumerConfigurationDef(processMode, originPolicy, destinationPolicy,
-				highAvailabilityMode, concurrency);
+				highAvailabilityMode, concurrency, qualityOfService);
 	}
 }

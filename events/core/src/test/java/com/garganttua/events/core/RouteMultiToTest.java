@@ -148,17 +148,20 @@ class RouteMultiToTest {
 		}
 
 		@Test
-		@DisplayName("a failing target does not stop publication to the others")
+		@DisplayName("a failing target does not stop publication to the others — and then fails the route")
 		void oneFailureDoesNotAbortOthers() throws Exception {
 			Exchange exchange = Exchange.create("conn", "topic", "df",
 					"x".getBytes(StandardCharsets.UTF_8));
 			CaptureProducer failing = new CaptureProducer(true);
 			CaptureProducer healthy = new CaptureProducer(false);
 
-			EventExpressions.produce(exchange,
-					List.of(new OutboundTarget(failing, false, "t1", "1", "df1", "c1", "s1"),
-							new OutboundTarget(healthy, false, "t2", "1", "df2", "c2", "s2")),
-					"asset", "cluster");
+			org.junit.jupiter.api.Assertions.assertThrows(
+					com.garganttua.events.api.exceptions.HandlingException.class,
+					() -> EventExpressions.produce(exchange,
+							List.of(new OutboundTarget(failing, false, "t1", "1", "df1", "c1", "s1"),
+									new OutboundTarget(healthy, false, "t2", "1", "df2", "c2", "s2")),
+							"asset", "cluster"),
+					"a message that missed a destination is not processed: the route must know it");
 
 			assertEquals(1, healthy.published.size(),
 					"the healthy target still receives the exchange despite the other failing");
@@ -166,7 +169,7 @@ class RouteMultiToTest {
 
 		@Test
 		@DisplayName("an empty target list publishes nothing and returns the exchange")
-		void emptyTargets() {
+		void emptyTargets() throws Exception {
 			Exchange exchange = Exchange.create("conn", "topic", "df",
 					"x".getBytes(StandardCharsets.UTF_8));
 			Exchange result = EventExpressions.produce(exchange, new ArrayList<>(), "asset", "cluster");

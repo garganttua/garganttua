@@ -16,6 +16,7 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
+import com.garganttua.core.observability.Logger;
 import com.garganttua.core.lifecycle.AbstractLifecycle;
 import com.garganttua.core.lifecycle.ILifecycle;
 import com.garganttua.core.lifecycle.LifecycleException;
@@ -23,6 +24,7 @@ import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.SubscriptionDef;
 import com.garganttua.events.api.enums.ProcessMode;
@@ -35,6 +37,8 @@ import com.garganttua.events.api.connectors.annotations.Connector;
 @Connector(type = "kafka")
 @Reflected
 public class KafkaConnector extends AbstractLifecycle implements IConnector {
+
+	private static final Logger log = Logger.getLogger(KafkaConnector.class);
 
 	@Override
 	public IReflection reflection() {
@@ -121,7 +125,13 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
 		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
 		props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecordsConfig);
-		props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, enableAutoCommitConfig);
+		boolean atLeastOnce = sub.consumerConfiguration() != null
+				&& sub.consumerConfiguration().qualityOfService() == QualityOfService.AT_LEAST_ONCE;
+		if (atLeastOnce && Boolean.parseBoolean(enableAutoCommitConfig)) {
+			log.warn("Kafka connector {}: subscription {} declares AT_LEAST_ONCE — auto-commit is turned off for it, "
+					+ "an offset is committed only once its message is safe", this.name, sub.id());
+		}
+		props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, atLeastOnce ? "false" : enableAutoCommitConfig);
 		props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetResetConfig);
 		props.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, RoundRobinAssignor.class.getName());
 		if (maxPollIntervalMs != null) {
@@ -132,6 +142,9 @@ public class KafkaConnector extends AbstractLifecycle implements IConnector {
 		consumer.subscribe(Collections.singletonList(formatTopicRef(sub.topic())));
 
 		long pollMs = TimeUnit.MILLISECONDS.convert(pollInterval, pollIntervalUnit);
+		if (atLeastOnce) {
+			return new KafkaAcknowledgingConsumer(consumer, pollMs);
+		}
 		return new KafkaConsumer_(consumer, Boolean.parseBoolean(enableAutoCommitConfig), pollMs);
 	}
 

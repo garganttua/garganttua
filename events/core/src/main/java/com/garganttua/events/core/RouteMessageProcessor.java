@@ -21,6 +21,7 @@ import com.garganttua.events.api.IAcknowledgingConsumer;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
 import com.garganttua.events.api.context.DataflowDef;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.context.RouteDef;
 import com.garganttua.events.api.context.RouteExceptionsDef;
 import com.garganttua.events.api.context.RouteSyncDef;
@@ -49,6 +50,8 @@ import com.garganttua.events.api.exceptions.ConnectorException;
 final class RouteMessageProcessor {
 
 	private static final Logger log = Logger.getLogger(RouteMessageProcessor.class);
+	private static final long FIRST_RETRY_DELAY_MILLIS = 200L;
+	private static final long MAX_RETRY_DELAY_MILLIS = 5_000L;
 
 	private final RouteObserver routeObserver;
 	private final List<RouteDispatcher> routeDispatchers;
@@ -79,8 +82,11 @@ final class RouteMessageProcessor {
 		RouteDispatcher dispatcher = new RouteDispatcher(routeDef.uuid(), concurrency, guaranteeOrder);
 		routeDispatchers.add(dispatcher);
 		RouteHandlers handlers = resolveHandlers(routeDef, runtime);
+		QualityOfService qos = fromSub.consumerConfiguration() != null
+				? fromSub.consumerConfiguration().qualityOfService() : null;
 		try {
-			if (consumer instanceof IAcknowledgingConsumer acknowledging) {
+			// AT_MOST_ONCE declared: on receipt, even by a connector that could acknowledge after the route.
+			if (consumer instanceof IAcknowledgingConsumer acknowledging && qos != QualityOfService.AT_MOST_ONCE) {
 				// The connector acknowledges once the route has run: hand it the outcome of each message.
 				acknowledging.startAcknowledged(rawBytes -> {
 					Exchange exchange = exchangeOf(fromSub, fromDf, rawBytes);
@@ -119,54 +125,83 @@ final class RouteMessageProcessor {
 	}
 
 	/**
-	 * Processes one routed message under the route's synchronization mutex (when configured) and
-	 * routes the exchange to the error subscription when the workflow fails or throws — honouring
-	 * {@code RouteDef.synchronization} and {@code RouteDef.exceptions}.
+	 * Processes one routed message — under the route's synchronization mutex when configured — up to the
+	 * route's {@code exceptions.attempts}, waiting longer between each attempt, then hands a message that still
+	 * fails to the error subscription — honouring {@code RouteDef.synchronization} and {@code RouteDef.exceptions}.
+	 *
+	 * @return whether the message is SAFE — its route succeeded, or the error subscription took it: what an
+	 *         {@link IAcknowledgingConsumer} acknowledges on. {@code false}: it is nowhere, deliver it again.
 	 */
 	private boolean processMessage(String routeUuid, IWorkflow workflow, WorkflowInput input,
 			Exchange exchange, RouteHandlers handlers) {
+		WorkflowInput attemptInput = input;
+		for (int attempt = 1; ; attempt++) {
+			if (runOnce(routeUuid, workflow, attemptInput, exchange, handlers)) {
+				return true;
+			}
+			if (attempt >= handlers.attempts() || !backOff(routeUuid, attempt)) {
+				break;
+			}
+			attemptInput = inputOf(exchange);
+		}
+		return routeToError(routeUuid, exchange, handlers.errorProducer());
+	}
+
+	/** One run of the route, under its mutex when it has one; never throws. */
+	private boolean runOnce(String routeUuid, IWorkflow workflow, WorkflowInput input, Exchange exchange,
+			RouteHandlers handlers) {
 		if (handlers.mutex() == null) {
-			return executeAndHandle(routeUuid, workflow, input, exchange, handlers);
+			return execute(routeUuid, workflow, input, exchange);
 		}
 		try {
-			Boolean ok = handlers.mutex().acquire(() -> executeAndHandle(routeUuid, workflow, input, exchange, handlers));
+			Boolean ok = handlers.mutex().acquire(() -> execute(routeUuid, workflow, input, exchange));
 			return Boolean.TRUE.equals(ok);
 		} catch (MutexException e) {
 			log.error("Route {}: synchronized execution failed under its mutex", routeUuid, e);
-			routeToError(routeUuid, exchange, handlers.errorProducer());
+			return false;
+		}
+	}
+
+	/** Runs the workflow; never throws (so it is safe inside a mutex). Returns whether the route succeeded. */
+	private boolean execute(String routeUuid, IWorkflow workflow, WorkflowInput input, Exchange exchange) {
+		try {
+			WorkflowResult result = routeObserver.execute(routeUuid, workflow, input, exchange);
+			return result != null && result.isSuccess();
+		} catch (RuntimeException e) {
+			log.error("Route {} execution failed", routeUuid, e);
 			return false;
 		}
 	}
 
 	/**
-	 * Runs the workflow and dead-letters on failure; never throws (so it is safe inside a mutex). Returns whether the
-	 * route succeeded — what an {@link IAcknowledgingConsumer} acknowledges on.
+	 * Waits before the next attempt: 200 ms, doubling, at most 5 s.
+	 *
+	 * @return false when interrupted — the remaining attempts are given up
 	 */
-	private boolean executeAndHandle(String routeUuid, IWorkflow workflow, WorkflowInput input,
-			Exchange exchange, RouteHandlers handlers) {
+	private static boolean backOff(String routeUuid, int attempt) {
+		long delay = Math.min(FIRST_RETRY_DELAY_MILLIS << Math.min(attempt - 1, 10), MAX_RETRY_DELAY_MILLIS);
+		log.warn("Route {}: attempt {} failed, retrying in {} ms", routeUuid, attempt, delay);
 		try {
-			WorkflowResult result = routeObserver.execute(routeUuid, workflow, input, exchange);
-			if (result == null || !result.isSuccess()) {
-				routeToError(routeUuid, exchange, handlers.errorProducer());
-				return false;
-			}
+			Thread.sleep(delay);
 			return true;
-		} catch (RuntimeException e) {
-			log.error("Route {} execution failed", routeUuid, e);
-			routeToError(routeUuid, exchange, handlers.errorProducer());
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 			return false;
 		}
 	}
 
-	private void routeToError(String routeUuid, Exchange exchange, IProducer errorProducer) {
+	/** {@return whether the error subscription took the exchange} — false when there is none or it failed. */
+	private boolean routeToError(String routeUuid, Exchange exchange, IProducer errorProducer) {
 		if (errorProducer == null) {
-			return;
+			return false;
 		}
 		try {
 			errorProducer.publish(exchange.value());
 			log.debug("Route {}: failed exchange routed to its error subscription", routeUuid);
+			return true;
 		} catch (ConnectorException e) {
 			log.error("Route {}: could not route failed exchange to the error subscription", routeUuid, e);
+			return false;
 		}
 	}
 
@@ -178,7 +213,8 @@ final class RouteMessageProcessor {
 	private RouteHandlers resolveHandlers(RouteDef routeDef, ClusterRuntime runtime) {
 		IProducer errorProducer = resolveErrorProducer(routeDef, runtime);
 		IMutex mutex = resolveMutex(routeDef);
-		return new RouteHandlers(errorProducer, mutex);
+		int attempts = routeDef.exceptions() != null ? routeDef.exceptions().attempts() : 1;
+		return new RouteHandlers(errorProducer, mutex, attempts);
 	}
 
 	/**
@@ -242,6 +278,6 @@ final class RouteMessageProcessor {
 		return connector.createProducer(errorSub, df);
 	}
 
-	/** Per-route runtime handlers: the error-subscription producer and the synchronization mutex. */
-	private record RouteHandlers(IProducer errorProducer, IMutex mutex) {}
+	/** Per-route runtime handlers: the error-subscription producer, the synchronization mutex, the attempts. */
+	private record RouteHandlers(IProducer errorProducer, IMutex mutex, int attempts) {}
 }

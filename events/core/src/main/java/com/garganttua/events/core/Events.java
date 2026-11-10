@@ -15,6 +15,8 @@ import com.garganttua.core.lifecycle.AbstractLifecycle;
 import com.garganttua.core.lifecycle.ILifecycle;
 import com.garganttua.core.lifecycle.LifecycleException;
 import com.garganttua.core.workflow.IWorkflow;
+import com.garganttua.events.api.IAcknowledgingConsumer;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
@@ -339,7 +341,23 @@ public class Events extends AbstractLifecycle implements IEvents, IBootstrapSumm
 		DataflowDef fromDfForConsumer = runtime.getDataflows().get(fromSub.dataflow());
 		if (fromConnector != null && fromDfForConsumer != null) {
 			IConsumer consumer = fromConnector.createConsumer(fromSub, fromDfForConsumer);
+			requireAcknowledgement(routeDef, fromSub, consumer);
 			runtime.getConsumers().put(routeDef.uuid() + ":" + fromSub.id(), consumer);
+		}
+	}
+
+	/**
+	 * A subscription declaring {@link QualityOfService#AT_LEAST_ONCE} is promised that no message is lost on a
+	 * failed route: refuse to build a route whose connector cannot keep that promise, rather than lose silently.
+	 */
+	private static void requireAcknowledgement(RouteDef routeDef, SubscriptionDef fromSub, IConsumer consumer) {
+		boolean atLeastOnce = fromSub.consumerConfiguration() != null
+				&& fromSub.consumerConfiguration().qualityOfService() == QualityOfService.AT_LEAST_ONCE;
+		if (atLeastOnce && !(consumer instanceof IAcknowledgingConsumer)) {
+			throw new IllegalStateException("Route " + routeDef.uuid() + ": subscription '" + fromSub.id()
+					+ "' declares quality of service AT_LEAST_ONCE, but connector '" + fromSub.connector()
+					+ "' cannot acknowledge after the route (its consumer " + consumer.getClass().getName()
+					+ " is not an IAcknowledgingConsumer)");
 		}
 	}
 
