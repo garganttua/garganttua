@@ -414,6 +414,17 @@ public class SecurityAuthenticationExpressions {
 	}
 
 
+	@Expression(name = "verifiedSessionId", description = "The uuid of a VERIFIED authorization, read through its own domain's uuid field — the session an access log records. Null when the authorization belongs to no registered domain (a trusted in-process Mode-B token). Never the token itself.")
+	public static String verifiedSessionId(@Nullable Object apiContext, @Nullable Object authorization) {
+		IApi api = (IApi) unwrapOptional(apiContext);
+		Object authz = unwrapOptional(authorization);
+		IDomain<?> domain = api == null ? null : SecurityVerificationSupport.domainOfEntity(api, authz);
+		if (domain == null || domain.getEntityDefinition() == null || domain.getEntityDefinition().uuid() == null) {
+			return null;
+		}
+		return SecurityExpressions.readField(authz, domain.getEntityDefinition().uuid());
+	}
+
 	@Expression(name = "invokeAuthenticate", description = "Synchronously invokes the 'authenticate' operation on the given target domain with the provided IAuthenticationRequest as body. Returns the resulting IAuthentication or throws ApiException on failure (mapped to 401 by the caller).")
 	public static IAuthentication invokeAuthenticate(@Nullable Object apiContext, @Nullable Object targetDomain,
 			@Nullable Object authRequest, @Nullable Object tenantId) {

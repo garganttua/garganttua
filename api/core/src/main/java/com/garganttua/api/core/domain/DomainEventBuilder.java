@@ -2,6 +2,7 @@ package com.garganttua.api.core.domain;
 
 import java.util.Date;
 
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.event.IEvent;
 import com.garganttua.api.commons.operation.OperationDefinition;
@@ -32,6 +33,19 @@ final class DomainEventBuilder {
     }
 
     /**
+     * The origin the transport saw, in the session VERIFY_AUTHORIZATION verified — or null when the
+     * request carries neither (an in-process invocation).
+     */
+    private static RequestOrigin origin(IOperationRequest request) {
+        RequestOrigin seen = request.arg(IOperationRequest.ORIGIN).orElse(null);
+        String session = request.arg(IOperationRequest.SESSION_ID).orElse(null);
+        if (seen == null) {
+            return session == null ? null : new RequestOrigin(null, null, session);
+        }
+        return session == null ? seen : seen.withSessionId(session);
+    }
+
+    /**
      * Assembles the business {@link IEvent} for one invocation from the request args (body, caller,
      * tenant/owner) and the outcome (a returned {@link OperationResponse}, or a thrown
      * {@link Throwable}).
@@ -50,6 +64,7 @@ final class DomainEventBuilder {
         event.setOwnerId(request.arg(IOperationRequest.OWNER_ID).orElse(null));
         event.setUserId(request.arg(IOperationRequest.CALLER_ID).orElse(null));
         event.setCaller(request.arg(CALLER_ARG).orElse(null));
+        event.setOrigin(origin(request));
 
         if (response != null) {
             event.setCode(response.getResponseCode());

@@ -45,6 +45,8 @@ params      <- extractQueryParameters(@protocol, @rawRequest)
 
 caller      <- extractCaller(@protocol, @rawRequest)
 ! => recordCaughtException(@0, @exception) -> 400
+origin      <- extractOrigin(@protocol, @rawRequest)
+! => recordCaughtException(@0, @exception) -> 400
 
 // Write extracted fields into the operation request for downstream stages
 setRequestArg(@0, "rawBody", @rawBody)
@@ -54,6 +56,7 @@ setRequestArg(@0, "path", @path)
 setRequestArg(@0, "method", @method)
 setRequestArg(@0, "rawAuthorization", @auth)
 setRequestArg(@0, "queryParameters", @params)
+setRequestArg(@0, "origin", @origin)
 // Translate the read query params (page, size, sort, mode) into the typed readAll args
 // (PAGE/SORT/MODE), so pagination / sort / output-mode work over the transport.
 applyReadParamsFromQuery(@0, @params)

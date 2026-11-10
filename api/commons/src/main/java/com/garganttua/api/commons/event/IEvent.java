@@ -73,6 +73,25 @@ public interface IEvent {
         // not carried by default
     }
     
+    /**
+     * Where the operation came from: client address and agent as the transport saw them, and the
+     * session of the verified authorization ({@link RequestOrigin}). {@code null} when the operation did
+     * not come through a transport that knows (an in-process invocation).
+     *
+     * <p>Default methods, so that an existing implementation keeps compiling and simply reports
+     * {@code null}.
+     *
+     * @since 3.0.0-ALPHA34
+     */
+    default RequestOrigin getOrigin() {
+        return null;
+    }
+
+    /** @see #getOrigin() — ignored by implementations that do not carry it. */
+    default void setOrigin(RequestOrigin origin) {
+        // not carried by default
+    }
+
     IOperationResponse toServiceResponse();
     
 	/* IDomain getDomain();

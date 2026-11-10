@@ -173,6 +173,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
     /** The execution id of the protected request: a strategy run directly sees it, a nested operation does not. */
     private static final UUID REQUEST_EXECUTION = UUID.fromString("00000000-0000-7000-8000-000000000001");
 
+    private OperationRequest lastRequest;
     private CountingDao userDao;
     private CountingDao tokenDao;
     private TokenStrategy strategy;
@@ -286,6 +287,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
                 IClass.getClass(User.class), false, null, Access.authenticated));
         request.arg(IOperationRequest.AUTHORIZATION, token);
         request.arg(IOperationRequest.EXECUTION_UUID, REQUEST_EXECUTION);
+        this.lastRequest = request;
         userDao.finds = 0;
         tokenDao.finds = 0;
         strategy.calls = 0;
@@ -354,6 +356,29 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
             assertTrue(strategy.principal instanceof SessionToken, "the principal is the token domain's entity");
             assertEquals(token.getUuid(), ((SessionToken) strategy.principal).getUuid());
             assertSame(token, strategy.credentials, "the credentials are the presented (decoded) token");
+        }
+
+        @Test
+        @DisplayName("the session recorded is the uuid of the verified token — never the token")
+        void session() throws Exception {
+            build(authenticate(), lookup());
+            SessionToken token = mintToken();
+
+            assertEquals(0, readUsersWith(token).code());
+
+            assertEquals(token.getUuid(), lastRequest.arg(IOperationRequest.SESSION_ID).orElse(null));
+        }
+
+        @Test
+        @DisplayName("a refused token names no session")
+        void noSessionWhenRefused() throws Exception {
+            build(authenticate(), lookup());
+            SessionToken token = mintToken();
+            strategy.refuse = true;
+
+            assertEquals(401, readUsersWith(token).code());
+
+            assertTrue(lastRequest.arg(IOperationRequest.SESSION_ID).isEmpty());
         }
 
         @Test

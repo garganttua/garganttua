@@ -4,6 +4,7 @@ import java.util.Map;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.core.reflection.IClass;
 
 /**
@@ -58,6 +59,20 @@ public interface IProtocol<REQ, RES> {
 
 	/** HTTP method or equivalent verb ({@code "GET"}, {@code "POST"}, …). */
 	String getMethod(REQ request) throws ApiException;
+
+	/**
+	 * Where the request came from — the client address the transport trusts (behind a reverse proxy,
+	 * the client a TRUSTED proxy forwarded for) and its user agent. The session is not the transport's
+	 * to say: it is added once the request's authorization is verified.
+	 *
+	 * @param request the raw request
+	 * @return the origin, or null when the transport does not know it (the default)
+	 * @throws ApiException when the request cannot be read
+	 * @since 3.0.0-ALPHA34
+	 */
+	default RequestOrigin getOrigin(REQ request) throws ApiException {
+		return null;
+	}
 
 	/** Query-string parameters; multi-value entries collapsed to the first value. */
 	Map<String, String> getQueryParameters(REQ request) throws ApiException;

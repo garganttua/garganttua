@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 
 
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.context.IApi;
@@ -91,6 +92,12 @@ public class ProtocolExpressions {
 			description = "Delegates to IProtocol.getMethod(rawRequest)")
 	public static String extractMethod(@Nullable Object protocol, @Nullable Object rawRequest) {
 		return invokeExtraction(protocol, rawRequest, (p, r) -> cast(p).getMethod(r));
+	}
+
+	@Expression(name = "extractOrigin",
+			description = "Delegates to IProtocol.getOrigin(rawRequest): the client address the transport trusts and its user agent, or null")
+	public static RequestOrigin extractOrigin(@Nullable Object protocol, @Nullable Object rawRequest) {
+		return invokeExtraction(protocol, rawRequest, (p, r) -> cast(p).getOrigin(r));
 	}
 
 	@Expression(name = "extractQueryParameters",

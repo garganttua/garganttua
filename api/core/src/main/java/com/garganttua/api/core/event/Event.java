@@ -5,6 +5,7 @@ import com.garganttua.api.core.SuppressFBWarnings;
 import java.util.Date;
 import java.util.Map;
 
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.event.IEvent;
 import com.garganttua.api.commons.operation.OperationDefinition;
@@ -42,6 +43,7 @@ public class Event implements IEvent {
 	private String exceptionMessage;
 	private OperationResponseCode code;
 	private String entityUuid;
+	private RequestOrigin origin;
 
 	@Override public OperationDefinition getOperation() { return this.operation; }
 	@Override public void setOperation(OperationDefinition operation) { this.operation = operation; }
@@ -84,6 +86,8 @@ public class Event implements IEvent {
 
 	@Override public String getEntityUuid() { return this.entityUuid; }
 	@Override public void setEntityUuid(String entityUuid) { this.entityUuid = entityUuid; }
+	@Override public RequestOrigin getOrigin() { return this.origin; }
+	@Override public void setOrigin(RequestOrigin origin) { this.origin = origin; }
 
 	@Override
 	public IOperationResponse toServiceResponse() {

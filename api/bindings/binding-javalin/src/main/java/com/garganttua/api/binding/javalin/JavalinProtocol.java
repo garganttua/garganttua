@@ -1,9 +1,12 @@
 package com.garganttua.api.binding.javalin;
 
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.protocol.IProtocol;
@@ -59,6 +62,27 @@ public class JavalinProtocol implements IProtocol<Context, Context> {
 	public static final String OWNER_HEADER = "X-Owner-Id";
 	/** Header carrying the caller's own id. */
 	public static final String CALLER_HEADER = "X-Caller-Id";
+	/** Header a reverse proxy appends the address it received the request from to. */
+	public static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
+	/** A user agent is kept to this length: it lands in every operation's event. */
+	static final int MAX_USER_AGENT = 512;
+
+	private volatile TrustedProxies trustedProxies = TrustedProxies.NONE;
+
+	/**
+	 * Declares the reverse proxies whose {@code X-Forwarded-For} is believed — addresses or CIDR ranges.
+	 * Without any, the client address of a request is the address of its connection, whatever headers it
+	 * sends: a client cannot claim another address.
+	 *
+	 * @param proxies addresses ({@code 10.1.2.3}, {@code ::1}) or ranges ({@code 10.0.0.0/8})
+	 * @return this protocol
+	 * @throws IllegalArgumentException when an entry is neither
+	 * @since 3.0.0-ALPHA34
+	 */
+	public JavalinProtocol trustedProxies(List<String> proxies) {
+		this.trustedProxies = proxies == null ? TrustedProxies.NONE : TrustedProxies.of(proxies);
+		return this;
+	}
 
 	@Override
 	public IClass<Context> requestType() {
@@ -76,6 +100,22 @@ public class JavalinProtocol implements IProtocol<Context, Context> {
 		// Record component order is (tenantId, requestedTenantId, callerId, ownerId, …).
 		// superTenant/superOwner are NEVER asserted by the transport — server-authoritative.
 		return new Caller(tenantId, tenantId, callerId, ownerId, false, false, List.of());
+	}
+
+	/**
+	 * The client address — through the trusted proxies ({@link #trustedProxies}) — and the user agent.
+	 */
+	@Override
+	public RequestOrigin getOrigin(Context ctx) throws ApiException {
+		String remote = ctx.req().getRemoteAddr();
+		Enumeration<String> forwarded = ctx.req().getHeaders(FORWARDED_FOR_HEADER);
+		String address = this.trustedProxies.client(remote,
+				forwarded == null ? List.of() : Collections.list(forwarded));
+		String agent = ctx.header("User-Agent");
+		if (agent != null && agent.length() > MAX_USER_AGENT) {
+			agent = agent.substring(0, MAX_USER_AGENT);
+		}
+		return new RequestOrigin(address, agent, null);
 	}
 
 	@Override

@@ -38,6 +38,7 @@ import com.garganttua.core.lifecycle.ILifecycle;
 import com.garganttua.core.observability.GlobalObservers;
 import com.garganttua.core.observability.IObserver;
 import com.garganttua.core.observability.ObservabilityEmitter;
+import com.garganttua.core.observability.ObserverFailureException;
 import com.garganttua.core.observability.ObservableEvent;
 import com.garganttua.core.observability.ObservableRegistry;
 import com.garganttua.core.reflection.IReflection;
@@ -292,7 +293,11 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
 
         java.util.Date inDate = new java.util.Date();
         try (var scope = ObservabilityEmitter.open(this.observableRegistry, executionUuid)) {
-            scope.fireStart(source);
+            try {
+                scope.fireStart(source);
+            } catch (ObserverFailureException e) {
+                return unobserved(e, startNanos);
+            }
             try {
                 OperationResponse response = doInvoke(request, options);
                 java.time.Duration duration =
@@ -304,12 +309,32 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
                 scope.fireEnd(source, code,
                         DomainEventBuilder.buildEvent(request, operation, inDate, response, null));
                 return response.withProcessingTime(duration);
+            } catch (ObserverFailureException e) {
+                // Emitted before the response leaves: what a blocking observer could not record is
+                // not served. A write has already happened by then — the caller is told it failed.
+                return unobserved(e, startNanos);
             } catch (RuntimeException e) {
-                scope.fireError(source, e,
-                        DomainEventBuilder.buildEvent(request, operation, inDate, null, e));
+                try {
+                    scope.fireError(source, e,
+                            DomainEventBuilder.buildEvent(request, operation, inDate, null, e));
+                } catch (ObserverFailureException unrecorded) {
+                    e.addSuppressed(unrecorded);
+                }
                 throw e;
             }
         }
+    }
+
+    /**
+     * The answer to an operation a BLOCKING observer could not record
+     * ({@link com.garganttua.core.observability.GlobalObservers#addBlockingObserver}): not available,
+     * without its result — an access that leaves no trace must not be served.
+     */
+    private static OperationResponse unobserved(ObserverFailureException failure, long startNanos) {
+        log.error("Operation not served: it could not be recorded ({})", failure.getMessage());
+        return OperationResponse.notAvailable(new ApiException(
+                "The operation could not be recorded, so it is not served: " + failure.getMessage(), failure))
+                .withProcessingTime(java.time.Duration.ofNanos(System.nanoTime() - startNanos));
     }
 
     OperationResponse doInvoke(IOperationRequest request, WorkflowExecutionOptions options) {

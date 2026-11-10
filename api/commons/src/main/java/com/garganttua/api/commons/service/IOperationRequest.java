@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
@@ -88,6 +89,10 @@ public interface IOperationRequest {
 
 	ArgKey<UUID> EXECUTION_UUID = ArgKey.of("executionUuid", IClass.getClass(UUID.class));
 	ArgKey<UUID> CORRELATION_UUID = ArgKey.of("correlationUuid", IClass.getClass(UUID.class));
+	/** Where the request came from, as the transport saw it ({@code IProtocol.getOrigin}). */
+	ArgKey<RequestOrigin> ORIGIN = ArgKey.of("origin", IClass.getClass(RequestOrigin.class));
+	/** The uuid of the authorization the request was VERIFIED with — set by VERIFY_AUTHORIZATION only. */
+	ArgKey<String> SESSION_ID = ArgKey.of("sessionId", IClass.getClass(String.class));
 
 	ArgKey<Object> AUTHORIZATION = ArgKey.of("authorization", IClass.getClass(Object.class));
 	ArgKey<Byte[]> RAW_AUTHORIZATION = ArgKey.of("rawAuthorization", IClass.getClass(Byte[].class));

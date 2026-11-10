@@ -243,12 +243,22 @@ public final class ObservabilityEmitter {
 			// Broadcast to the process-global firehose exactly once per emitted event. This is the
 			// single per-event choke point (active/local below may each receive the event, but this
 			// method runs once per emission), so global observers see every event exactly once.
-			GlobalObservers.fire(event);
+			// A blocking global observer's failure is raised only once the per-engine registries have had
+			// the event too: one sink failing must not hide the event from the others.
+			ObserverFailureException failure = null;
+			try {
+				GlobalObservers.fire(event);
+			} catch (ObserverFailureException e) {
+				failure = e;
+			}
 			if (active != null) {
 				active.fire(event);
 			}
 			if (local != null && local != active) {
 				local.fire(event);
+			}
+			if (failure != null) {
+				throw failure;
 			}
 		}
 

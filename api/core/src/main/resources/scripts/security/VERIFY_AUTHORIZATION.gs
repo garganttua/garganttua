@@ -72,6 +72,10 @@ _authResult <- verifyAuthorization(@3, @authz, @0)
 
 setRequestArg(@0, "principal", authResultPrincipal(@_authResult))
 
+// The session an access log records: the uuid of the authorization just VERIFIED — set only here,
+// after verification, so an unverified or forged token never names a session. Never the token itself.
+setRequestArg(@0, "sessionId", verifiedSessionId(@3, @authz))
+
 // Reconcile the (untrusted) protocol caller with the verified, trusted authentication.
 // The token's identity (tenant / owner / super) wins over the headers; a header that
 // contradicts a non-super token is a cross-target attempt and is rejected (403). This is
