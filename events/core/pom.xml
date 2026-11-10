@@ -91,6 +91,11 @@
 		     discovered by the expression context at runtime; the test needs them on its classpath
 		     to drive a real route through the engine. Test scope only (no production cycle:
 		     events-expressions depends on events-api, not events-core). -->
+		<!-- A route lock keyed on the message ($.tenantId) reads its path as route stages do. -->
+		<dependency>
+			<groupId>com.jayway.jsonpath</groupId>
+			<artifactId>json-path</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>com.garganttua</groupId>
 			<artifactId>garganttua-events-expressions</artifactId>

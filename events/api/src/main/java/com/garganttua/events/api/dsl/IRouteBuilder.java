@@ -33,5 +33,15 @@ public interface IRouteBuilder extends ILinkedBuilder<IContextBuilder, RouteDef>
 	 */
 	IRouteBuilder exceptions(String toSubscription, String cast, String label, int attempts);
 
+	/**
+	 * Runs each message of the route under a lock.
+	 *
+	 * @param lock       the lock — a plain name, or {@code Type::name} for a registered mutex type
+	 * @param lockObject narrows it: a fixed key ({@code "reports"}), or — starting with {@code $} — a JSON path
+	 *                   read on each message's payload ({@code "$.tenantId"}), so that messages of different keys
+	 *                   do not wait for each other; a message where the path finds nothing takes the route's
+	 *                   lock. {@code null}: one lock for the whole route
+	 * @return this builder
+	 */
 	IRouteBuilder synchronization(String lock, String lockObject);
 }

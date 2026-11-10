@@ -150,11 +150,12 @@ final class RouteMessageProcessor {
 	/** One run of the route, under its mutex when it has one; never throws. */
 	private boolean runOnce(String routeUuid, IWorkflow workflow, WorkflowInput input, Exchange exchange,
 			RouteHandlers handlers) {
-		if (handlers.mutex() == null) {
+		if (handlers.mutex() == null && handlers.perMessage() == null) {
 			return execute(routeUuid, workflow, input, exchange);
 		}
 		try {
-			Boolean ok = handlers.mutex().acquire(() -> execute(routeUuid, workflow, input, exchange));
+			IMutex mutex = handlers.perMessage() != null ? handlers.perMessage().mutexFor(exchange) : handlers.mutex();
+			Boolean ok = mutex.acquire(() -> execute(routeUuid, workflow, input, exchange));
 			return Boolean.TRUE.equals(ok);
 		} catch (MutexException e) {
 			log.error("Route {}: synchronized execution failed under its mutex", routeUuid, e);
@@ -212,9 +213,18 @@ final class RouteMessageProcessor {
 	 */
 	private RouteHandlers resolveHandlers(RouteDef routeDef, ClusterRuntime runtime) {
 		IProducer errorProducer = resolveErrorProducer(routeDef, runtime);
-		IMutex mutex = resolveMutex(routeDef);
 		int attempts = routeDef.exceptions() != null ? routeDef.exceptions().attempts() : 1;
-		return new RouteHandlers(errorProducer, mutex, attempts);
+		RouteSyncDef sync = routeDef.synchronization();
+		if (sync != null && PerMessageLock.isPath(sync.lockObject()) && mutexManager != null
+				&& sync.lock() != null && !sync.lock().isBlank()) {
+			SubscriptionDef from = runtime.getSubscriptions().get(routeDef.from());
+			DataflowDef dataflow = from == null ? null : runtime.getDataflows().get(from.dataflow());
+			PerMessageLock perMessage = new PerMessageLock(mutexManager,
+					toMutexName(new RouteSyncDef(sync.lock(), null)), sync.lockObject().trim(),
+					dataflow != null && dataflow.encapsulated());
+			return new RouteHandlers(errorProducer, null, perMessage, attempts);
+		}
+		return new RouteHandlers(errorProducer, resolveMutex(routeDef), null, attempts);
 	}
 
 	/**
@@ -240,7 +250,8 @@ final class RouteMessageProcessor {
 	 * Maps {@code synchronization(lock, lockObject)} to a {@link MutexName}. A qualified {@code lock}
 	 * ({@code Type::name}) selects a registered mutex factory type; a plain {@code lock} uses the
 	 * default {@link InterruptibleLeaseMutex}. A non-blank {@code lockObject} narrows the name (e.g.
-	 * per tenant/entity), so independent keys serialize independently under one logical lock.
+	 * per tenant/entity), so independent keys serialize independently under one logical lock; one that is
+	 * a JSON path ({@code $.tenantId}) is evaluated on each message instead ({@link PerMessageLock}).
 	 */
 	private MutexName toMutexName(RouteSyncDef sync) {
 		IClass<? extends IMutex> type;
@@ -278,6 +289,9 @@ final class RouteMessageProcessor {
 		return connector.createProducer(errorSub, df);
 	}
 
-	/** Per-route runtime handlers: the error-subscription producer, the synchronization mutex, the attempts. */
-	private record RouteHandlers(IProducer errorProducer, IMutex mutex, int attempts) {}
+	/**
+	 * Per-route runtime handlers: the error-subscription producer, the synchronization mutex — fixed, or
+	 * resolved per message when the {@code lockObject} is a JSON path — and the attempts.
+	 */
+	private record RouteHandlers(IProducer errorProducer, IMutex mutex, PerMessageLock perMessage, int attempts) {}
 }

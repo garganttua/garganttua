@@ -16,6 +16,7 @@ import com.garganttua.events.api.ConnectorContext;
 import com.garganttua.events.api.IConnector;
 import com.garganttua.events.api.IConsumer;
 import com.garganttua.events.api.IProducer;
+import com.garganttua.events.api.context.QualityOfService;
 import com.garganttua.events.api.context.DataflowDef;
 import com.garganttua.events.api.context.SubscriptionDef;
 
@@ -142,6 +143,12 @@ public class ApiEventsConnector extends AbstractLifecycle implements IConnector 
 
 	@Override
 	public IConsumer createConsumer(SubscriptionDef sub, DataflowDef df) {
+		if (this.settings.delivery() == ApiEventsSettings.Delivery.SYNC && sub.consumerConfiguration() != null
+				&& sub.consumerConfiguration().qualityOfService() == QualityOfService.AT_MOST_ONCE) {
+			throw new IllegalStateException("api connector " + this.name + ": 'delivery' is 'sync', which fails an "
+					+ "operation whose route fails — subscription " + sub.id() + " declares AT_MOST_ONCE, so the "
+					+ "route's outcome would never be known");
+		}
 		return new ApiEventsConsumer(this.operations, this.domain, this.eventFilter, this.settings, this.dropped);
 	}
 
