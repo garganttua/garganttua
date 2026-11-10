@@ -36,3 +36,19 @@ le verrou de la route sans suffixe.
 - Changer le sens d'un `lockObject` littéral existant.
 - Une file par clé ou un parallélisme par clé : la concurrence de la route reste ce qu'elle est ; le verrou par clé ne
   sert qu'à ne pas bloquer une équipe derrière une autre quand plusieurs nœuds traitent en même temps.
+
+## Réponse de la plateforme — 2026-11-10
+
+**Traitée.** Sur la branche `perf/token-verification`, à paraître dans `3.0.0-ALPHA34`.
+
+- Un `lockObject` qui commence par `$` est un chemin JSON (la lecture des stages `json_path`), évalué sur chaque
+  message. Le verrou devient `<lock>:<valeur>`.
+- Sur un flux encapsulé, le chemin se lit **dans l'enveloppe**, puisque le verrou est pris avant que la route ne
+  l'ouvre. Votre `$.tenantId` vise donc bien l'événement.
+- Une valeur absente, nulle ou illisible retombe sur le verrou de la route, sans suffixe.
+- Un `lockObject` littéral garde son sens.
+- Le gestionnaire de verrous garde un verrou par nom : une clé à peu de valeurs (une équipe) convient, une clé
+  unique par message, non.
+
+Testé dans `EventsRouteE2ETest.synchronizationPerMessageKey` : quatre fils, deux équipes ; les messages d'une même
+équipe ne se chevauchent jamais, et les deux équipes avancent en même temps.

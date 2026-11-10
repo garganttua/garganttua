@@ -55,3 +55,28 @@ m » quand il saute.
 - Que le cadre détecte les trous lui-même : c'est le travail du consommateur final, qui seul sait ce qui lui est
   arrivé.
 - Une durabilité de la file (voir la fiche sur le débordement, mode `SPILL`, et celle sur l'échec d'observateur).
+
+## Réponse de la plateforme — 2026-11-10
+
+**Traitée, en partie autrement que demandé : `eventId` et `source` existent déjà dans garganttua-events.** Sur la
+branche `perf/token-verification`, à paraître dans `3.0.0-ALPHA34`.
+
+- **`eventId` et `source`** : l'enveloppe les porte, dans le premier pas de sa trajectoire (`JourneyStep`).
+  - Son `uuid` identifie l'événement et son `assetId` désigne le nœud émetteur.
+  - `protocol_out` les pose à la publication, et `protocol_in` les garde d'un saut à l'autre : ils restent stables
+    même si le message est relivré.
+  - C'est la clé de dédoublonnage de votre écrivain. Nous ne les dupliquons pas dans le contenu.
+- **`bootId` et `seq`** sont ajoutés par le connecteur `api` lui-même.
+  - Ils sont posés dans l'observateur, avant la file, puisque c'est là que la perte a lieu, avant même qu'un
+    `Exchange` existe.
+  - `bootId` est tiré au démarrage du consommateur ; `seq` compte à partir de 1, sans trou.
+  - La série est propre à chaque souscription au connecteur, puisque chacune a sa file.
+  - Les numéros sont continus, mais pas forcément dans l'ordre d'arrivée quand plusieurs fils émettent en même temps.
+- **À l'arrêt propre** :
+  - le connecteur n'accepte plus rien et attend les événements en train d'entrer dans la file ;
+  - il **vide sa file** (jusqu'ici, il abandonnait ce qui restait dedans) ;
+  - il envoie enfin `{"type":"endOfSequence","bootId":…,"lastSeq":…}`.
+
+  Un `bootId` sans fin de séquence signe un arrêt brutal, et les numéros après le dernier reçu sont perdus.
+
+Testé dans `ApiEventsDeliveryTest` : numéros de 1 à n, fin de séquence en dernier, un `bootId` par démarrage.

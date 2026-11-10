@@ -40,3 +40,30 @@ dans quelle session.
 
 - Journaliser quoi que ce soit côté cadre : palliad écrit son journal lui-même.
 - Exposer le jeton porteur ou un en-tête complet dans l'événement.
+
+## Réponse de la plateforme — 2026-11-10
+
+**Traitée, dans les trois points.** Sur la branche `perf/token-verification`, à paraître dans `3.0.0-ALPHA34`.
+
+1. **L'origine sur la requête.** `IProtocol.getOrigin(...)` (adresse du client et agent utilisateur) est appelée par
+   `EXTRACT.gs` et posée en `IOperationRequest.ORIGIN`. L'agent est coupé à 512 caractères.
+   - La **session** ne vient pas du transport : `VERIFY_AUTHORIZATION.gs` la pose, et **seulement après** une
+     vérification réussie (`SESSION_ID`).
+   - C'est l'uuid de l'autorisation vérifiée, jamais le jeton. Un jeton refusé ne nomme aucune session.
+2. **Dans l'événement.** `IEvent.getOrigin()` rend un `RequestOrigin(address, userAgent, sessionId)`, et le codec du
+   connecteur `api` l'encode sous `origin`.
+3. **Derrière un mandataire.** `server.trustedProxies` dans le starter Javalin (ou `JavalinProtocol.trustedProxies`)
+   liste des adresses ou des plages, IPv4 et IPv6.
+   - `X-Forwarded-For` n'est lu que si la connexion vient de l'un d'eux. Il est alors parcouru **depuis la droite**,
+     jusqu'au premier saut qui n'est pas un mandataire de confiance : ce que le client a écrit à gauche ne prouve
+     rien.
+   - Sans réglage, c'est l'adresse de la connexion, quels que soient les en-têtes.
+   - Les adresses sont lues comme des littéraux, sans résolution DNS : un en-tête forgé ne déclenche aucune requête.
+
+Pour vous : `server.trustedProxies=<adresse de Caddy>,<plage de la répartition de l'hébergeur>`.
+
+Testé :
+- `JavalinProtocolTest` : sans mandataire, chaîne de mandataires, connexion non fiable, IPv6, nom d'hôte, agent
+  trop long, entrée refusée ;
+- `OperationTraceTest` : l'origine et la session dans l'événement ;
+- `SelfVerifyingTokenCostTest` : la session est l'uuid du jeton vérifié, et un jeton refusé n'en nomme aucune.

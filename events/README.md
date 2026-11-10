@@ -117,8 +117,24 @@ Au **stop** (`doStop`) : arrêt consumers/producers/connectors, interruption des
    `RouteSyncDef` résolu en `MutexName`, exécution dans `IMutex.acquire(...)` ; voir
    [Synchronisation](#synchronisation-via-le-mutex-garganttua-core)), via `RouteObserver.execute(...)`
    qui émet les events `events:route:<uuid>` Start/End/Error.
-4. **Dead-letter** : si le `WorkflowResult` n'est pas succès, ou si une `RuntimeException` est levée,
-   l'exchange est republié sur la **subscription d'erreur** (`RouteDef.exceptions.to`).
+4. **Essais, puis dead-letter** : si le `WorkflowResult` n'est pas succès, ou si une `RuntimeException`
+   est levée — une destination manquée par `produce` comprise —, la route rejoue le message jusqu'à
+   `RouteDef.exceptions.attempts` fois (200 ms, doublés, 5 s au plus ; défaut 1), puis l'exchange est
+   republié sur la **subscription d'erreur** (`RouteDef.exceptions.to`).
+5. **Acquittement** : un connecteur `IAcknowledgingConsumer` reçoit l'issue de chaque message — `true`
+   quand il est **en lieu sûr** (route réussie, ou pris par la subscription d'erreur), `false` quand il
+   n'est nulle part — et le rend à son transport sur `false`. La **qualité de service** de la
+   subscription (`consumerConfiguration().qualityOfService(...)`) le décide :
+
+   | Déclarée | Effet |
+   |---|---|
+   | `AT_LEAST_ONCE` | acquitté après la route ; un connecteur qui ne sait pas le faire est **refusé au démarrage** |
+   | `AT_MOST_ONCE` | acquitté à la réception, même par un connecteur qui saurait faire mieux |
+   | — | le comportement propre du connecteur : Kafka et BigQueue à la réception |
+
+   Kafka (`KafkaAcknowledgingConsumer`) commet l'offset par partition jusqu'au premier message non sûr
+   et s'y repositionne ; BigQueue (`BusAcknowledgingConsumer`) lit la tête sans la retirer et ne la
+   retire qu'une fois sûre. Au moins une fois : les consommateurs doivent être idempotents.
 
 > **Pas de mode « parallel-keyed ».** Au moment du dispatch l'`Exchange` est encore brut (son
 > `tenantId`/`correlationId` ne sont peuplés qu'au stage `protocol_in`) et le SPI consumer `byte[]`
@@ -192,7 +208,7 @@ Tous les `*Def` sont des **records immuables** (`com.garganttua.events.api.conte
 | Record | Champs |
 |---|---|
 | `SubscriptionDef` | `String id`, `String dataflow`, `String topic`, `String connector`, `PublicationMode publicationMode`, `ConsumerConfigurationDef consumerConfiguration`, `ProducerConfigurationDef producerConfiguration`, `TimeIntervalDef timeInterval`, `boolean buffered`, `boolean bufferPersisted` |
-| `ConsumerConfigurationDef` | `ProcessMode processMode`, `OriginPolicy originPolicy`, `DestinationPolicy destinationPolicy`, `HighAvailabilityMode highAvailabilityMode`, `int concurrency` |
+| `ConsumerConfigurationDef` | `ProcessMode processMode`, `OriginPolicy originPolicy`, `DestinationPolicy destinationPolicy`, `HighAvailabilityMode highAvailabilityMode`, `int concurrency`, `QualityOfService qualityOfService` | `qualityOfService` null : comportement du connecteur |
 | `ProducerConfigurationDef` | `DestinationPolicy destinationPolicy`, `String destinationUuid` |
 | `TimeIntervalDef` | `int interval`, `String unit` (nom de `TimeUnit`, ex. `SECONDS`) |
 
@@ -205,8 +221,8 @@ Tous les `*Def` sont des **records immuables** (`com.garganttua.events.api.conte
 |---|---|---|
 | `RouteDef` | `String uuid`, `String from`, `List<String> to`, `List<RouteStageDef> stages`, `RouteExceptionsDef exceptions`, `RouteSyncDef synchronization` | `to` est une **liste** (fan-out multi-cible) ; le constructeur canonique normalise `null → []` ; champ déserialisé via `@JsonDeserialize(using = StringOrListDeserializer.class)` tolérant `"to":"sub"` **et** `"to":["a","b"]` |
 | `RouteStageDef` | `String name`, `String expression`, `String condition`, `String catchExpression`, `String catchDownstreamExpression` | `expression` = l'appel `@Expression` du stage (alimenté par le DSL `processor(...)`) |
-| `RouteExceptionsDef` | `String to`, `String cast`, `String label` | `to` = subscription dead-letter d'erreur |
-| `RouteSyncDef` | `String lock`, `String lockObject` | nom du verrou + objet logique verrouillé |
+| `RouteExceptionsDef` | `String to`, `String cast`, `String label`, `int attempts` | `to` = subscription dead-letter d'erreur ; `attempts` (≥ 1, défaut 1) = essais avant elle |
+| `RouteSyncDef` | `String lock`, `String lockObject` | nom du verrou + objet logique verrouillé ; un `lockObject` qui commence par `$` est un chemin JSON lu sur chaque message (`<lock>:<valeur>`) |
 
 #### Enveloppe & message (top-level api)
 
@@ -290,6 +306,7 @@ IConsumerConfigBuilder originPolicy(OriginPolicy policy);
 IConsumerConfigBuilder destinationPolicy(DestinationPolicy policy);
 IConsumerConfigBuilder highAvailabilityMode(HighAvailabilityMode mode);
 IConsumerConfigBuilder concurrency(int concurrency);
+IConsumerConfigBuilder qualityOfService(QualityOfService qos);   // AT_MOST_ONCE | AT_LEAST_ONCE
 
 // IProducerConfigBuilder
 IProducerConfigBuilder destinationPolicy(DestinationPolicy policy);
@@ -303,7 +320,8 @@ IProducerConfigBuilder destinationUuid(String uuid);
 IRouteBuilder to(String subscriptionRef);
 IRouteStageBuilder stage(String name);
 IRouteBuilder exceptions(String toSubscription, String cast, String label);   // dead-letter d'erreur
-IRouteBuilder synchronization(String lock, String lockObject);
+IRouteBuilder exceptions(String toSubscription, String cast, String label, int attempts);
+IRouteBuilder synchronization(String lock, String lockObject);              // lockObject "$.tenantId" : par message
 
 // IRouteStageBuilder
 IRouteStageBuilder processor(String processor);     // l'appel @Expression du stage
@@ -420,14 +438,28 @@ DataflowDef)`, `createProducer(SubscriptionDef, DataflowDef)`. `IConsumer` :
 
 - **Type/version** : `api` / `1.0`. Producteur = `ReadOnlyProducer` (« read-only »).
 - **Clés** : `name` (déf. `"api-events"`), `domain` (filtre sur le segment domaine), `operations`
-  (filtre sur la clé d'opération).
+  (filtre sur la clé d'opération), et la livraison (`ApiEventsSettings`) :
+
+  | Clé | Défaut | Effet |
+  |---|---|---|
+  | `delivery` | `async` | `async` : file bornée + thread de drain ; `sync` : pas de file, la route tourne pendant que l'opération attend, et son échec fait échouer l'opération (503) — observateur **bloquant** |
+  | `deliveryTimeout` | `5000` | `sync` : ms d'attente de la route |
+  | `overflow` | `drop` | `async`, file pleine : `drop` (compté) ou `block` (le fil émetteur attend) |
+  | `overflowTimeout` | `1000` | `block` : ms d'attente, puis `drop` compté |
+  | `queueCapacity` | `10000` | taille de la file |
+
+- **Numérotation** : chaque événement retenu prend, avant la file, `bootId` (la série, tirée au
+  démarrage) et `seq` (de 1, sans trou) ; un événement jeté garde son numéro, le trou se voit en aval
+  ; `droppedEvents()` les compte. À l'arrêt propre, la file est vidée puis `{"type":"endOfSequence",
+  "bootId", "lastSeq"}` clôt la série. L'identité de l'événement et son nœud source sont ceux du
+  `JourneyStep` (enveloppe).
 - **Consumer** (`ApiEventsConsumer`) : s'enregistre sur `GlobalObservers` ; ne retient que les
   events terminaux (`EndEvent`/`ErrorEvent`) de source préfixée **`api:operation:`**
   (`api:operation:<domain>:<operationKey>`), dont le `payload` est un `IEvent`. Même mécanique
   file-bornée + drain que l'observability connector.
 - **`ApiEventCodec`** (JSON profond par `IEvent`) : `operation`, `domain`, `businessOperation`,
-  `useCase`, `code`, `exceptionCode`, `exceptionMessage`, `tenantId`, `ownerId`, `userId`,
-  `inDate`, `outDate`, et **`in` / `out`** sérialisés en `JsonNode` profond (`valueToTree`, fallback
+  `useCase`, `code`, `exceptionCode`, `exceptionMessage`, `tenantId`, `entityUuid`, `ownerId`, `userId`,
+  `origin` (`address`, `userAgent`, `sessionId`), `inDate`, `outDate`, et **`in` / `out`** sérialisés en `JsonNode` profond (`valueToTree`, fallback
   `toString`).
 - **`ApiEventFilter`** (`IFilter`, posé via `.filter(IFilter)` avec snapshot défensif) — arbre de
   filtres :

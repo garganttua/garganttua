@@ -47,3 +47,35 @@ publication (Kafka ou BigQueue), pour que son coût sur la requête reste faible
 - Annuler une **écriture** déjà faite : pour une création ou une mise à jour, l'échec arriverait après l'écriture.
   Palliad s'en contente (le besoin porte d'abord sur les lectures). Un veto sur l'événement de début serait une autre
   demande, que nous ne faisons pas.
+
+## Réponse de la plateforme — 2026-11-10
+
+**Traitée comme proposé.** Sur la branche `perf/token-verification`, à paraître dans `3.0.0-ALPHA34`.
+
+- **core** : `GlobalObservers.addBlockingObserver(...)`.
+  - `fire` offre d'abord l'événement à **tous** les observateurs. Ensuite seulement, si un observateur bloquant a
+    échoué, il lève `ObserverFailureException`.
+  - Les observateurs ordinaires restent protégés comme avant. `ObservabilityEmitter` notifie aussi ses propres
+    registres avant de relever l'échec.
+- **api** : si un observateur bloquant refuse l'événement de fin (ou de début), `Domain.invoke` rend
+  **`NOT_AVAILABLE` (503)**, sans la donnée.
+- **connecteur `api`** : `delivery=sync`.
+  - Il n'y a pas de file : l'observateur est bloquant, la route s'exécute pendant que l'opération attend
+    (`deliveryTimeout`, 5000 ms par défaut).
+  - Une route qui échoue, ou qui ne répond pas à temps, fait échouer l'opération.
+  - La numérotation s'applique aussi, et la fin de séquence est livrée à l'arrêt.
+- **Garde-fou** : le mode `sync` a besoin de l'issue de la route. Il est refusé sur une souscription déclarée
+  `AT_MOST_ONCE`, ainsi que s'il est démarré sans acquittement.
+
+Comme vous l'aviez accepté, une écriture est déjà faite quand l'échec arrive : la réponse est 503, mais la donnée
+est écrite.
+
+**Ce qui le rend utile** est le défaut corrigé avec la fiche Kafka/BigQueue. `produce` journalisait l'échec d'une
+publication sans faire échouer la route : avec un Kafka arrêté, une route `sync` aurait répondu « réussie ». Ce
+n'est plus le cas.
+
+Testé :
+- `GlobalObserversTest` : l'échec remonte après la notification de tous, plusieurs échecs sont gardés, l'émetteur
+  notifie d'abord ;
+- `OperationTraceTest` : 503 sans donnée, à la fin comme au début, et service normal quand l'observateur enregistre ;
+- `ApiEventsDeliveryTest` : `sync` réussi, en échec, en délai dépassé, et démarré sans issue.

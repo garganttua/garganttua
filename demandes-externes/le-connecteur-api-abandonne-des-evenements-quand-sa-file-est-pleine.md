@@ -48,3 +48,23 @@ ou métrique), plutôt qu'un WARN seulement.
 - La numérotation des événements (fiche voisine
   [les-evenements-du-connecteur-api-ne-sont-pas-numerotes](les-evenements-du-connecteur-api-ne-sont-pas-numerotes.md)) :
   elle détecte une perte, celle-ci l'évite. Les deux sont utiles ensemble.
+
+## Réponse de la plateforme — 2026-11-10
+
+**Traitée, sauf le mode `SPILL`.** Sur la branche `perf/token-verification`, à paraître dans `3.0.0-ALPHA34`. Le défaut
+reste le comportement actuel.
+
+- **`overflow`** sur le connecteur : `drop` (défaut) ou `block`. En `block`, le fil émetteur attend une place
+  pendant `overflowTimeout` (1000 ms par défaut) ; au-delà, l'événement est jeté.
+- **Un compteur** : `ApiEventsConnector.droppedEvents()` compte, dans tous les modes, les événements que ses
+  consommateurs n'ont pas pu mettre en file. L'avertissement, toujours limité dans le temps, donne aussi le numéro
+  de l'événement jeté et le total.
+- **`queueCapacity`** est réglable, mais ce n'est pas le remède, comme vous le disiez.
+- **Un événement jeté garde son numéro** de série (fiche voisine) : en aval, sa perte se voit comme un trou.
+
+`SPILL` n'est pas fait. Il ajouterait un second stockage, qu'il faudrait vider dans l'ordre avec la file mémoire.
+Pour le journal HDS, deux mécanismes couvrent le besoin plus sûrement : `block` avec la numérotation, ou la livraison
+`sync` (fiche `un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation`), qui n'a pas de file du tout.
+
+Testé dans `ApiEventsDeliveryTest` : en `drop`, un événement jeté est compté et le trou est visible ; en `block`,
+l'émetteur attend, rien n'est perdu, et un délai dépassé donne un événement compté.
