@@ -1,20 +1,25 @@
 package com.garganttua.api.core.expression;
 
 import java.util.HashMap;
-import java.util.Objects;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.definition.IAuthenticatorDefinition;
+import com.garganttua.api.commons.definition.IDomainAuthorizationDefinition;
+import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.api.commons.security.authenticator.AuthenticatorScope;
+import com.garganttua.api.commons.security.authorization.VerificationPath;
 import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.core.caller.Caller;
 import com.garganttua.api.core.expression.SecurityVerificationSupport.StoredRecord;
+import com.garganttua.api.core.filter.Filter;
 import com.garganttua.api.core.security.authentication.AuthenticationRequest;
 import com.garganttua.api.core.security.authentication.KnownPrincipal;
 import com.garganttua.api.core.service.OperationRequest;
@@ -26,26 +31,28 @@ import com.github.f4b6a3.uuid.UuidCreator;
 
 /**
  * Verifies a token whose domain declares its own authenticator — a token that verifies ITSELF through
- * a strategy — by running that strategy directly, in the pipeline already under way.
+ * a strategy — by the paths its domain declares.
  *
  * <p>
- * It used to invoke the token domain's whole {@code authenticate} operation at every request: a nested
- * workflow, whose principal lookup was itself a nested {@code readAll} workflow. Half of a request's
- * time went there. The checks that operation makes are made here, in the same order and with the same
- * outcome, without either workflow:
+ * Two choices, made on the token domain's {@code .authorization()}, both {@link VerificationPath#PIPELINE}
+ * by default:
  * </p>
- * <ol>
- * <li>the signature, against the key the token names (no-op when not signable);</li>
- * <li>a tenant-scoped authenticator requires the token's tenant;</li>
- * <li>the principal is found by login — for a storable token whose login is its uuid, it IS the stored
- * record the verification reads anyway ({@link StoredRecord}), so it costs nothing more;</li>
- * <li>the account status, and then the strategies in their declared order, exactly as
- * {@code AUTHENTICATE.gs} runs them — the first authenticated answer wins, none means 401.</li>
- * </ol>
+ * <ul>
+ * <li><b>{@code authenticateOnVerify}</b> — the domain's {@code authenticate} operation, a workflow nested
+ * in the request's; or its strategies {@link VerificationPath#DIRECT directly}, in the request's pipeline,
+ * with the checks that operation makes, in the same order and with the same outcome: the signature, the
+ * tenant of a tenant-scoped authenticator, the principal, the account status, then the strategies in
+ * their declared order — the first authenticated answer wins, none means 401;</li>
+ * <li><b>{@code lookupOnVerify}</b> — the principal those strategies receive is found by the domain's
+ * {@code readAll} operation, another nested workflow; or {@link VerificationPath#DIRECT from the
+ * repository}. A storable token whose login is its uuid then costs no read of its own: its principal IS
+ * the stored record the verification reads anyway ({@link StoredRecord}).</li>
+ * </ul>
  *
  * <p>
- * Outside a pipeline — a direct Java call, with no runtime context to run a strategy in — it falls back
- * to the {@code authenticate} operation, which brings its own.
+ * The two are independent: a direct lookup is handed to the nested operation as well
+ * ({@link KnownPrincipal}). Outside a pipeline — a direct Java call, with no runtime context to run a
+ * strategy in — the operation is the only path, whatever is declared.
  * </p>
  */
 final class TokenSelfVerification {
@@ -58,7 +65,8 @@ final class TokenSelfVerification {
 	}
 
 	/**
-	 * Verifies the token through its domain's authenticator. Throws (→ 401) on a tampered signature, a
+	 * Verifies the token through its domain's authenticator, by the paths the token domain declares
+	 * ({@code authenticateOnVerify}, {@code lookupOnVerify}). Throws (→ 401) on a tampered signature, a
 	 * missing principal, or strategies that all refuse.
 	 */
 	static void verify(IApi api, IDomain<?> authzDomain, Object authz, Object operationRequest,
@@ -70,21 +78,28 @@ final class TokenSelfVerification {
 		String login = SecurityExpressions.readField(authz, authzDomain.getEntityDefinition().uuid());
 		ObjectAddress tenantAddr = authzDomain.getEntityDefinition().tenantId();
 		String tenantId = tenantAddr != null ? SecurityExpressions.readField(authz, tenantAddr) : null;
+		IAuthenticatorDefinition authDef = SecurityExpressions.authenticatorContext(authzDomain);
+		Object defObj = SecurityExpressions.authorizationDefinition(authzDomain);
+		IDomainAuthorizationDefinition authzDef = defObj instanceof IDomainAuthorizationDefinition d ? d : null;
+
+		Optional<KnownPrincipal> known = authzDef != null && authzDef.lookupOnVerify() == VerificationPath.DIRECT
+				? knownPrincipal(authzDomain, authDef, login, tenantId, stored).map(KnownPrincipal::new)
+				: Optional.empty();
+
 		IRuntimeContext<?, ?> runtime = RuntimeExpressionContext.get();
-		if (runtime == null) {
-			// The token's own tenant drives the lookup (verify flow), not the request body.
-			SecurityAuthenticationExpressions.invokeAuthenticate(api, authzDomain,
-					new AuthenticationRequest(login, authz), tenantId);
+		if (authzDef == null || authzDef.authenticateOnVerify() == VerificationPath.PIPELINE || runtime == null) {
+			// The domain's authenticate operation — chosen, or the only place a strategy can run outside a
+			// pipeline. The token's own tenant drives the lookup (verify flow), not the request body.
+			SecurityAuthenticationExpressions.invokeAuthenticate(authzDomain,
+					new AuthenticationRequest(login, authz), tenantId, known.orElse(null));
 			return;
 		}
-		IAuthenticatorDefinition authDef = SecurityExpressions.authenticatorContext(authzDomain);
 		if (authDef.scope() == AuthenticatorScope.tenant && (tenantId == null || tenantId.isBlank())) {
 			throw new ApiException("Tenant-scoped authentication requires the caller's tenant. "
 					+ "Provide it on the caller.");
 		}
 		OperationRequest invocation = invocation(api, authzDomain, login, authz, tenantId, operationRequest);
-		knownPrincipal(authzDomain, authDef, tenantId, stored)
-				.ifPresent(lookup -> invocation.arg(KnownPrincipal.ARG, new KnownPrincipal(lookup)));
+		known.ifPresent(principal -> invocation.arg(KnownPrincipal.ARG, principal));
 		runStrategies(runtime, authDef, authzDomain, invocation);
 	}
 
@@ -115,20 +130,36 @@ final class TokenSelfVerification {
 	}
 
 	/**
-	 * The principal, when it is the token's stored record: a storable token whose login is its uuid. A
-	 * tenant-scoped authenticator also matches the record's tenant, as the lookup by login does. Empty for
-	 * any other shape: the strategy's supplier then looks the principal up by login, as before.
+	 * The principal read from the repository, as the lookup by login does — by login, and by tenant for a
+	 * tenant-scoped authenticator. For a storable token whose login is its uuid, the principal IS the
+	 * stored record, already read (or to be read) once for the whole verification. Empty when no login
+	 * field is declared: the supplier then says so, as before.
 	 */
 	private static Optional<Supplier<Optional<Object>>> knownPrincipal(IDomain<?> authzDomain,
-			IAuthenticatorDefinition authDef, String tenantId, StoredRecord stored) {
-		ObjectAddress uuidField = authzDomain.getEntityDefinition().uuid();
-		if (!stored.exists() || !Objects.equals(authDef.login(), uuidField)) {
+			IAuthenticatorDefinition authDef, String login, String tenantId, StoredRecord stored) {
+		ObjectAddress loginField = authDef.login();
+		if (loginField == null) {
 			return Optional.empty();
 		}
 		ObjectAddress tenantField = authzDomain.getEntityDefinition().tenantId();
-		boolean byTenant = authDef.scope() == AuthenticatorScope.tenant && tenantField != null;
-		return Optional.of(() -> stored.strict()
-				.filter(record -> !byTenant || tenantId.equals(SecurityExpressions.readField(record, tenantField))));
+		boolean byTenant = authDef.scope() == AuthenticatorScope.tenant && tenantField != null
+				&& tenantId != null && !tenantId.isBlank();
+		if (stored.exists() && loginField.equals(authzDomain.getEntityDefinition().uuid())) {
+			return Optional.of(() -> stored.strict().filter(
+					record -> !byTenant || tenantId.equals(SecurityExpressions.readField(record, tenantField))));
+		}
+		Filter byLogin = Filter.eq(loginField.toString(), login);
+		IFilter filter = byTenant ? Filter.and(byLogin, Filter.eq(tenantField.toString(), tenantId)) : byLogin;
+		// Read once, whichever strategy asks first: several may be declared on one authenticator.
+		AtomicReference<Optional<Object>> found = new AtomicReference<>();
+		return Optional.of(() -> {
+			if (found.get() == null) {
+				List<Object> results = authzDomain.getRepository()
+						.getEntities(Optional.empty(), Optional.of(filter), Optional.empty());
+				found.set(results == null || results.isEmpty() ? Optional.empty() : Optional.of(results.get(0)));
+			}
+			return found.get();
+		});
 	}
 
 	/**

@@ -1,6 +1,7 @@
 package com.garganttua.api.core.integ.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,6 +29,7 @@ import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.security.authentication.Authentication;
 import com.garganttua.api.commons.security.authentication.IAuthentication;
 import com.garganttua.api.commons.security.authenticator.AuthenticatorScope;
+import com.garganttua.api.commons.security.authorization.VerificationPath;
 import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.api.core.expression.SecurityAuthenticationExpressions;
@@ -35,6 +38,7 @@ import com.garganttua.api.core.security.authentication.AuthenticateCredentialsSu
 import com.garganttua.api.core.security.authentication.AuthenticationRequest;
 import com.garganttua.api.core.security.authentication.AuthenticatorDefinitionSupplierBuilder;
 import com.garganttua.api.core.security.authentication.DecodedAuthorizationSupplierBuilder;
+import com.garganttua.api.core.security.authentication.ExecutionUuidSupplierBuilder;
 import com.garganttua.api.core.security.authentication.PrincipalSupplierBuilder;
 import com.garganttua.api.core.service.OperationRequest;
 import com.garganttua.core.reflection.IClass;
@@ -42,15 +46,15 @@ import com.garganttua.core.supply.dsl.FixedSupplierBuilder;
 import com.garganttua.core.workflow.WorkflowResult;
 
 /**
- * What a request costs to verify a SELF-VERIFYING bearer: a token domain that declares its own
- * authenticator (the token verifies itself through a strategy), is storable and checks its stored
- * record on every request — the shape a consumer uses for revocable sessions.
+ * What a request costs to verify a SELF-VERIFYING bearer, and what it still enforces, on each of the paths
+ * a token domain may declare. The token domain declares its own authenticator (the token verifies itself
+ * through a strategy), is storable and checks its stored record on every request — the shape a consumer
+ * uses for revocable sessions.
  *
  * <p>
- * The verification used to invoke the whole {@code authenticate} pipeline of the token domain at every
- * request — whose principal lookup is itself a nested {@code readAll} pipeline — and then read the same
- * stored record twice more. The checks are the same and run directly: the stored record is read ONCE,
- * serves as the principal, as the revocation check and as the server-authoritative copy.
+ * {@code authenticateOnVerify} chooses between the domain's nested {@code authenticate} operation and its
+ * strategies run directly; {@code lookupOnVerify} between the nested {@code readAll} operation and the
+ * repository for the principal. Every combination must reject the same tokens; only the cost differs.
  * </p>
  */
 @DisplayName("Self-verifying token — what one verification costs, and what it still enforces")
@@ -139,12 +143,15 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         int calls;
         Object principal;
         Object credentials;
+        UUID executionUuid;
         boolean refuse;
 
-        public IAuthentication authenticate(Object principal, Object credentials, IAuthenticatorDefinition definition) {
+        public IAuthentication authenticate(Object principal, Object credentials, IAuthenticatorDefinition definition,
+                UUID executionUuid) {
             this.calls++;
             this.principal = principal;
             this.credentials = credentials;
+            this.executionUuid = executionUuid;
             boolean ok = !this.refuse && credentials instanceof SessionToken;
             return new Authentication(ok, ok ? principal : null, credentials, null, null,
                     null, null, false, false, true, true, true, true);
@@ -163,6 +170,9 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         }
     }
 
+    /** The execution id of the protected request: a strategy run directly sees it, a nested operation does not. */
+    private static final UUID REQUEST_EXECUTION = UUID.fromString("00000000-0000-7000-8000-000000000001");
+
     private CountingDao userDao;
     private CountingDao tokenDao;
     private TokenStrategy strategy;
@@ -170,7 +180,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
     private IDomain<?> usersCtx;
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    private void build() throws ApiException {
+    private void build(VerificationPath authenticate, VerificationPath lookup) throws ApiException {
         userDao = new CountingDao();
         tokenDao = new CountingDao();
         strategy = new TokenStrategy();
@@ -190,7 +200,8 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         tokenAuth.authenticate("authenticate")
                 .withParam(0, new PrincipalSupplierBuilder())
                 .withParam(1, new DecodedAuthorizationSupplierBuilder())
-                .withParam(2, new AuthenticatorDefinitionSupplierBuilder());
+                .withParam(2, new AuthenticatorDefinitionSupplierBuilder())
+                .withParam(3, new ExecutionUuidSupplierBuilder());
         tokenAuth.up();
 
         var tokenBuilder = builder.domain(IClass.getClass(SessionToken.class))
@@ -212,6 +223,8 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
                     .revokable("revoked")
                     .storable(true)
                     .checkStoredOnVerify(true)
+                    .authenticateOnVerify(authenticate)
+                    .lookupOnVerify(lookup)
                 .up()
             .up();
         tokenBuilder.security()
@@ -272,6 +285,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         OperationRequest request = superTenantScriptRequest(OperationDefinition.readAll("users",
                 IClass.getClass(User.class), false, null, Access.authenticated));
         request.arg(IOperationRequest.AUTHORIZATION, token);
+        request.arg(IOperationRequest.EXECUTION_UUID, REQUEST_EXECUTION);
         userDao.finds = 0;
         tokenDao.finds = 0;
         strategy.calls = 0;
@@ -288,34 +302,51 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         throw new AssertionError("no stored token row with uuid " + uuid);
     }
 
-    @Nested
-    @DisplayName("cost")
-    class Cost {
+    /** One path combination; every test below runs on each. */
+    abstract class Scenario {
+
+        abstract VerificationPath authenticate();
+
+        abstract VerificationPath lookup();
+
+        /** Reads of the token's table per request: the stored row, plus the nested readAll when chosen. */
+        int expectedTokenReads() {
+            return lookup() == VerificationPath.PIPELINE ? 2 : 1;
+        }
 
         @Test
-        @DisplayName("the token's stored record is read ONCE per request, and its strategy runs once")
-        void oneStoredRead() throws Exception {
-            build();
+        @DisplayName("cost: the token's table is read once, or twice through a nested readAll; its strategy runs once")
+        void cost() throws Exception {
+            build(authenticate(), lookup());
             SessionToken token = mintToken();
 
             WorkflowResult result = readUsersWith(token);
 
             assertEquals(0, result.code(), () -> "the request must pass; vars=" + result.variables());
-            assertEquals(1, tokenDao.finds,
-                    "principal, revocation check and server-authoritative copy are the same stored row");
+            assertEquals(expectedTokenReads(), tokenDao.finds);
             assertEquals(1, strategy.calls, "the token's strategy decides, once");
             assertEquals(2, userDao.finds, "the owner principal, then the read the request asked for");
         }
-    }
 
-    @Nested
-    @DisplayName("what the verification still enforces")
-    class Enforced {
+        @Test
+        @DisplayName("the declared authentication path is the one that runs")
+        void authenticationPath() throws Exception {
+            build(authenticate(), lookup());
+            assertEquals(0, readUsersWith(mintToken()).code());
+
+            if (authenticate() == VerificationPath.DIRECT) {
+                assertEquals(REQUEST_EXECUTION, strategy.executionUuid,
+                        "run directly, the strategy belongs to the request under way");
+            } else {
+                assertNotEquals(REQUEST_EXECUTION, strategy.executionUuid,
+                        "through the nested authenticate operation, the strategy runs in an execution of its own");
+            }
+        }
 
         @Test
         @DisplayName("the strategy receives the STORED record as principal and the decoded token as credentials")
         void strategyInputs() throws Exception {
-            build();
+            build(authenticate(), lookup());
             SessionToken token = mintToken();
 
             assertEquals(0, readUsersWith(token).code());
@@ -328,7 +359,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         @Test
         @DisplayName("a strategy that refuses rejects the request (401)")
         void strategyRefusal() throws Exception {
-            build();
+            build(authenticate(), lookup());
             SessionToken token = mintToken();
             strategy.refuse = true;
 
@@ -339,7 +370,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         @Test
         @DisplayName("a token revoked in the store is rejected (401), whatever its own claim says")
         void revokedInStore() throws Exception {
-            build();
+            build(authenticate(), lookup());
             SessionToken token = mintToken();
             storedRow(token.getUuid()).setRevoked(true);
 
@@ -349,7 +380,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         @Test
         @DisplayName("a token whose stored record was deleted is rejected (401)")
         void deletedInStore() throws Exception {
-            build();
+            build(authenticate(), lookup());
             SessionToken token = mintToken();
             tokenDao.getStorage().clear();
 
@@ -360,7 +391,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
         @Test
         @DisplayName("called from Java, outside any pipeline, the verification gives the same answer")
         void outsideAPipeline() throws Exception {
-            build();
+            build(authenticate(), lookup());
             SessionToken token = mintToken();
 
             IAuthentication auth = SecurityAuthenticationExpressions.verifyAuthorization(
@@ -369,5 +400,44 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
             assertTrue(auth.authenticated());
             assertEquals(1, strategy.calls);
         }
+    }
+
+    @Nested
+    @DisplayName("default — nested authenticate, nested readAll")
+    class Default extends Scenario {
+        @Override VerificationPath authenticate() { return VerificationPath.PIPELINE; }
+        @Override VerificationPath lookup() { return VerificationPath.PIPELINE; }
+    }
+
+    @Nested
+    @DisplayName("direct — strategies in the request's pipeline, record from the repository")
+    class Direct extends Scenario {
+        @Override VerificationPath authenticate() { return VerificationPath.DIRECT; }
+        @Override VerificationPath lookup() { return VerificationPath.DIRECT; }
+    }
+
+    @Nested
+    @DisplayName("nested authenticate, record from the repository")
+    class NestedAuthenticateDirectLookup extends Scenario {
+        @Override VerificationPath authenticate() { return VerificationPath.PIPELINE; }
+        @Override VerificationPath lookup() { return VerificationPath.DIRECT; }
+    }
+
+    @Nested
+    @DisplayName("strategies directly, record through the nested readAll")
+    class DirectAuthenticateNestedLookup extends Scenario {
+        @Override VerificationPath authenticate() { return VerificationPath.DIRECT; }
+        @Override VerificationPath lookup() { return VerificationPath.PIPELINE; }
+    }
+
+    @Test
+    @DisplayName("a token domain that declares nothing verifies through the pipeline, both ways")
+    void defaults() throws Exception {
+        build(VerificationPath.PIPELINE, VerificationPath.PIPELINE);
+        var definition = (com.garganttua.api.commons.definition.IDomainAuthorizationDefinition)
+                com.garganttua.api.core.expression.SecurityExpressions.authorizationDefinition(
+                        api.getDomain("sessiontokens").orElseThrow());
+        assertEquals(VerificationPath.PIPELINE, definition.authenticateOnVerify());
+        assertEquals(VerificationPath.PIPELINE, definition.lookupOnVerify());
     }
 }

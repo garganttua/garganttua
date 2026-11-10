@@ -260,6 +260,34 @@ ApiBuilder.builder()
     .build();
 ```
 
+### Verifying a self-verifying token: choosing the path
+
+A token domain that declares its own `.authenticator()` verifies each presented token through that
+authenticator's strategy. Its `.authorization()` chooses, per token domain, how that verification
+reaches what it needs:
+
+```java
+.domain(Session.class)
+    .security()
+        .authorization()
+            .storable(true)
+            .checkStoredOnVerify(true)                       // revocation against the stored row
+            .authenticateOnVerify(VerificationPath.DIRECT)   // strategies run in the request's pipeline
+            .lookupOnVerify(VerificationPath.DIRECT)         // principal read from the repository
+        .up()
+        .authenticator()
+            .login("uuid")
+            .authentication(tokenStrategy)
+```
+
+| Setting | `PIPELINE` (default) | `DIRECT` |
+|---|---|---|
+| `authenticateOnVerify` | the domain's `authenticate` operation, nested in the request: observers and the operation's stages see it | the same checks, in the same order, in the request's pipeline: no nested workflow |
+| `lookupOnVerify` | the domain's `readAll` operation, nested: its DTO rules and hooks apply | the repository; for a storable token whose login is its uuid, the stored row `checkStoredOnVerify` reads anyway, so one read serves both |
+
+Revocation is enforced identically on every combination. `DIRECT` both ways removes the two nested
+workflows a protected request otherwise pays; `PIPELINE` keeps the verification visible as an operation.
+
 ### Fluent request builder
 
 ```java

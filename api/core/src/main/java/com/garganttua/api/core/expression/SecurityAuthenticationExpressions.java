@@ -425,7 +425,15 @@ public class SecurityAuthenticationExpressions {
 		}
 		Object tenantUnwrapped = unwrapOptional(tenantId);
 		String tenant = tenantUnwrapped == null ? null : tenantUnwrapped.toString();
+		return invokeAuthenticate(domain, req, tenant, null);
+	}
 
+	/**
+	 * The {@code authenticate} invocation, optionally handing its principal supplier a principal it need not
+	 * look up ({@link com.garganttua.api.core.security.authentication.KnownPrincipal}, null for none).
+	 */
+	static IAuthentication invokeAuthenticate(IDomain<?> domain, IAuthenticationRequest req, String tenant,
+			com.garganttua.api.core.security.authentication.KnownPrincipal knownPrincipal) {
 		@SuppressWarnings({"unchecked", "rawtypes"})
 		IClass<?> entityClass = ((IDomain) domain).getEntityClass();
 		com.garganttua.api.core.service.OperationRequest invocation =
@@ -438,6 +446,9 @@ public class SecurityAuthenticationExpressions {
 		if (tenant != null && !tenant.isBlank()) {
 			invocation.arg(IOperationRequest.TENANT_ID, tenant);
 			invocation.arg(IOperationRequest.REQUESTED_TENANT_ID, tenant);
+		}
+		if (knownPrincipal != null) {
+			invocation.arg(com.garganttua.api.core.security.authentication.KnownPrincipal.ARG, knownPrincipal);
 		}
 
 		IOperationResponse response = domain.invoke(invocation);

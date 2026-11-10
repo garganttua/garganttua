@@ -1,5 +1,6 @@
 package com.garganttua.api.commons.definition;
 
+import com.garganttua.api.commons.security.authorization.VerificationPath;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.binders.IMethodBinder;
 
@@ -49,6 +50,26 @@ public interface IDomainAuthorizationDefinition {
 	 */
 	default boolean checkStoredOnVerify() {
 		return false;
+	}
+
+	/**
+	 * How a self-verifying token's authenticator runs on verify — through the nested {@code authenticate}
+	 * operation, or its strategies directly. Declared via {@code .authorization().authenticateOnVerify(...)}.
+	 *
+	 * @return the path; {@link VerificationPath#PIPELINE} by default
+	 */
+	default VerificationPath authenticateOnVerify() {
+		return VerificationPath.PIPELINE;
+	}
+
+	/**
+	 * How a self-verifying token's record is read on verify — through the domain's {@code readAll}
+	 * operation, or from the repository. Declared via {@code .authorization().lookupOnVerify(...)}.
+	 *
+	 * @return the path; {@link VerificationPath#PIPELINE} by default
+	 */
+	default VerificationPath lookupOnVerify() {
+		return VerificationPath.PIPELINE;
 	}
 
 	ObjectAddress signatureField();

@@ -67,9 +67,10 @@ imbriqué complet. Pistes, à votre jugement :
 
 ## Réponse de la plateforme — 2026-11-10
 
-**Traitée par votre première piste, un chemin direct sans pipeline. La révocation n'est pas affaiblie.** Sur la
-branche `perf/token-verification`, à paraître dans `3.0.0-ALPHA34`. La troisième piste, le cache distribué, attend la
-fiche `un-cache-du-cadre-local-et-distribue.md`. Après cette correction, elle n'est plus urgente.
+**Traitée par votre première piste, un chemin direct sans pipeline, mais en option à déclarer.** Le chemin direct
+ne s'active pas par défaut. La révocation n'est affaiblie dans aucune combinaison. Sur la branche
+`perf/token-verification`, à paraître dans `3.0.0-ALPHA34`. La troisième piste, le cache distribué, attend la fiche
+`un-cache-du-cadre-local-et-distribue.md`.
 
 ### La cause, confirmée
 
@@ -82,37 +83,65 @@ l'opération `authenticate` complète de ce domaine à chaque requête (`invokeA
 - après quoi `checkStoredOnVerify` relisait l'enregistrement stocké, puis le principal final le relisait **une
   troisième fois** (`serverAuthoritativeAuthorization`), pour obtenir la même ligne.
 
-### Ce qui est fait
+### Ce qui est fait : deux réglages, sur le domaine du jeton
 
-- **La stratégie du jeton s'exécute directement**, dans le pipeline de la requête (`TokenSelfVerification`). Les
-  contrôles restent ceux de `AUTHENTICATE.gs`, dans le même ordre et avec la même issue :
+Le passage par les pipelines imbriqués a sa raison d'être : la vérification y est une opération comme les autres,
+que les observateurs, les étapes et les règles de DTO du domaine voient. Il reste donc le **défaut**. Le chemin
+direct se déclare sur `.authorization()`, à côté de `checkStoredOnVerify`, et chaque moitié se choisit séparément :
+
+```java
+authorization.security()
+        .authorization()
+            ...
+            .checkStoredOnVerify(true)
+            .authenticateOnVerify(VerificationPath.DIRECT)
+            .lookupOnVerify(VerificationPath.DIRECT)
+```
+
+| Réglage | `PIPELINE` (défaut) | `DIRECT` |
+|---|---|---|
+| `authenticateOnVerify` : comment s'exécute l'authentificateur du jeton | l'opération `authenticate` du domaine, imbriquée | ses stratégies, dans le pipeline de la requête (`TokenSelfVerification`) |
+| `lookupOnVerify` : comment est lu le principal que reçoivent ses stratégies | l'opération `readAll` du domaine, imbriquée | le dépôt ; pour un jeton stockable dont le login est l'uuid, c'est votre cas, la ligne que `checkStoredOnVerify` lit de toute façon |
+
+Ce qui reste vrai dans les quatre combinaisons :
+
+- **les mêmes contrôles, dans le même ordre**, que ceux de `AUTHENTICATE.gs` :
   - signature contre la clé nommée par le jeton ;
   - tenant exigé pour un authentificateur `tenant` ;
   - principal trouvé par login ;
   - statut du compte ;
-  - stratégies dans l'ordre déclaré : la première réponse authentifiée gagne, aucune donne 401.
-- **L'enregistrement stocké est lu une fois** (`StoredRecord`). Pour un jeton stockable dont le login est l'uuid,
-  c'est votre cas, cette ligne **est** le principal. Elle sert aussi au contrôle `checkStoredOnVerify` et à la copie
-  qui fait autorité. `PrincipalSupplier` la reçoit par la requête (`KnownPrincipal`) au lieu de requêter le domaine.
-  Pour un autre login, le supplier fait sa recherche comme avant.
-- Ce qui ne change pas : le format du jeton, l'API de l'authentificateur, les paramètres de vos stratégies (ils
-  lisent les mêmes valeurs qu'avant), et le refus d'un jeton révoqué ou supprimé, sur tous les nœuds, puisque la
-  ligne est relue à chaque requête comme avant.
+  - stratégies dans l'ordre déclaré : la première réponse authentifiée gagne, aucune donne 401 ;
+- **le refus d'un jeton révoqué ou supprimé**, sur tous les nœuds, puisque la ligne est relue à chaque requête ;
+- le format du jeton, l'API de l'authentificateur et les paramètres de vos stratégies.
+
+Les deux réglages sont indépendants. En `lookupOnVerify(DIRECT)` avec `authenticateOnVerify(PIPELINE)`, la ligne
+déjà lue est remise à l'opération imbriquée (`KnownPrincipal`), qui ne la relit pas. Hors pipeline, c'est-à-dire
+lors d'un appel Java direct sans contexte d'exécution, l'opération `authenticate` reste le seul chemin possible.
+
+Une amélioration s'applique à tous, y compris par défaut : la ligne stockée n'est plus lue qu'une fois pour le
+contrôle `checkStoredOnVerify` et pour la copie qui fait autorité (`StoredRecord`), au lieu de deux.
 
 ### Mesuré
 
 Un test pose votre forme exacte (`SelfVerifyingTokenCostTest`) : domaine de jetons stockable, `checkStoredOnVerify`,
-authentificateur `login("uuid")` avec `PrincipalSupplier` et `DecodedAuthorizationSupplier`. Il fige ce qui suit :
+authentificateur `login("uuid")` avec `PrincipalSupplier` et `DecodedAuthorizationSupplier`. Il rejoue chaque contrôle
+sur les quatre combinaisons et fige ce qui suit :
 
-| Par requête protégée | Avant | Après |
-|---|---:|---:|
-| Lectures de l'enregistrement du jeton | 3 | **1** |
-| Workflows imbriqués (`authenticate`, puis `readAll`) | 2 | **0** |
-| Appels de la stratégie | 1 | 1 |
+| Par requête protégée | ALPHA33 | Défaut ALPHA34 | `DIRECT` des deux côtés |
+|---|---:|---:|---:|
+| Lectures de la table des jetons | 3 | 2 | **1** |
+| Workflows imbriqués (`authenticate`, puis `readAll`) | 2 | 2 | **0** |
+| Appels de la stratégie | 1 | 1 | 1 |
 
-Temps de la vérification seule, JVM, DAO en mémoire : environ **2,9 ms avant, 0,2 à 0,8 ms après**. La différence se
-mesure entre une lecture protégée et la même lecture anonyme, sur une machine chargée, d'où la fourchette. Ce chiffre
-ne remplace pas votre banc : nous n'avons ni votre binaire natif, ni MongoDB, ni ES256 réels.
+Temps de la vérification seule, JVM, DAO en mémoire : environ **2,9 ms par les pipelines, 0,2 à 0,8 ms en
+`DIRECT`**. La différence se mesure entre une lecture protégée et la même lecture anonyme, sur une machine chargée,
+d'où la fourchette. Ce chiffre ne remplace pas votre banc : nous n'avons ni votre binaire natif, ni MongoDB, ni
+ES256 réels.
+
+### Ce que vous avez à faire
+
+Déclarer les deux réglages sur votre domaine `authorizations` (`PalliadAuthAutoConfiguration`). Sans eux, rien ne
+change pour vous, sauf la lecture en double supprimée.
 
 ### Ce qui reste par requête, et que nous n'avons pas touché
 
@@ -125,10 +154,11 @@ ne remplace pas votre banc : nous n'avons ni votre binaire natif, ni MongoDB, ni
 
 Vous mesuriez **deux** `read-all-authorizations` par requête. Notre banc n'en reproduit qu'un : celui du
 `PrincipalSupplier`, appelé une fois par stratégie déclarée sur le domaine. Si votre domaine d'autorisations déclare
-deux stratégies, cela fait deux lectures. Les deux disparaissent ici, puisque la ligne est déjà connue. Dites-nous si
-votre banc en voit encore un après la montée.
+deux stratégies, cela fait deux lectures. En `lookupOnVerify(DIRECT)`, les deux disparaissent, puisque la ligne est
+déjà connue. Dites-nous si votre banc en voit encore une après la montée.
 
-### À savoir à la montée
+### À savoir si vous passez en `DIRECT`
 
 Votre observateur par domaine **ne verra plus** l'opération `authenticate` imbriquée du domaine `authorizations` à
-chaque requête, ni ses `readAll` : elles n'existent plus. Les connexions par mot de passe, elles, sont inchangées.
+chaque requête, ni ses `readAll` : en `DIRECT`, elles n'existent plus. Les connexions par mot de passe, elles, sont
+inchangées.

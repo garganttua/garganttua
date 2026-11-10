@@ -3,6 +3,7 @@ package com.garganttua.api.core.security.authorization;
 import com.garganttua.api.core.security.authorization.DomainAuthorizationDefinition;
 import com.garganttua.api.commons.security.context.IAuthorizationContext;
 import com.garganttua.api.commons.definition.IDomainAuthorizationDefinition;
+import com.garganttua.api.commons.security.authorization.VerificationPath;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.binders.IMethodBinder;
 
@@ -17,14 +18,15 @@ public class AuthorizationContext implements IAuthorizationContext {
             ObjectAddress refreshExpiration, ObjectAddress refreshRevoked,
             ObjectAddress encodeMethod, ObjectAddress decodeMethod,
             ObjectAddress signedBy, IMethodBinder<?> reconcileBinder,
-            boolean checkStoredOnVerify) {
+            boolean checkStoredOnVerify, VerificationPath authenticateOnVerify,
+            VerificationPath lookupOnVerify) {
         this.authorizationDefinition = new DomainAuthorizationDefinition(
                 type, authorities, expiration, creation, revoked,
                 storable, signable, refreshable,
                 signatureField, getDataToSignMethod,
                 refreshExpiration, refreshRevoked,
                 encodeMethod, decodeMethod, signedBy, reconcileBinder,
-                checkStoredOnVerify);
+                checkStoredOnVerify, authenticateOnVerify, lookupOnVerify);
     }
 
     @Override

@@ -209,10 +209,11 @@ Traitée le 2026-11-10, sur la branche `perf/token-verification`, **à paraître
 
 | Fiche | Émise par | Réponse |
 |---|---|---|
-| [la-verification-du-jeton-coute-la-moitie-de-chaque-requete](la-verification-du-jeton-coute-la-moitie-de-chaque-requete.md) | palliad | Cause confirmée : l'opération `authenticate` complète du domaine du jeton à chaque requête, dont la recherche du principal était elle-même un `readAll` imbriqué, et la même ligne stockée lue trois fois. La stratégie s'exécute maintenant directement, avec les mêmes contrôles dans le même ordre, et la ligne est lue une fois, puisqu'elle **est** le principal. 3 lectures → 1, 2 workflows imbriqués → 0 ; vérification 2,9 → 0,2–0,8 ms au banc JVM. Révocation inchangée, sans cache : le cache distribué reste à la fiche qui le demande. |
+| [la-verification-du-jeton-coute-la-moitie-de-chaque-requete](la-verification-du-jeton-coute-la-moitie-de-chaque-requete.md) | palliad | Cause confirmée : l'opération `authenticate` complète du domaine du jeton à chaque requête, dont la recherche du principal était elle-même un `readAll` imbriqué, et la même ligne stockée lue trois fois. Le passage par ces pipelines reste le **défaut** ; deux réglages du DSL, `authenticateOnVerify` et `lookupOnVerify`, choisissent séparément un chemin `DIRECT` : stratégies exécutées dans la requête, avec les mêmes contrôles dans le même ordre, et principal lu dans le dépôt, puisque c'est la ligne déjà lue. En `DIRECT` : 3 lectures → 1, 2 workflows imbriqués → 0, vérification 2,9 → 0,2–0,8 ms au banc JVM. Révocation identique partout, sans cache. |
 
 ## Changements de comportement à la montée en `3.0.0-ALPHA34`
 
 | Élément | Avant | Après |
 |---|---|---|
-| Vérification d'un jeton dont le domaine déclare un authentificateur | opération `authenticate` imbriquée, visible des observateurs | stratégies exécutées dans le pipeline de la requête, sans opération imbriquée |
+| Vérification d'un jeton stockable avec `checkStoredOnVerify` | la ligne stockée lue deux fois en dehors de l'opération imbriquée | lue une fois |
+| `.authorization().authenticateOnVerify(…)`, `.lookupOnVerify(…)` | n'existaient pas | nouveaux, `PIPELINE` par défaut : le comportement d'avant |
