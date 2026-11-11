@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.event.RequestOrigin;
 import com.garganttua.api.commons.caller.ICaller;
 
@@ -181,12 +182,24 @@ class JavalinProtocolTest {
 		}
 
 		@Test
-		@DisplayName("non-byte output is stringified")
-		void stringifiesNonBytes() {
-			protocol.buildResponse(ctx, 12345, 200);
+		@DisplayName("a String output is written as is")
+		void writesString() {
+			protocol.buildResponse(ctx, "ok", 200);
 
 			verify(ctx).status(200);
-			verify(ctx).result("12345");
+			verify(ctx).result("ok");
+		}
+
+		@Test
+		@DisplayName("an unserialized object is refused — never its toString() under a 200")
+		void refusesUnserializedObject() {
+			ApiException refused = assertThrows(ApiException.class,
+					() -> protocol.buildResponse(ctx, new Object(), 200, "application/json"));
+
+			assertFalse(refused.getMessage().contains("java.lang.Object"), "the body must not name classes");
+			verify(ctx, never()).status(anyInt());
+			verify(ctx, never()).result(anyString());
+			verify(ctx, never()).result(any(byte[].class));
 		}
 
 		@Test

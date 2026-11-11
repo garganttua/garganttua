@@ -67,7 +67,8 @@ public class AndCondition implements ICondition {
         return toBoolean(value1) && toBoolean(value2);
     }
 
-    private static boolean toBoolean(Object value) {
+    /** The truthiness shared by the two-value {@code and} / {@code or}: null, false, 0 and "" / "false" are false. */
+    static boolean toBoolean(Object value) {
         if (value == null) {
             return false;
         }

@@ -26,12 +26,14 @@ import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.context.dsl.IApiBuilder;
+import com.garganttua.api.commons.operation.BusinessOperation;
 import com.garganttua.api.commons.operation.OperationDefinition;
 import com.garganttua.api.commons.protocol.IProtocol;
 import com.garganttua.api.commons.serialization.ISerializer;
 import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.commons.service.IOperationResponse;
 import com.garganttua.api.commons.service.OperationResponseCode;
+import com.garganttua.api.commons.usecase.injection.UseCaseInput;
 import com.garganttua.core.reflection.IClass;
 
 @DisplayName("Protocol pipeline stages (protocol/EXTRACT + protocol/RESPONSE)")
@@ -99,6 +101,28 @@ class ProtocolIntegrationTest extends AbstractCrudIntegrationTest {
 		private static String safe(String s) { return s == null ? "" : s; }
 	}
 
+	/** A use case's input: the pipe serializer fills name and email. */
+	public static class Greeting {
+		private String name;
+		private String email;
+		public String getName() { return name; }
+		public void setName(String name) { this.name = name; }
+		public String getEmail() { return email; }
+		public void setEmail(String email) { this.email = email; }
+	}
+
+	/** A use case's result — the pipe serializer writes any non-user object with toString(). */
+	public record Greeted(String name) {
+		@Override public String toString() { return name + "|greeted"; }
+	}
+
+	/** The bound service. */
+	public static class Greeter {
+		public Greeted greet(@UseCaseInput Greeting input) {
+			return new Greeted(input == null ? "nobody" : input.getName());
+		}
+	}
+
 	private IApi context;
 	private IDomain<?> userCtx;
 	private CapturingDao userDao;
@@ -122,6 +146,11 @@ class ProtocolIntegrationTest extends AbstractCrudIntegrationTest {
 				.dto(IClass.getClass(UserDto.class))
 					.id("id").uuid("uuid").tenantId("tenantId")
 					.db(userDao)
+				.up()
+				.useCase("greet", IClass.getClass(Greeting.class), IClass.getClass(Greeted.class))
+					.bind(new Greeter())
+						.method("greet", IClass.getClass(Greeted.class), IClass.getClass(Greeting.class))
+					.up()
 				.up()
 				.security().disable(true).up()
 			.up();
@@ -200,12 +229,12 @@ class ProtocolIntegrationTest extends AbstractCrudIntegrationTest {
 		}
 
 		@Test
-		@DisplayName("when Accept is absent, response receives the raw DTO object (serialize was skipped)")
-		void responseReceivesObjectWhenNoAccept() {
+		@DisplayName("when Accept is absent, the response is still serialized — by the default serializer")
+		void responseReceivesBytesWhenNoAccept() {
 			FakeHttpRequest http = new FakeHttpRequest(
 					"/users", "POST",
 					"Carol|carol@example.com".getBytes(StandardCharsets.UTF_8),
-					"application/json", null,  // no Accept → serialize skips
+					"application/json", null,  // no Accept: the default serializer answers
 					null, "SUPER_TENANT", null,
 					Map.of());
 
@@ -213,10 +242,31 @@ class ProtocolIntegrationTest extends AbstractCrudIntegrationTest {
 					OperationDefinition.createOneWithStandardSecurity("users", IClass.getClass(User.class))));
 
 			Object lastPayload = protocol.buildPayloads.get(protocol.buildPayloads.size() - 1);
-			assertFalse(lastPayload instanceof byte[],
-					"Payload should be raw object (not bytes) when serialize is skipped, got: " + lastPayload);
-			assertTrue(lastPayload instanceof User,
-					"Expected User payload, got: " + (lastPayload == null ? "null" : lastPayload.getClass()));
+			assertTrue(lastPayload instanceof byte[],
+					"a transport is never handed an object to render; got: " + lastPayload);
+			assertEquals("Carol|carol@example.com", new String((byte[]) lastPayload, StandardCharsets.UTF_8));
+		}
+
+		@Test
+		@DisplayName("a use case without Accept: its result is serialized too")
+		void useCaseResponseSerializedWhenNoAccept() {
+			OperationDefinition greet = userCtx.getDomainDefinition().operations().stream()
+					.filter(op -> op.getBusinessOperation() == BusinessOperation.useCase)
+					.filter(op -> "greet".equals(op.useCaseName()))
+					.findFirst().orElseThrow();
+			FakeHttpRequest http = new FakeHttpRequest(
+					"/users/greet", "POST",
+					"Dave|dave@example.com".getBytes(StandardCharsets.UTF_8),
+					"application/json", null,
+					null, "SUPER_TENANT", null,
+					Map.of());
+
+			userCtx.invoke(modeARequest(http, greet));
+
+			Object lastPayload = protocol.buildPayloads.get(protocol.buildPayloads.size() - 1);
+			assertTrue(lastPayload instanceof byte[],
+					"the use case's result must reach the transport serialized; got: " + lastPayload);
+			assertEquals("Dave|greeted", new String((byte[]) lastPayload, StandardCharsets.UTF_8));
 		}
 	}
 

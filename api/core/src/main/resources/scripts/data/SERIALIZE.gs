@@ -5,7 +5,9 @@
 #  using content negotiation over the Accept header. Runs at the end of the
 #  pipeline, after the business stage.
 #
-#  The stage is gated externally on the presence of the Accept header (Mode A).
+#  The stage is gated externally: it runs for every transport request (rawRequest,
+#  Mode A) — a missing Accept negotiates the default serializer — and for a
+#  programmatic request that sets accept (Mode B).
 #
 #  @in  operationRequest: [0] IOperationRequest
 #  @in  apiContext: [1] IApi

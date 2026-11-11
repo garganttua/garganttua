@@ -11,6 +11,8 @@ import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.supply.ISupplier;
 
 import com.garganttua.core.reflection.annotations.Reflected;
+
+import jakarta.annotation.Nullable;
 /**
  * Logical OR {@link ICondition}: holds when at least one of the wrapped conditions holds.
  *
@@ -57,6 +59,18 @@ public class OrCondition implements ICondition {
             @Override
             public IClass<Boolean> getSuppliedClass() { return IClass.getClass(Boolean.class); }
         };
+    }
+
+    /**
+     * Logical OR of two values coerced to boolean, with the same truthiness as the two-value {@code and}.
+     *
+     * @param value1 first operand, may be {@code null}
+     * @param value2 second operand, may be {@code null}
+     * @return {@code true} when at least one operand is truthy
+     */
+    @Expression(name = "or", description = "Logical OR of two boolean values")
+    public static boolean or(@Nullable Object value1, @Nullable Object value2) {
+        return AndCondition.toBoolean(value1) || AndCondition.toBoolean(value2);
     }
 
     /**

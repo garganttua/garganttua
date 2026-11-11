@@ -118,7 +118,7 @@ runtime gates; the request enters the pipeline at stage 5 (business rules).
    |
    v
 +-------------------------------+
-|  9. serialize                 |  Mode A only, gated on accept header
+|  9. serialize                 |  Mode A always (no Accept → default), Mode B when accept set
 |     SERIALIZE.gs              |  previous output -> raw bytes
 |                               |  (ALWAYS outside success guard chain)
 +-------------------------------+
@@ -201,7 +201,7 @@ VERIFY_TENANT    : when(all business rules == 0 AND verify_access == 0)
 VERIFY_OWNER     : when(all preceding == 0)
 CRUD operations  : when(businessOperation matches AND all security == 0)
 CREATE_AUTHZ     : when(authenticate AND authenticate_code == 0 AND all security == 0)
-serialize        : when(accept != null)
+serialize        : when(rawRequest != null OR accept != null)
 protocol-response: when(rawRequest != null)  -- runs even on errors
 exit-code        : always
 ```
@@ -212,7 +212,7 @@ by `DomainWorkflowAssembler.buildCompoundGuard()`.
 **Note:** `serialize` and `protocol-response` intentionally sit outside the
 success guard chain — their `_code` vars are pass-through (init to 0) and they
 are NOT added to `operationCodeVars`. This ensures:
-- a skipped serialize/response (Mode B or no `Accept`) doesn't signal success,
+- a skipped serialize/response (Mode B without `accept`) doesn't signal success,
 - a failing upstream stage (e.g. 4xx from deserialize) still triggers the
   response stage so the transport gets a proper error payload.
 
@@ -491,8 +491,11 @@ signable-but-no-keyRealm misconfiguration.
 **Logic:**
 1. `resolveProtocol(api, rawRequest)` — same lookup as stage 1.
 2. `buildProtocolResponse(protocol, rawRequest, previousOutput, status)`
-   — handles both `byte[]` (serialize produced it) and raw `Object`
-   payloads (serialize was skipped because `Accept` was absent).
+   — the payload is the `byte[]` serialize produced (it runs for every
+   transport request; a missing `Accept` negotiates the default serializer),
+   or `null`. A protocol is never handed an object to render: the Javalin
+   protocol refuses one (`ApiException` → `500`) rather than write its
+   `toString()`.
 3. Writes the transport-native response as `output`.
 
 Runs unconditionally in Mode A so that 4xx/5xx error paths still produce

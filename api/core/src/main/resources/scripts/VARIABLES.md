@@ -44,7 +44,7 @@ Canonical keys are declared as typed `ArgKey<T>` constants on
 | `rawBody`           | `byte[]` / `Byte[]`  | protocol-extract   | deserialize                   | raw request body bytes. Gate for stage 4             |
 | `rawAuthorization`  | `String`             | protocol-extract   | —                             | Authorization header verbatim ("Bearer …")           |
 | `contentType`       | `String`             | protocol-extract   | deserialize                   | MIME type of the request body                         |
-| `accept`            | `String`             | protocol-extract   | serialize                     | Accept header. Gate for stage 9                       |
+| `accept`            | `String`             | protocol-extract   | serialize                     | Accept header; absent → default serializer            |
 | `path`              | `String`             | protocol-extract   | (future) operation-detection  | request path                                          |
 | `method`            | `String`             | protocol-extract   | (future) operation-detection  | HTTP verb                                             |
 | `queryParameters`   | `Map<String,String>` | protocol-extract   | (future) operation-detection  | flattened query string                                |
@@ -204,7 +204,7 @@ on the stage builder.
 
 ```
 CRUD stage   → output = entity / page / void-marker
-         ↓ (if Accept header present)
+         ↓ (if rawRequest present — with or without Accept — or accept set)
 serialize    → output = byte[]
          ↓ (if rawRequest present)
 protocol-response → output = transport-native response (e.g. HttpServletResponse)

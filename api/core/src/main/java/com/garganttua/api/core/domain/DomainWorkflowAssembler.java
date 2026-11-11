@@ -236,12 +236,14 @@ class DomainWorkflowAssembler<E> {
 	}
 
 	/**
-	 * Stage 9 — Serialize. Runs only when the Accept header is present (Mode A).
-	 * Consumes the previous stage's output as the payload to serialize.
+	 * Stage 9 — Serialize. Runs whenever the request came over a transport (rawRequest, Mode A) — with or
+	 * without an Accept header, a missing one negotiating the default serializer — and for a programmatic
+	 * request that asks for bytes by setting {@code accept} (Mode B). A transport is never handed an object
+	 * to render on its own. Consumes the previous stage's output as the payload to serialize.
 	 */
 	private void buildSerializeStage(IWorkflowBuilder builder) {
 		builder.stage("serialize")
-				.when("notNull(:arg(@0, \"accept\"))")
+				.when("or(notNull(:arg(@0, \"rawRequest\")), notNull(:arg(@0, \"accept\")))")
 				.script("classpath:scripts/data/SERIALIZE.gs")
 					.name("serialize")
 					.input("operationRequest", "@0")

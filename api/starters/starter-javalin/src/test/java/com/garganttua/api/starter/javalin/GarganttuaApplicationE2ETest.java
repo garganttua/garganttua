@@ -5,12 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.OutputStream;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -28,6 +32,7 @@ import com.garganttua.api.commons.entity.annotations.Entity;
 import com.garganttua.api.commons.entity.annotations.EntityId;
 import com.garganttua.api.commons.entity.annotations.EntityPublic;
 import com.garganttua.api.commons.entity.annotations.EntityUuid;
+import com.garganttua.api.commons.usecase.injection.UseCaseInput;
 import com.garganttua.api.starter.GarganttuaApplication;
 
 /**
@@ -82,6 +87,22 @@ class GarganttuaApplicationE2ETest {
 		public void setUuid(String uuid) { this.uuid = uuid; }
 		public String getName() { return this.name; }
 		public void setName(String name) { this.name = name; }
+	}
+
+	/** The input and result of the {@code echo} use case. */
+	public static class Echo {
+		private String name;
+		public Echo() { }
+		public Echo(String name) { this.name = name; }
+		public String getName() { return name; }
+		public void setName(String name) { this.name = name; }
+	}
+
+	/** The service bound to the {@code echo} use case. */
+	public static class EchoService {
+		public Echo echo(@UseCaseInput Echo input) {
+			return new Echo(input == null ? null : input.getName() + "!");
+		}
 	}
 
 	@BeforeAll
@@ -182,5 +203,75 @@ class GarganttuaApplicationE2ETest {
 					.POST(BodyPublishers.ofString("{\"name\":\"" + name + "\"}"))
 					.build(), BodyHandlers.ofString());
 		}
+	}
+
+	/**
+	 * A client that sends no {@code Accept} at all — Python's {@code urllib}, a probe. Spoken over a bare
+	 * socket, so that no HTTP library adds the header on its own.
+	 */
+	@Nested
+	@DisplayName("without an Accept header")
+	class WithoutAccept {
+
+		/** One HTTP/1.1 exchange, written by hand: no header but those given. */
+		private RawResponse exchange(String method, String path, String body) throws Exception {
+			byte[] payload = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
+			StringBuilder head = new StringBuilder()
+					.append(method).append(' ').append(path).append(" HTTP/1.1\r\n")
+					.append("Host: localhost:7099\r\n")
+					.append("Connection: close\r\n");
+			if (body != null) {
+				head.append("Content-Type: application/json\r\n");
+			}
+			head.append("Content-Length: ").append(payload.length).append("\r\n\r\n");
+			try (Socket socket = new Socket("localhost", 7099)) {
+				OutputStream out = socket.getOutputStream();
+				out.write(head.toString().getBytes(StandardCharsets.US_ASCII));
+				out.write(payload);
+				out.flush();
+				String raw = new String(socket.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+				int split = raw.indexOf("\r\n\r\n");
+				String headers = raw.substring(0, split);
+				int status = Integer.parseInt(headers.substring(9, 12));
+				return new RawResponse(status, headers.toLowerCase(Locale.ROOT), raw.substring(split + 4));
+			}
+		}
+
+		@Test
+		@DisplayName("a CRUD read answers JSON, not the entity's toString()")
+		void crudReadIsJson() throws Exception {
+			post("gina");
+
+			RawResponse response = exchange("GET", "/widgets", null);
+
+			assertEquals(200, response.status(), response.body());
+			assertTrue(response.headers().contains("content-type: application/json"), response.headers());
+			assertTrue(response.body().contains("\"name\":\"gina\""), response.body());
+			assertFalse(response.body().contains("Widget@"), response.body());
+		}
+
+		@Test
+		@DisplayName("a use case answers JSON, not its result's toString()")
+		void useCaseIsJson() throws Exception {
+			RawResponse response = exchange("POST", "/widgets/echo", "{\"name\":\"hugo\"}");
+
+			assertEquals(200, response.status(), response.body());
+			assertTrue(response.headers().contains("content-type: application/json"), response.headers());
+			assertTrue(response.body().contains("\"name\":\"hugo!\""), response.body());
+			assertFalse(response.body().contains("Echo@"), response.body());
+		}
+
+		private void post(String name) throws Exception {
+			http.send(HttpRequest.newBuilder()
+					.uri(URI.create(BASE))
+					.header("Content-Type", "application/json")
+					.header("Accept", "application/json")
+					.POST(BodyPublishers.ofString("{\"name\":\"" + name + "\"}"))
+					.build(), BodyHandlers.ofString());
+		}
+	}
+
+	/** A response read off the socket: status, headers (lower-cased), body. */
+	private record RawResponse(int status, String headers, String body) {
 	}
 }

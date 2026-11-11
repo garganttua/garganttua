@@ -191,7 +191,7 @@ arrivées ensemble.
 
 ## Fiches répondues — `3.0.0-ALPHA34`
 
-Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraître dans `3.0.0-ALPHA34`** : les deux fiches de performance et les six du journal d'accès HDS.
+Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraître dans `3.0.0-ALPHA34`** : les deux fiches de performance et les six du journal d'accès HDS. Puis, le 2026-11-11 sur `main`, le bogue natif et les deux fiches suivantes de palliad (index MongoDB, réponse sans `Accept`).
 
 | Fiche | Émise par | Réponse |
 |---|---|---|
@@ -204,6 +204,8 @@ Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraîtr
 | [un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation](un-observateur-du-flux-ne-peut-pas-faire-echouer-loperation.md) | palliad | Observateur bloquant (`GlobalObservers.addBlockingObserver`) ; l'opération rend 503 sans sa donnée ; connecteur `api` `delivery=sync`. |
 | [le-verrou-de-route-ne-se-cle-pas-sur-le-message](le-verrou-de-route-ne-se-cle-pas-sur-le-message.md) | palliad | `lockObject` `$.chemin` évalué sur chaque message, dans l'enveloppe quand le flux est encapsulé ; valeur absente : le verrou de la route. |
 | [en-natif-deux-invokeauthenticate-empechent-lapi-de-monter](en-natif-deux-invokeauthenticate-empechent-lapi-de-monter.md) | palliad | Bogue de la branche ALPHA34 locale, reproduit sur leur binaire natif puis corrigé : la méthode interne renommée, la résolution qui préfère la signature identique à une signature seulement assignable, et un garde-fou de compilation contre toute méthode qui porte le nom et l'arité d'une expression. |
+| [sur-mongodb-toute-lecture-par-uuid-parcourt-la-collection](sur-mongodb-toute-lecture-par-uuid-parcourt-la-collection.md) | palliad | Cause confirmée. Le DAO MongoDB pose désormais, sans déclaration, un index unique **sparse** sur l'uuid (une lecture par uuid devient un `IXSCAN`, prouvé par `explain` sur un vrai `mongod`) et un index sur le tenant ; le DAO PostgreSQL, l'index du tenant. Même mode que les index déclarés (`none` respecté), additif. Constat en plus : les index uniques déclarés, partiels, ne servent pas une lecture par égalité. |
+| [sans-en-tete-accept-la-reponse-est-le-tostring-java](sans-en-tete-accept-la-reponse-est-le-tostring-java.md) | palliad | Cause trouvée : l'étape `serialize` ne tournait que si `Accept` était présent. Elle tourne désormais pour toute requête venue d'un transport, un `Accept` absent prenant le sérialiseur par défaut ; `JavalinProtocol.buildResponse` refuse tout objet non sérialisé (500), au lieu de rendre son `toString()`. Épreuve HTTP sans `Accept`, CRUD et cas d'usage, sur un vrai Javalin. |
 
 ## Changements de comportement à la montée en `3.0.0-ALPHA34`
 
@@ -217,3 +219,9 @@ Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraîtr
 | `produce` vers les destinations d'une route, une publication en échec | journalisée, route réussie, message perdu | la route échoue (essais, file d'erreur, acquittement) |
 | `garganttua-events-connector-bus` | exigeait log4j 1.x sur le classpath | apporte `log4j-over-slf4j` |
 | Opération dont un observateur bloquant n'a pas pu enregistrer l'événement | (n'existait pas) | 503, sans la donnée |
+| Index d'une collection MongoDB au démarrage | les seuls index déclarés | plus `gg_uuid_system_standard_unique` (unique, sparse) et `gg_<tenant>_system_standard_idx`, sauf en `none` ; une collection qui porte deux fois le même uuid : avertissement en `create`, refus de démarrer en `strict` |
+| Index d'une table PostgreSQL au démarrage | les seuls index déclarés | plus `<table>__gg_<tenant>_system_standard_idx` |
+| Réponse d'une requête HTTP sans `Accept` | le `toString()` de l'objet, en `text/plain`, 200 | sérialisée par le sérialiseur par défaut (JSON) |
+| Un `IProtocol` (le vôtre, s'il y en a un) appelé par l'étape de réponse | recevait l'objet brut quand `Accept` manquait | reçoit toujours des octets (ou `null`) |
+| `JavalinProtocol.buildResponse` avec un objet ni `byte[]` ni `String` | son `toString()` | refusé : `ApiException`, 500 |
+| Expression `or` | seulement sur un ensemble de conditions | aussi `or(a, b)` sur deux valeurs, comme `and(a, b)` |

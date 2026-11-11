@@ -3,14 +3,14 @@
 #@workflow
 #  Stage 10 (protocol, response side): converts the pipeline's final output
 #  into a transport-native response via the same IProtocol that extracted the
-#  request. The payload is either a byte[] (produced by the serialize stage) or
-#  a raw Object (when serialize was skipped because no Accept header).
+#  request. The payload is the byte[] the serialize stage produced — it runs for
+#  every transport request — or null when there is no body.
 #
 #  The stage is gated externally on the presence of rawRequest (Mode A only).
 #
 #  @in  operationRequest: [0] IOperationRequest
 #  @in  apiContext:       [1] IApi
-#  @in  previousOutput:   [2] Object (byte[] or raw)
+#  @in  previousOutput:   [2] byte[], or null (no body)
 #  @out output -> output: Object (transport response)
 #  @return 0: SUCCESS
 #  @return 500: buildResponse failure, or no protocol for rawRequest class

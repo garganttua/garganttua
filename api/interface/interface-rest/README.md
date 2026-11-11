@@ -77,7 +77,7 @@ The framework supports two invocation modes that this protocol participates in:
 
 **Mode A — full transport flow**
 
-A `rawRequest` key is present in the `IOperationRequest` argument map. The pipeline calls `resolveProtocol` to find the matching `IProtocol`, extracts all fields, runs the CRUD and security stages, serializes the output if `Accept` was set, and finally calls `buildResponse` to produce the transport response. The `IOperationResponse.getResponse()` is the `RES` object produced by `buildResponse`.
+A `rawRequest` key is present in the `IOperationRequest` argument map. The pipeline calls `resolveProtocol` to find the matching `IProtocol`, extracts all fields, runs the CRUD and security stages, serializes the output (a missing `Accept` negotiates the default serializer), and finally calls `buildResponse` to produce the transport response. The `IOperationResponse.getResponse()` is the `RES` object produced by `buildResponse`.
 
 **Mode B — bypass**
 
@@ -235,7 +235,7 @@ The pipeline resolves the protocol automatically, extracts caller/body/headers, 
 
 - **Register specific protocols before broad ones** — protocol selection is first-match on `requestType().isInstance(rawRequest)`. If you register a generic base-class protocol alongside a specific subclass protocol, always add the subclass first.
 - **Keep `getCaller` fast** — it runs on every request before any business logic. Avoid remote calls or heavy parsing inside it; extract only what the `ICaller` fields need. JWT parsing is fine if it is local; remote token introspection should be cached.
-- **Null-safe `Accept` / `Content-Type`** — the framework's serialize stage is a no-op when `getAccept` returns `null`, and the deserialize stage is skipped when `getRawBody` returns `null`. Return `null` (not an empty string) for absent headers so pipeline guard conditions work correctly.
+- **Null-safe `Accept` / `Content-Type`** — a `null` from `getAccept` negotiates the default serializer, and the deserialize stage is skipped when `getRawBody` returns `null`. Return `null` (not an empty string) for absent headers so pipeline guard conditions work correctly.
 - **`buildResponse` owns the response lifecycle** — for Servlet-based implementations, write the body and set headers on the `HttpServletResponse` side-channel before returning. For framework-internal callers (Mode B), `buildResponse` is never called, so no defensive null-guard is needed there.
 - **Test with `FakeHttpProtocol`** — `garganttua-api-core`'s `ProtocolIntegrationTest` (package `com.garganttua.api.core.integ.protocol`) ships an exemplary `FakeHttpProtocol` whose `buildResponse` captures payloads for assertion. Copy this pattern for unit tests of custom protocol implementations.
 - **One protocol per transport type** — do not combine Servlet and Javalin `Context` logic in a single `IProtocol`. Keep them in separate classes and register both; the discriminator handles routing transparently.

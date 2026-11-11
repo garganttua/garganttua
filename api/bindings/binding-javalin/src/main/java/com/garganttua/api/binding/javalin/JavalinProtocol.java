@@ -11,6 +11,7 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.caller.ICaller;
 import com.garganttua.api.commons.protocol.IProtocol;
 import com.garganttua.api.core.caller.Caller;
+import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.annotations.Reflected;
 
@@ -55,6 +56,8 @@ import io.javalin.http.Context;
  */
 @Reflected
 public class JavalinProtocol implements IProtocol<Context, Context> {
+
+	private static final Logger LOG = Logger.getLogger(JavalinProtocol.class);
 
 	/** Header carrying the tenant the caller acts within. */
 	public static final String TENANT_HEADER = "X-Tenant-Id";
@@ -169,8 +172,21 @@ public class JavalinProtocol implements IProtocol<Context, Context> {
 		return buildResponse(ctx, output, statusCode, null);
 	}
 
+	/**
+	 * Writes the pipeline's output as the response: the serialized {@code byte[]}, a {@code String}, or nothing.
+	 * Any other object reached the transport without being serialized — a pipeline defect, refused rather than
+	 * rendered with its {@code toString()} (a 200 whose body is {@code com.acme.Entity@1f2e3d}, naming classes
+	 * along the way): the response stage turns the refusal into a 500.
+	 *
+	 * @throws ApiException when the output is neither {@code byte[]}, {@code String} nor {@code null}
+	 */
 	@Override
 	public Context buildResponse(Context ctx, Object output, int statusCode, String contentType) throws ApiException {
+		if (output != null && !(output instanceof byte[]) && !(output instanceof String)) {
+			LOG.error("Refusing to write an unserialized {} as the body of {} {}: the pipeline did not serialize it",
+					output.getClass().getName(), ctx.method(), ctx.path());
+			throw new ApiException("The response was not serialized");
+		}
 		ctx.status(statusCode);
 		// Label the body with the negotiated media type — Javalin's result(byte[])
 		// otherwise defaults to text/plain, mislabelling a JSON (or XML, …) payload.
@@ -179,8 +195,8 @@ public class JavalinProtocol implements IProtocol<Context, Context> {
 		}
 		if (output instanceof byte[] bytes) {
 			ctx.result(bytes);
-		} else if (output != null) {
-			ctx.result(String.valueOf(output));
+		} else if (output instanceof String text) {
+			ctx.result(text);
 		}
 		// else: no body (e.g. a 204/empty pipeline output) — status only.
 		return ctx;
