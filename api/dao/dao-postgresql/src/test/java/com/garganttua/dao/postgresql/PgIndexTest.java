@@ -317,6 +317,64 @@ class PgIndexTest {
     }
 
     @Nested
+    @DisplayName("the tenant, which the framework adds to every read of a tenant caller")
+    class FrameworkTenantIndex {
+
+        private PgDao withEntityTenant(String entityTenant, EntityIndexRule... rules) {
+            PgDao dao = new PgDao(db, "claims", new PgSchemaRegistry(), SchemaMode.CREATE, PgIndexMode.STRICT);
+            dao.registerDomain(TestDomains.indexed(Claim.class, "tenantId", "uuid", entityTenant, List.of(rules)));
+            return dao;
+        }
+
+        private String plan(String sql) throws SQLException {
+            StringBuilder plan = new StringBuilder();
+            try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
+                s.execute("SET enable_seqscan = off");
+                try (ResultSet rs = s.executeQuery("EXPLAIN " + sql)) {
+                    while (rs.next()) {
+                        plan.append(rs.getString(1)).append('\n');
+                    }
+                }
+            }
+            return plan.toString();
+        }
+
+        @Test
+        @DisplayName("is indexed without being declared, and a read by tenant uses it")
+        void indexedImplicitly() throws SQLException {
+            withEntityTenant("tenantId");
+            List<String> definitions = indexDefinitions();
+            assertEquals(1, definitions.size(), definitions.toString());
+            assertTrue(definitions.get(0).startsWith("CREATE INDEX \"claims__gg_tenantId_system_standard_idx\" ON "),
+                    definitions.get(0));
+            assertTrue(definitions.get(0).endsWith("USING btree (\"tenantId\")"), definitions.get(0));
+            String plan = plan("SELECT * FROM claims WHERE \"tenantId\" = 't1'");
+            assertTrue(plan.contains("claims__gg_tenantId_system_standard_idx"), plan);
+        }
+
+        @Test
+        @DisplayName("declared by the entity already: one index, the declared one")
+        void declaredOnce() throws SQLException {
+            withEntityTenant("tenantId", EntityIndexRule.of(new ObjectAddress("tenantId"), false, UnicityScope.system));
+            assertEquals(1, indexDefinitions().size(), indexDefinitions().toString());
+        }
+
+        @Test
+        @DisplayName("a tenant that is the entity's own uuid needs none: the primary key is on it")
+        void tenantIsUuid() throws SQLException {
+            withEntityTenant("uuid");
+            assertTrue(indexDefinitions().isEmpty(), indexDefinitions().toString());
+        }
+
+        @Test
+        @DisplayName("an entity without tenant gets no index of its own")
+        void noTenant() throws SQLException {
+            withEntityTenant(null);
+            assertTrue(indexDefinitions().isEmpty(), indexDefinitions().toString());
+        }
+    }
+
+    @Nested
     @DisplayName("an existing index under the declared name")
     class Existing {
 

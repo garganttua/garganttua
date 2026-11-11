@@ -171,12 +171,15 @@ class DeclaredIndexEndToEndTest {
         }
 
         @Test
-        @DisplayName("nothing else is created — a declaration is not a licence to index the entity")
-        void onlyTheDeclaredIndexesAreCreated() {
+        @DisplayName("the declared indexes and the framework's own — uuid, tenant — and nothing else: a declaration "
+                + "is not a licence to index the entity")
+        void onlyTheDeclaredAndTheFrameworkIndexesAreCreated() {
             List<String> names = new ArrayList<>();
             collection.listIndexes().forEach(index -> names.add(index.getString("name")));
 
-            assertEquals(List.of("_id_", EMAIL_INDEX, NATIONAL_ID_INDEX), names);
+            // The declared ones, and those the framework itself queries by: the uuid, and the tenant.
+            assertEquals(List.of("_id_", EMAIL_INDEX, NATIONAL_ID_INDEX, "gg_uuid_system_standard_unique",
+                    "gg_tenantId_system_standard_idx"), names);
         }
     }
 

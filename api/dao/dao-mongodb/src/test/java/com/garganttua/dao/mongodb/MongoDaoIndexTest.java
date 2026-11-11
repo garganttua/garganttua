@@ -89,8 +89,13 @@ class MongoDaoIndexTest {
 		this.collection = this.database.getCollection("people");
 	}
 
-	@SuppressWarnings({ "unchecked", "rawtypes" })
 	private MongoDao register(MongoIndexMode mode, String tenantField, EntityIndexRule... rules) {
+		return register(mode, tenantField, null, null, rules);
+	}
+
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	private MongoDao register(MongoIndexMode mode, String tenantField, String entityUuid, String entityTenant,
+			EntityIndexRule... rules) {
 		IDtoDefinition<Object> dtoDefinition = mock(IDtoDefinition.class);
 		when(dtoDefinition.dtoClass()).thenReturn((IClass) IClass.getClass(PersonDto.class));
 		when(dtoDefinition.uuid()).thenReturn(new ObjectAddress("uuid"));
@@ -99,6 +104,8 @@ class MongoDaoIndexTest {
 
 		IEntityDefinition<Object> entityDefinition = mock(IEntityDefinition.class);
 		when(entityDefinition.indexes()).thenReturn(List.of(rules));
+		when(entityDefinition.uuid()).thenReturn(entityUuid == null ? null : new ObjectAddress(entityUuid));
+		when(entityDefinition.tenantId()).thenReturn(entityTenant == null ? null : new ObjectAddress(entityTenant));
 
 		IDomainDefinition domainDefinition = mock(IDomainDefinition.class);
 		when(domainDefinition.domainName()).thenReturn("people");
@@ -274,6 +281,99 @@ class MongoDaoIndexTest {
 							rule("email", true, UnicityScope.system, IndexKind.standard)));
 
 			assertTrue(thrown.getMessage().contains("mail_address"), thrown.getMessage());
+		}
+	}
+
+	@Nested
+	@DisplayName("The indexes the framework itself queries by — laid whatever the entity declares")
+	class FrameworkIndexes {
+
+		private String winningPlan(Document filter) {
+			return collection.find(filter).explain().toJson();
+		}
+
+		@Test
+		@DisplayName("the uuid is indexed, unique; the tenant too: a read by uuid and a tenant's read no longer scan")
+		void uuidAndTenant() {
+			register(MongoIndexMode.CREATE, "tenant_ref", "uuid", "tenantId");
+			for (int i = 0; i < 200; i++) {
+				collection.insertOne(new Document("_id", "u" + i).append("uuid", "u" + i)
+						.append("tenant_ref", "t" + (i % 4)));
+			}
+
+			Document uuidIndex = storedIndex("gg_uuid_system_standard_unique").orElseThrow();
+			assertEquals(List.of("uuid"), List.copyOf(((Document) uuidIndex.get("key")).keySet()));
+			assertTrue(uuidIndex.getBoolean("unique"));
+			assertTrue(uuidIndex.getBoolean("sparse"), "sparse, not partial: the planner uses it for {uuid: value}");
+			Document tenantIndex = storedIndex("gg_tenantId_system_standard_idx").orElseThrow();
+			assertEquals(List.of("tenant_ref"), List.copyOf(((Document) tenantIndex.get("key")).keySet()),
+					"on the DOCUMENT field the tenant filter uses");
+
+			String byUuid = winningPlan(new Document("uuid", "u7"));
+			assertTrue(byUuid.contains("IXSCAN") && !byUuid.contains("COLLSCAN"), byUuid);
+			String byTenant = winningPlan(new Document("tenant_ref", "t1"));
+			assertTrue(byTenant.contains("IXSCAN") && !byTenant.contains("COLLSCAN"), byTenant);
+		}
+
+		@Test
+		@DisplayName("the uuid cannot be stored twice: the store refuses the second document")
+		void uuidUnique() {
+			register(MongoIndexMode.CREATE, null, "uuid", null);
+			collection.insertOne(new Document("_id", "a").append("uuid", "same"));
+
+			assertThrows(com.mongodb.MongoWriteException.class,
+					() -> collection.insertOne(new Document("_id", "b").append("uuid", "same")));
+		}
+
+		@Test
+		@DisplayName("an index the entity declares on the same key is not asked for twice")
+		void declaredOnce() {
+			register(MongoIndexMode.CREATE, null, "uuid", null,
+					rule("uuid", true, UnicityScope.system, IndexKind.standard));
+
+			List<Document> stored = new ArrayList<>();
+			collection.listIndexes().into(stored);
+			assertEquals(1, stored.stream().filter(index -> ((Document) index.get("key")).containsKey("uuid")).count());
+		}
+
+		@Test
+		@DisplayName("an index the deployment laid itself on the uuid is kept, and not doubled")
+		void deploymentIndexKept() {
+			collection.createIndex(new Document("uuid", 1), new com.mongodb.client.model.IndexOptions().name("by_uuid"));
+
+			register(MongoIndexMode.CREATE, null, "uuid", null);
+
+			assertTrue(storedIndex("gg_uuid_system_standard_unique").isEmpty());
+			assertTrue(storedIndex("by_uuid").isPresent());
+		}
+
+		@Test
+		@DisplayName("a tenant registry, whose tenant IS its uuid, gets the uuid index only")
+		void tenantIsUuid() {
+			register(MongoIndexMode.CREATE, "uuid", "uuid", "uuid");
+
+			assertTrue(storedIndex("gg_uuid_system_standard_unique").isPresent());
+			assertTrue(storedIndex("gg_uuid_system_standard_idx").isEmpty());
+		}
+
+		@Test
+		@DisplayName("duplicate uuids already stored: CREATE starts without the index, STRICT stops")
+		void duplicates() {
+			collection.insertOne(new Document("_id", "a").append("uuid", "dup"));
+			collection.insertOne(new Document("_id", "b").append("uuid", "dup"));
+
+			register(MongoIndexMode.CREATE, null, "uuid", null);
+			assertTrue(storedIndex("gg_uuid_system_standard_unique").isEmpty());
+
+			assertThrows(IllegalStateException.class, () -> register(MongoIndexMode.STRICT, null, "uuid", null));
+		}
+
+		@Test
+		@DisplayName("NONE lays nothing, the framework's indexes included")
+		void none() {
+			register(MongoIndexMode.NONE, "tenant_ref", "uuid", "tenantId");
+
+			assertFalse(database.listCollectionNames().into(new ArrayList<>()).contains("people"));
 		}
 	}
 }

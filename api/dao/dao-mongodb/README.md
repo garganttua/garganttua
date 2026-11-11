@@ -211,7 +211,18 @@ which restricts the uniqueness to documents where the field is present and not n
 
 **A failure does not keep the application down.** A collection that already holds duplicates refuses a unique index — and that is precisely the database this feature exists for. In `create` mode the failure is a `WARN` naming the domain, the field, and a ready-to-paste aggregation listing the offending documents; the application starts. Only `strict` refuses to start. (The PostgreSQL DAO does let its schema failure out, because a missing *table* means no query runs at all; a missing index means every query still runs, just without a constraint the database never held.)
 
-**A domain that declares no index costs nothing** — not one command is sent, so an application that never asked for an index starts exactly as it did before this existed.
+**Two indexes come without being declared**, because the framework itself reads by them:
+
+| Field | Index | Why |
+|-------|-------|-----|
+| the entity uuid | `gg_uuid_system_standard_unique`, unique and **sparse** | every read by uuid — get, update, delete, and the reference lookups of other domains — filters on the uuid field, not on `_id` (where the DAO also writes it). Without it, each one scans the collection |
+| the entity tenant | `gg_<tenant>_system_standard_idx` | the framework adds the tenant to every read of a tenant caller |
+
+They follow the declared indexes' rules — same mode, purely additive — with two differences. An index that already covers the same keys, whoever made it, is enough: nothing is created and nothing is reported. And the uuid index is **sparse**, not partial: MongoDB's planner does not use a partial index for a plain `{uuid: value}` equality (it cannot prove the value is not null), and a sparse one it does — `explain` shows an `IXSCAN`, which the tests assert. A tenant that is the uuid itself (a tenant entity) gets only the uuid index. A collection that already holds two documents with the same uuid refuses the index: `create` warns and starts, `strict` refuses to start, as for a declared one.
+
+> The declared unique indexes are partial (above), so an equality read on such a field — an email, a login — is not served by its index for the same reason; this DAO does not change that, since a sparse unique index would refuse a second document holding an explicit `null`, which the framework check accepts.
+
+**A domain that declares no index costs only these two** — an entity without tenant, only the uuid one.
 
 **No lock between instances**, deliberately. PostgreSQL needs one because `CREATE TABLE IF NOT EXISTS` is not atomic against a concurrent create and can fail on its own catalog. MongoDB's `createIndex` has no such flaw: the server serialises index builds per collection and an identical request is a no-op, so two instances starting together both end up with the one index.
 

@@ -129,19 +129,25 @@ public class MongoDao implements IDao {
 	/**
 	 * Asks the store for the indexes the ENTITY declares, translated to document field names — an
 	 * index laid on the entity's own field name would be one the queries never use, since every
-	 * query this DAO emits speaks in document fields.
+	 * query this DAO emits speaks in document fields — and for the two the framework itself queries
+	 * by on every request ({@link MongoIndexSpec#implicit}): the uuid, and the tenant.
 	 */
 	@SuppressWarnings("rawtypes")
 	private void ensureIndexes(IDomainDefinition domainDefinition, IDtoDefinition<?> dtoDefinition) {
 		IEntityDefinition<?> entityDefinition = domainDefinition.entityDefinition();
-		if (entityDefinition == null || entityDefinition.indexes().isEmpty()) {
+		if (entityDefinition == null) {
 			return;
 		}
 		String tenantField = dtoDefinition.tenantId() == null ? null : dtoDefinition.tenantId().toString();
-		List<MongoIndexSpec> specs = MongoIndexSpec.plan(entityDefinition.indexes(),
+		List<MongoIndexSpec> declared = MongoIndexSpec.plan(entityDefinition.indexes(),
 				this::translateToDocumentPath, tenantField);
+		// The tenant field, when the entity has one: the framework adds it to every read of a tenant caller.
+		List<MongoIndexSpec> implicit = MongoIndexSpec.implicit(entityDefinition.uuid(), entityDefinition.tenantId(),
+				this::translateToDocumentPath, declared);
 		try {
-			this.indexes.ensure(getCollection(), String.valueOf(domainDefinition.domainName()), specs);
+			String domainName = String.valueOf(domainDefinition.domainName());
+			this.indexes.ensure(getCollection(), domainName, declared);
+			this.indexes.ensureImplicit(getCollection(), domainName, implicit);
 		} catch (ApiException e) {
 			// registerDomain cannot throw a checked exception; only STRICT mode ever gets here.
 			throw new IllegalStateException(e.getMessage(), e);

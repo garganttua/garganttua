@@ -60,4 +60,25 @@ public final class TestDomains {
         when(domain.entityDefinition()).thenReturn(entity);
         return domain;
     }
+
+    /**
+     * As {@link #indexed(Class, String, List)}, the entity also naming its uuid and tenant fields — what the
+     * framework indexes on its own.
+     *
+     * @param dtoClass     the DTO
+     * @param tenantField  the DTO field holding the tenant identifier, or {@code null}
+     * @param entityUuid   the entity's uuid field
+     * @param entityTenant the entity's tenant field, or {@code null}
+     * @param indexes      the indexes the entity declares
+     * @return the definition
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public static IDomainDefinition indexed(Class<?> dtoClass, String tenantField, String entityUuid,
+            String entityTenant, List<EntityIndexRule> indexes) {
+        IDomainDefinition domain = indexed(dtoClass, tenantField, indexes);
+        IEntityDefinition entity = domain.entityDefinition();
+        when(entity.uuid()).thenReturn(new ObjectAddress(entityUuid));
+        when(entity.tenantId()).thenReturn(entityTenant == null ? null : new ObjectAddress(entityTenant));
+        return domain;
+    }
 }

@@ -8,6 +8,7 @@ import java.util.function.UnaryOperator;
 
 import org.bson.Document;
 
+import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.api.commons.entity.EntityIndexRule;
 import com.garganttua.api.commons.entity.annotations.IndexKind;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
@@ -29,11 +30,15 @@ import com.mongodb.client.model.IndexOptions;
  *                  tenant-scoped index, and the declared field is always <em>last</em>
  * @param kind      what the server must build, which decides the marker on the last key
  * @param unique    whether the server must refuse a duplicate
+ * @param sparse    for a unique index: skip documents without the field rather than filter on a partial
+ *                  expression — the one shape of uniqueness the query planner uses for an equality read (a
+ *                  partial index is used only when the query provably stays inside its filter, which
+ *                  {@code {field: value}} does not show)
  */
 // LooseCoupling: org.bson.Document (a Map subtype) is the MongoDB driver's own index-descriptor
 // type, surfaced deliberately rather than behind a Map interface, exactly as MongoDao does.
 @SuppressWarnings("PMD.LooseCoupling")
-record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boolean unique) {
+record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boolean unique, boolean sparse) {
 
     /**
      * Every BSON type but {@code null} (and the deprecated {@code undefined}), which is how
@@ -57,6 +62,11 @@ record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boole
     /** The two synthetic keys the server substitutes for a {@code "text"} key. */
     private static final String FTS = "_fts";
     private static final String FTSX = "_ftsx";
+
+    /** An index whose uniqueness, if any, is held by a partial filter — every declared index. */
+    MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boolean unique) {
+        this(name, keyFields, kind, unique, false);
+    }
 
     /** Defensive copy of the key order, so the spec cannot be mutated through the list it was given. */
     MongoIndexSpec {
@@ -83,6 +93,43 @@ record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boole
                 specs.add(of(rule, toDocumentField, tenantField));
             }
         }
+        return specs;
+    }
+
+    /**
+     * The indexes the framework itself needs, whatever the entity declares: every read it emits addresses
+     * an entity by its uuid, and every read of a tenant caller filters on the tenant. Without them, each
+     * of those reads scans the whole collection — the {@code _id} index, which also holds the uuid, is
+     * used by none of them, since they all filter on the uuid FIELD.
+     *
+     * <ul>
+     * <li>the uuid: unique, system-wide — {@code gg_<uuid>_system_standard_unique};</li>
+     * <li>the tenant, when the entity has a tenant field: standard — {@code gg_<tenant>_system_standard_idx}.</li>
+     * </ul>
+     *
+     * <p>
+     * One the entity already declares on the same key is not asked for twice.
+     * </p>
+     *
+     * @param uuid            the entity's uuid field, or null
+     * @param tenant          the entity's tenant field, or null
+     * @param toDocumentField translates an entity field path to its document field path
+     * @param declared        the declared indexes, already translated
+     * @return the implicit indexes not already declared
+     */
+    static List<MongoIndexSpec> implicit(ObjectAddress uuid, ObjectAddress tenant, UnaryOperator<String> toDocumentField,
+            List<MongoIndexSpec> declared) {
+        List<MongoIndexSpec> specs = new ArrayList<>();
+        if (uuid != null) {
+            // Sparse, not partial: every read of the framework is {uuid: value}, and the planner uses a partial
+            // index only for a query it can prove stays inside the filter — this one it cannot.
+            MongoIndexSpec byUuid = of(EntityIndexRule.of(uuid, true, UnicityScope.system), toDocumentField, null);
+            specs.add(new MongoIndexSpec(byUuid.name(), byUuid.keyFields(), byUuid.kind(), true, true));
+        }
+        if (tenant != null && !tenant.equals(uuid)) {
+            specs.add(of(EntityIndexRule.of(tenant, false, UnicityScope.system), toDocumentField, null));
+        }
+        specs.removeIf(spec -> declared.stream().anyMatch(d -> d.keyFields().equals(spec.keyFields())));
         return specs;
     }
 
@@ -164,7 +211,7 @@ record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boole
      * </p>
      */
     Optional<Document> partialFilter() {
-        return this.unique
+        return this.unique && !this.sparse
                 ? Optional.of(new Document(field(), new Document("$type", PRESENT_AND_NOT_NULL)))
                 : Optional.empty();
     }
@@ -175,6 +222,9 @@ record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boole
         if (this.unique) {
             options.unique(true);
             partialFilter().ifPresent(options::partialFilterExpression);
+        }
+        if (this.sparse) {
+            options.sparse(true);
         }
         return options;
     }
@@ -202,7 +252,8 @@ record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boole
      *         difference the DAO reports and leaves alone
      */
     boolean matches(Document stored) {
-        if (!coversSameKeysAs(stored) || this.unique != Boolean.TRUE.equals(stored.getBoolean("unique"))) {
+        if (!coversSameKeysAs(stored) || this.unique != Boolean.TRUE.equals(stored.getBoolean("unique"))
+                || this.sparse != Boolean.TRUE.equals(stored.getBoolean("sparse"))) {
             return false;
         }
         Object storedFilter = stored.get("partialFilterExpression");
@@ -211,7 +262,7 @@ record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boole
 
     /** {@return a one-line description of this index, for a log line} */
     String describe() {
-        return "keys=" + keys().toJson() + ", unique=" + this.unique
+        return "keys=" + keys().toJson() + ", unique=" + this.unique + (this.sparse ? ", sparse" : "")
                 + partialFilter().map(f -> ", partial=" + f.toJson()).orElse("");
     }
 
@@ -225,6 +276,7 @@ record MongoIndexSpec(String name, List<String> keyFields, IndexKind kind, boole
         Object filter = stored.get("partialFilterExpression");
         return "keys=" + String.valueOf(stored.get("key"))
                 + ", unique=" + Boolean.TRUE.equals(stored.getBoolean("unique"))
+                + (Boolean.TRUE.equals(stored.getBoolean("sparse")) ? ", sparse" : "")
                 + (filter == null ? "" : ", partial=" + filter);
     }
 }

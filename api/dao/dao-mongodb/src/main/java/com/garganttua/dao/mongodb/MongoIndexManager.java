@@ -79,8 +79,8 @@ public final class MongoIndexManager {
      * Makes the collection carry the declared indexes.
      *
      * <p>
-     * A domain that declares none costs nothing: not one command is sent, so an application that
-     * never asked for an index starts exactly as it did before this existed.
+     * Declared indexes only — those the framework itself needs go through {@link #ensureImplicit}. An
+     * empty list costs nothing: not one command is sent.
      * </p>
      *
      * @param collection the domain's collection
@@ -99,7 +99,33 @@ public final class MongoIndexManager {
             return;
         }
         for (MongoIndexSpec spec : specs) {
-            ensureOne(collection, domainName, spec, stored.get());
+            ensureOne(collection, domainName, spec, stored.get(), false);
+        }
+    }
+
+    /**
+     * Makes the collection carry the indexes the framework itself queries by ({@link MongoIndexSpec#implicit}),
+     * under the same policy as the declared ones — except that one already covered, by any index on the same
+     * keys, is quietly accepted: that is a deployment that indexed them itself, and nothing to report at every
+     * start.
+     *
+     * @param collection the domain's collection
+     * @param domainName the domain
+     * @param specs      the implicit indexes
+     * @throws ApiException in {@link MongoIndexMode#STRICT} only, when an index cannot be created
+     */
+    public void ensureImplicit(MongoCollection<Document> collection, String domainName, List<MongoIndexSpec> specs)
+            throws ApiException {
+        Objects.requireNonNull(collection, "collection");
+        if (this.mode == MongoIndexMode.NONE || specs == null || specs.isEmpty()) {
+            return;
+        }
+        Optional<List<Document>> stored = read(collection, domainName);
+        if (stored.isEmpty()) {
+            return;
+        }
+        for (MongoIndexSpec spec : specs) {
+            ensureOne(collection, domainName, spec, stored.get(), true);
         }
     }
 
@@ -127,7 +153,7 @@ public final class MongoIndexManager {
     }
 
     private void ensureOne(MongoCollection<Document> collection, String domainName, MongoIndexSpec spec,
-            List<Document> stored) throws ApiException {
+            List<Document> stored, boolean implicit) throws ApiException {
         Optional<Document> sameName = stored.stream()
                 .filter(index -> spec.name().equals(index.getString("name"))).findFirst();
         if (sameName.isPresent()) {
@@ -135,6 +161,11 @@ public final class MongoIndexManager {
             return;
         }
         Optional<Document> sameKeys = stored.stream().filter(spec::coversSameKeysAs).findFirst();
+        if (sameKeys.isPresent() && implicit) {
+            log.debug("Domain '{}': the framework's index on '{}' is already covered by index '{}'", domainName,
+                    spec.field(), sameKeys.get().getString("name"));
+            return;
+        }
         if (sameKeys.isPresent()) {
             log.warn("Domain '{}': index '{}' ({}) is already covered by index '{}' ({}), left untouched — "
                     + "MongoDB holds one index per key shape. Drop the existing one deliberately if the "

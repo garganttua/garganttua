@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,12 +19,15 @@ import com.garganttua.api.commons.definition.DtoComposition;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
 import com.garganttua.api.commons.definition.IEntityDefinition;
+import com.garganttua.api.commons.entity.EntityIndexRule;
+import com.garganttua.api.commons.entity.annotations.UnicityScope;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.service.Page;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.annotations.Reflected;
 import com.garganttua.dao.postgresql.schema.PgIndexMode;
 import com.garganttua.dao.postgresql.schema.PgSchemaModel;
@@ -186,19 +190,29 @@ public class PgDao implements IDao {
     }
 
     /**
-     * The indexes the ENTITY declares, resolved against this table. Entity field names are translated
-     * to DTO fields first: every query this DAO emits speaks in DTO fields, so an index on anything
-     * else would never be used.
+     * The indexes the ENTITY declares, resolved against this table — and the tenant's, which the framework
+     * adds to every read of a tenant caller ({@code gg_<tenant>_system_standard_idx}); the uuid needs none,
+     * the primary key is on it. Entity field names are translated to DTO fields first: every query this DAO
+     * emits speaks in DTO fields, so an index on anything else would never be used.
      */
     @SuppressWarnings("rawtypes")
     private static List<PgIndexPlanner.Planned> planIndexes(IDomainDefinition domainDefinition,
             IDtoDefinition<?> dto, PgTable table) {
         IEntityDefinition<?> entity = domainDefinition.entityDefinition();
-        if (entity == null || entity.indexes().isEmpty()) {
+        if (entity == null) {
+            return List.of();
+        }
+        List<EntityIndexRule> rules = new ArrayList<>(entity.indexes());
+        ObjectAddress tenant = entity.tenantId();
+        if (tenant != null && !tenant.equals(entity.uuid())
+                && rules.stream().noneMatch(rule -> rule != null && rule.field().equals(tenant))) {
+            rules.add(EntityIndexRule.of(tenant, false, UnicityScope.system));
+        }
+        if (rules.isEmpty()) {
             return List.of();
         }
         IClass<?> dtoClass = dto.dtoClass();
-        return PgIndexPlanner.plan(table, entity.indexes(), path -> {
+        return PgIndexPlanner.plan(table, rules, path -> {
             int dot = path.indexOf('.');
             return dot < 0 ? PgQueryBuilder.translateToDtoField(dtoClass, path)
                     : PgQueryBuilder.translateToDtoField(dtoClass, path.substring(0, dot)) + path.substring(dot);
