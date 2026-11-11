@@ -75,7 +75,7 @@ final class DomainInterfaceSupport {
             try {
                 IEventPublisher publisher = supplier.supply()
                         .orElseThrow(() -> new ApiException("Event publisher supplier returned empty Optional"));
-                observableRegistry.addObserver(new EventPublisherObserver(publisher));
+                observableRegistry.addObserver(new EventPublisherObserver(publisher, domainName));
             } catch (Exception e) {
                 throw new ApiException("Failed to initialize event publisher for domain " + domainName, e);
             }

@@ -174,6 +174,9 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
     private static final UUID REQUEST_EXECUTION = UUID.fromString("00000000-0000-7000-8000-000000000001");
 
     private OperationRequest lastRequest;
+    /** What a publisher declared on the users domain received. */
+    private final List<com.garganttua.api.commons.event.IEvent> usersEvents =
+            java.util.Collections.synchronizedList(new java.util.ArrayList<>());
     private CountingDao userDao;
     private CountingDao tokenDao;
     private TokenStrategy strategy;
@@ -255,6 +258,7 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
                     .authentication(passwordAuth)
                 .authorization((IDomainBuilder) tokenBuilder)
                     .lifeTime(60, java.util.concurrent.TimeUnit.MINUTES);
+        userBuilder.events(usersEvents::add);
         userBuilder.up();
 
         api = buildAndStart(builder);
@@ -453,6 +457,34 @@ class SelfVerifyingTokenCostTest extends AbstractCrudScriptTest {
     class DirectAuthenticateNestedLookup extends Scenario {
         @Override VerificationPath authenticate() { return VerificationPath.DIRECT; }
         @Override VerificationPath lookup() { return VerificationPath.PIPELINE; }
+    }
+
+    @Test
+    @DisplayName("a publisher declared on a domain receives that domain's operations only — not the ones nested in them")
+    void publisherSeesItsOwnDomainOnly() throws Exception {
+        build(VerificationPath.PIPELINE, VerificationPath.PIPELINE);
+        SessionToken token = mintToken();
+        usersEvents.clear();
+        OperationRequest request = superTenantRequest(OperationDefinition.readAll("users",
+                IClass.getClass(User.class), false, null, Access.authenticated));
+        request.arg(IOperationRequest.AUTHORIZATION, token);
+
+        // A global observer — as the events api connector is in production: every domain now emits, the nested
+        // ones too. Through Domain.invoke, the users operation's scope is open while the token verification nests
+        // the token domain's authenticate and readAll operations in it.
+        com.garganttua.core.observability.IObserver<com.garganttua.core.observability.ObservableEvent> global = e -> { };
+        com.garganttua.core.observability.GlobalObservers.addObserver(global);
+        com.garganttua.api.commons.service.IOperationResponse response;
+        try {
+            response = usersCtx.invoke(request);
+        } finally {
+            com.garganttua.core.observability.GlobalObservers.removeObserver(global);
+        }
+
+        assertEquals(com.garganttua.api.commons.service.OperationResponseCode.OK, response.getResponseCode(),
+                () -> String.valueOf(response.getResponse()));
+        assertEquals(List.of("users"), usersEvents.stream().map(e -> e.getOperation().domainName()).toList(),
+                "one event, the users read — not the token domain's nested authenticate and readAll");
     }
 
     @Test

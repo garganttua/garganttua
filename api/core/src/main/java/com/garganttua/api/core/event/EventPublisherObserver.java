@@ -18,13 +18,38 @@ import com.garganttua.core.observability.ObservableEvent;
  * the {@code IEvent} is the cargo. Observable events without an {@code IEvent}
  * payload (Start markers, workflow {@code stage:*}/{@code script:*} timing) are
  * ignored.
+ * <p>
+ * Only the operations of ITS domain are forwarded — source
+ * {@code api:operation:<domain>:…}. An operation of another domain nested in one of
+ * this domain's (a token verification, a use case calling another domain) does not
+ * reach this registry today, because the workflow under way holds its own session;
+ * the filter makes that a guarantee rather than a consequence of the engines'
+ * session layout.
  */
 public final class EventPublisherObserver implements IObserver<ObservableEvent> {
 
 	private final IEventPublisher publisher;
+	/** {@code api:operation:<domain>:} — the sources of this domain's operations; empty forwards every domain. */
+	private final String sourcePrefix;
 
+	/**
+	 * A publisher of every business event its registry receives, whatever the domain.
+	 *
+	 * @param publisher the publisher
+	 */
 	public EventPublisherObserver(IEventPublisher publisher) {
+		this(publisher, null);
+	}
+
+	/**
+	 * A publisher of one domain's business events.
+	 *
+	 * @param publisher  the publisher
+	 * @param domainName the domain whose operations it receives; null for every domain
+	 */
+	public EventPublisherObserver(IEventPublisher publisher, String domainName) {
 		this.publisher = Objects.requireNonNull(publisher, "Event publisher cannot be null");
+		this.sourcePrefix = domainName == null ? "" : "api:operation:" + domainName + ":";
 	}
 
 	/** The wrapped publisher — exposed for identity assertions/diagnostics. */
@@ -34,7 +59,8 @@ public final class EventPublisherObserver implements IObserver<ObservableEvent> 
 
 	@Override
 	public void onEvent(ObservableEvent event) {
-		if (event != null && event.payload() instanceof IEvent businessEvent) {
+		if (event != null && event.payload() instanceof IEvent businessEvent
+				&& (this.sourcePrefix.isEmpty() || (event.source() != null && event.source().startsWith(this.sourcePrefix)))) {
 			this.publisher.publishEvent(businessEvent);
 		}
 	}
