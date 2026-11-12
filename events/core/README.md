@@ -17,12 +17,12 @@ builders (`ContextBuilder`, `RouteBuilder`, …) and JSON context I/O (`JsonCont
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-core</artifactId>
-    <version>3.0.0-ALPHA33</version>
+    <version>3.0.0-ALPHA34</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA33
+3.0.0-ALPHA34
 
 ### Dependencies
  - `com.garganttua:garganttua-events-api`
@@ -41,6 +41,7 @@ builders (`ContextBuilder`, `RouteBuilder`, …) and JSON context I/O (`JsonCont
  - `org.junit.jupiter:junit-jupiter-engine:${junit.version}:test`
  - `com.garganttua.core:garganttua-runtime-reflection:${garganttua.core.version}:test`
  - `com.garganttua.core:garganttua-configuration:test`
+ - `com.jayway.jsonpath:json-path`
  - `com.garganttua:garganttua-events-expressions:${project.version}:test`
  - `com.garganttua.core:garganttua-reflections:${garganttua.core.version}:test`
 

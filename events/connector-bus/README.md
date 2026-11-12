@@ -14,12 +14,12 @@ broker is required.
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-connector-bus</artifactId>
-    <version>3.0.0-ALPHA33</version>
+    <version>3.0.0-ALPHA34</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA33
+3.0.0-ALPHA34
 
 ### Dependencies
  - `com.garganttua:garganttua-events-api`
@@ -28,6 +28,9 @@ broker is required.
  - `com.leansoft:bigqueue`
  - `org.projectlombok:lombok`
  - `org.slf4j:slf4j-api`
+ - `org.slf4j:log4j-over-slf4j:${slf4j.version}`
+ - `org.junit.jupiter:junit-jupiter-api:test`
+ - `org.junit.jupiter:junit-jupiter-engine:${junit.version}:test`
 
 <!-- AUTO-GENERATED-END -->
 
