@@ -276,21 +276,27 @@ public class JavalinInterface implements IInterface {
 		// The grants of one entity, present when the domain declares .shares(field).
 		record(mounted, route(server, HttpVerb.PUT, one + "/shares", domain, configured, BusinessOperation.share, true));
 
-		// Authentication entry point (anonymous): the credentials travel in the body as
-		// an AuthenticationRequest. Registered only when the domain has an authenticator
-		// (its authenticate operation is then present in the configured operations).
-		record(mounted, route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
-				BusinessOperation.authenticate, false));
-		// Refresh entry point (anonymous), beside it on the same authenticator: the authorization to trade
-		// travels in the Authorization header, as on every request; the new one comes back in
-		// X-Authorization. Registered only when the authenticator's authorization is refreshable.
-		record(mounted, route(server, HttpVerb.POST, base + "/refresh", domain, configured,
-				BusinessOperation.refreshAuthorization, false));
+		mountSecurityRoutes(server, base, domain, configured, mounted);
 
 		// Name what is ACTUALLY mounted, not what was declared: with a mount path in play, the two
 		// differ, and this line is how an operator checks which of the two is online.
 		LOGGER.info("Domain '{}' mounted on {}: {}", domain.getDomainName(),
 				this.mountPath.isEmpty() ? "/" : this.mountPath, mounted);
+	}
+
+	/**
+	 * The authenticator's two anonymous entry points, each mounted only when the domain exposes its operation:
+	 * {@code /authenticate} — the credentials travel in the body as an AuthenticationRequest — and
+	 * {@code /refresh} beside it — the authorization to trade in the Authorization header, as on every request,
+	 * present when the authenticator's authorization is refreshable. Both hand the token back in
+	 * X-Authorization.
+	 */
+	private void mountSecurityRoutes(Javalin server, String base, IDomain<?> domain,
+			List<OperationDefinition> configured, List<String> mounted) {
+		record(mounted, route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
+				BusinessOperation.authenticate, false));
+		record(mounted, route(server, HttpVerb.POST, base + "/refresh", domain, configured,
+				BusinessOperation.refreshAuthorization, false));
 	}
 
 	/**
