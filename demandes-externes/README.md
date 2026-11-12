@@ -225,3 +225,23 @@ Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraîtr
 | Un `IProtocol` (le vôtre, s'il y en a un) appelé par l'étape de réponse | recevait l'objet brut quand `Accept` manquait | reçoit toujours des octets (ou `null`) |
 | `JavalinProtocol.buildResponse` avec un objet ni `byte[]` ni `String` | son `toString()` | refusé : `ApiException`, 500 |
 | Expression `or` | seulement sur un ensemble de conditions | aussi `or(a, b)` sur deux valeurs, comme `and(a, b)` |
+
+## Fiches répondues — prochaine ALPHA
+
+Traitée le 2026-11-12 sur `main`, **à paraître dans la version qui suit `3.0.0-ALPHA34`**.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [le-rafraichissement-du-jeton-ignore-la-revocation-et-letat-du-compte](le-rafraichissement-du-jeton-ignore-la-revocation-et-letat-du-compte.md) | palliad | Les six constats confirmés, les points 1 à 5 corrigés. Le rafraîchissement lit l'enregistrement stocké (absent, révoqué : 401). Il contrôle l'état du compte et recalcule les autorités par une méthode `.refresh(...)` déclarée sur la stratégie. Il fait tourner l'autorisation (l'ancienne est marquée échangée), et une réutilisation révoque toute la lignée. Il émet par l'émetteur déclaré. En plus : la fenêtre de rafraîchissement est fixée à la connexion. Jeton de rafraîchissement distinct : non fait, proposé en fiche à part. |
+
+## Changements de comportement à la montée après `3.0.0-ALPHA34`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Rafraîchissement d'une autorisation stockable révoquée ou supprimée dans le stockage | réussissait | 401 |
+| Rafraîchissement d'un compte désactivé, verrouillé ou expiré | réussissait | 401 |
+| Autorisation rafraîchie | restait rafraîchissable | marquée échangée ; la présenter de nouveau révoque toutes les autorisations vivantes du propriétaire |
+| Fin de la fenêtre de rafraîchissement d'une autorisation rafraîchie | maintenant + `refreshLifeTime` (glissante) | celle de l'autorisation remplacée (fixée à la connexion) |
+| Émission au rafraîchissement | `createAuthorizationEntity2`, même avec un émetteur déclaré | `issueAuthorization` : l'émetteur déclaré, comme à la connexion |
+| Autorités du jeton rafraîchi | recopiées | celles de la méthode `.refresh(...)` de la stratégie quand elle est déclarée ; recopiées sinon |
+| Réutilisation d'une autorisation à la connexion | pouvait rendre une autorisation déjà échangée | l'exclut |

@@ -21,6 +21,16 @@ public record AuthenticationDefinition(
             IMethodBinder<?> authenticateMethodBinder,
             List<Pair<IClass<? extends Annotation>, IClass<?>>> entityFieldAnnotations,
             IMethodBinder<?> applySecurityOnEntityMethodBinder,
-            Collection<IUseCaseBuilder<?, ?, ?>> useCasesMethodBinders) implements IAuthenticationDefinition {
+            Collection<IUseCaseBuilder<?, ?, ?>> useCasesMethodBinders,
+            IMethodBinder<?> refreshMethodBinder) implements IAuthenticationDefinition {
 
+    /** A strategy that declares no refresh method. */
+    public AuthenticationDefinition(ISupplierBuilder<?, ? extends ISupplier<?>> supplier,
+            IMethodBinder<?> authenticateMethodBinder,
+            List<Pair<IClass<? extends Annotation>, IClass<?>>> entityFieldAnnotations,
+            IMethodBinder<?> applySecurityOnEntityMethodBinder,
+            Collection<IUseCaseBuilder<?, ?, ?>> useCasesMethodBinders) {
+        this(supplier, authenticateMethodBinder, entityFieldAnnotations, applySecurityOnEntityMethodBinder,
+                useCasesMethodBinders, null);
+    }
 }

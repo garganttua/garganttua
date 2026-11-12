@@ -17,4 +17,14 @@ public interface IAuthenticationDefinition {
         return null;
     }
 
+    /**
+     * The method that re-derives the authentication of an already known principal when its authorization is
+     * refreshed, declared via {@code .authentication(...).refresh(method)}: the login's dual without the
+     * credentials, so that a refreshed token carries the authorities of the moment rather than those of the
+     * token it replaces. {@code null} when not declared.
+     */
+    default IMethodBinder<?> refreshMethodBinder() {
+        return null;
+    }
+
 }

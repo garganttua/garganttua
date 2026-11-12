@@ -280,24 +280,7 @@ public class SecurityAuthenticationExpressions {
 			if (binder == null) {
 				return null;
 			}
-
-			Optional<? extends IMethodReturn<?>> result;
-			if (binder instanceof IContextualMethodBinder<?, ?> contextualBinder) {
-				IRuntimeContext<?, ?> runtimeCtx = RuntimeExpressionContext.get();
-				result = ((IContextualMethodBinder<?, Object>) contextualBinder).execute(runtimeCtx);
-			} else {
-				result = binder.execute();
-			}
-
-			// singleOrThrow, not single(): the binder CAPTURES what the strategy threw instead of
-			// throwing it, so the catch below could only ever see a supply failure (a missing AOT
-			// descriptor, an uninjected dependency) — never the strategy's own exception, which is
-			// half of what the reported defect was about.
-			Object returned = singleOrThrow(result, "Authentication strategy");
-			if (returned instanceof IAuthentication auth) {
-				if (auth.authenticated()) return auth;
-			}
-			return null;
+			return runStrategy(binder);
 		} catch (RuntimeException e) {
 			// The cascade is the reason this catch exists: several .authentication(...) strategies may
 			// be declared on one authenticator, and one failing must not stop the next from being
@@ -312,6 +295,28 @@ public class SecurityAuthenticationExpressions {
 	}
 
 	/** {@return a human-readable name for an authentication strategy, for diagnostics} */
+	/**
+	 * Runs one strategy method — {@code authenticate}, or {@code refresh} — in the current runtime context.
+	 *
+	 * @return the authentication it produced when authenticated, else {@code null}
+	 * @throws RuntimeException what the strategy threw, or a failure to supply its parameters
+	 */
+	@SuppressWarnings("unchecked")
+	static IAuthentication runStrategy(IMethodBinder<?> binder) {
+		Optional<? extends IMethodReturn<?>> result;
+		if (binder instanceof IContextualMethodBinder<?, ?> contextualBinder) {
+			IRuntimeContext<?, ?> runtimeCtx = RuntimeExpressionContext.get();
+			result = ((IContextualMethodBinder<?, Object>) contextualBinder).execute(runtimeCtx);
+		} else {
+			result = binder.execute();
+		}
+		// singleOrThrow, not single(): the binder CAPTURES what the strategy threw instead of
+		// throwing it, so a caller's catch could only ever see a supply failure (a missing AOT
+		// descriptor, an uninjected dependency) — never the strategy's own exception.
+		Object returned = singleOrThrow(result, "Authentication strategy");
+		return returned instanceof IAuthentication auth && auth.authenticated() ? auth : null;
+	}
+
 	private static String strategyName(IAuthenticationDefinition authDef) {
 		try {
 			IMethodBinder<?> binder = authDef.authenticateMethodBinder();

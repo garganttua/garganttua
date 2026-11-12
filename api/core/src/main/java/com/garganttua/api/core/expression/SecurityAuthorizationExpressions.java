@@ -98,7 +98,7 @@ public class SecurityAuthorizationExpressions {
 		}
 	}
 
-	/** Builds the reuse-lookup filter: owner (qualified) + optional tenant + non-revoked + non-expired. */
+	/** Builds the reuse-lookup filter: owner (qualified) + optional tenant + non-revoked + not exchanged + non-expired. */
 	private static IFilter buildReuseFilter(IDomainAuthorizationDefinition authzDef, IDomain<?> authzDomain,
 			IDomain<?> authenticatorDomain, Object principalUuid, Object tenantId) {
 		java.util.List<IFilter> filters = new java.util.ArrayList<>();
@@ -116,6 +116,11 @@ public class SecurityAuthorizationExpressions {
 		}
 		if (authzDef.revoked() != null) {
 			filters.add(Filter.eq(authzDef.revoked().toString(), false));
+		}
+		// An authorization a refresh has already exchanged is spent: handing it back at login would have the
+		// client's next refresh present a spent token — read as a theft, and every session of the owner revoked.
+		if (authzDef.refreshable() && authzDef.refreshRevoked() != null) {
+			filters.add(Filter.eq(authzDef.refreshRevoked().toString(), false));
 		}
 		if (authzDef.expiration() != null) {
 			filters.add(Filter.gt(authzDef.expiration().toString(), java.time.Instant.now()));
@@ -189,8 +194,10 @@ public class SecurityAuthorizationExpressions {
 					issuerBinder, authResult, authenticatorDomain, opReq);
 		}
 
-		// Default: the framework is the authorization server — build + sign.
+		// Default: the framework is the authorization server — build + sign. A refresh inherits the window
+		// of the authorization it replaces, set before the signature covers it.
 		Object entity = createAuthorizationEntity2(authResultObj, domainContextObj);
+		SecurityRefreshExpressions.capRefreshWindow(entity, domainContextObj, request);
 		SecuritySigningExpressions.signIfSignable(entity, domainContextObj, request);
 		return entity;
 	}

@@ -41,6 +41,7 @@ public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAu
     private IAuthenticationMethodBinderBuilder<?> authenticate;
     private List<Pair<IClass<? extends Annotation>, IClass<?>>> fieldAnnotations = new ArrayList<>();
     private IAuthenticationMethodBinderBuilder<?> applySecurityOnEntity;
+    private IAuthenticationMethodBinderBuilder<?> refresh;
     private Map<String, IUseCaseBuilder<?, ?, ?>> useCases = new HashMap<>();
 
     protected AuthenticationBuilder(E link) {
@@ -72,6 +73,25 @@ public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAu
         String methodName = methodAddress.getElement(methodAddress.length() - 1);
         this.authenticate = new AuthenticationMethodBinderBuilder<>(this, this.supplier, methodName);
         return this.authenticate;
+    }
+
+    @Override
+    public IAuthenticationMethodBinderBuilder<?> refresh(String methodName) throws ApiException {
+        Objects.requireNonNull(methodName, "Method name cannot be null");
+        this.refresh = new AuthenticationMethodBinderBuilder<>(this, this.supplier, methodName);
+        return this.refresh;
+    }
+
+    @Override
+    public IAuthenticationMethodBinderBuilder<?> refresh(IMethod method) throws ApiException {
+        Objects.requireNonNull(method, "Method cannot be null");
+        return refresh(method.getName());
+    }
+
+    @Override
+    public IAuthenticationMethodBinderBuilder<?> refresh(ObjectAddress methodAddress) throws ApiException {
+        Objects.requireNonNull(methodAddress, "Method address cannot be null");
+        return refresh(methodAddress.getElement(methodAddress.length() - 1));
     }
 
     @Override
@@ -142,12 +162,15 @@ public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAu
 
         IMethodBinder<?> applySecurityBinder = this.applySecurityOnEntity != null ? this.applySecurityOnEntity.build() : null;
 
+        IMethodBinder<?> refreshBinder = this.refresh != null ? this.refresh.build() : null;
+
         AuthenticationDefinition definition = new AuthenticationDefinition(
                 this.supplier,
                 authenticateBinder,
                 this.fieldAnnotations,
                 applySecurityBinder,
-                this.useCases.values());
+                this.useCases.values(),
+                refreshBinder);
         return new AuthenticationContext(definition);
     }
 

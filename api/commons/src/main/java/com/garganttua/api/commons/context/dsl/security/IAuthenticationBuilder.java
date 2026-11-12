@@ -22,6 +22,25 @@ public interface IAuthenticationBuilder<E>
         IAuthenticationMethodBinderBuilder<?> authenticate(
                         ObjectAddress methodAddress) throws ApiException;
 
+        /**
+         * Declares the method that re-authenticates a known principal when its authorization is refreshed —
+         * the login without the credentials. It receives what it declares via {@code .withParam(i, supplier)}:
+         * {@code PrincipalSupplierBuilder} hands it the principal re-read from the authenticator domain, and
+         * {@code AuthenticatorDefinitionSupplierBuilder} the authenticator. It returns an
+         * {@code IAuthentication}, as {@code authenticate} does: its authorities are those of the refreshed
+         * token, and a non-authenticated result refuses the refresh (401).
+         *
+         * <p>
+         * Without it, a refresh copies the authorities of the token it replaces: a right withdrawn since the
+         * login stays in every refreshed token until the next login.
+         * </p>
+         */
+        IAuthenticationMethodBinderBuilder<?> refresh(String methodName) throws ApiException;
+
+        IAuthenticationMethodBinderBuilder<?> refresh(IMethod method) throws ApiException;
+
+        IAuthenticationMethodBinderBuilder<?> refresh(ObjectAddress methodAddress) throws ApiException;
+
         IAuthenticationBuilder<E> entityMustHaveFieldOfTypeAnnotatedWith(IClass<? extends Annotation> annotation,
                         IClass<?> fieldType) throws ApiException;
 

@@ -128,7 +128,7 @@ meaning from the script's `@return` header.
 |---|---|---|
 | `business/AUTHENTICATE.gs` | `400`, `401` | `400` no entity / tenant-scope without caller tenant · `401` authentication failed (bad credentials, account status, all methods failed) |
 | `business/CREATE_AUTHORIZATION.gs` | `500` | misconfiguration (signable but no key realm) or persistence / sign / encode failure |
-| `business/REFRESH_AUTHORIZATION.gs` | `401`, `500` | `401` missing entity, signature invalid, refresh revoked / expired, unknown principal · `500` misconfiguration (signable but no key realm wired) or persistence failure |
+| `business/REFRESH_AUTHORIZATION.gs` | `401`, `500` | `401` missing entity, signature invalid, refresh revoked / expired, stored record absent / revoked / already exchanged, unknown or inactive principal, refresh strategy refusal · `500` misconfiguration (signable but no key realm wired) or persistence failure |
 | `security/VERIFY_AUTHORIZATION.gs` | `400`, `401` | `400` malformed `Authorization` header (Mode A: no scheme/value separator) · `401` missing token, unknown scheme, decode failure, signature mismatch, validation rejected |
 | `security/VERIFY_AUTHORITY.gs` | `403` | caller lacks the required authority |
 | `security/VERIFY_TENANT.gs` | `403` | caller's tenant does not match the request |
@@ -260,6 +260,10 @@ concatenations. Entries marked *(cause e)* wrap the original throwable as the ca
 - `refreshNotExpired` — `ApiException` — `"refreshNotExpired: entity and domainContext are required"`
 - `refreshNotExpired` — `ApiException` — `"refreshNotExpired: authorization definition not resolved"`
 - `refreshNotExpired` — `ApiException` — `"refreshNotExpired: failed to read refresh-expiration field: " + e.getMessage()` *(cause e)*
+- `claimRefresh` — `ApiException` — `"Authorization not found or revoked"` *(stored record absent or revoked)*
+- `claimRefresh` — `ApiException` — `"This authorization has already been refreshed"` *(reuse: every live authorization of the owner revoked)*
+- `claimRefresh` — `ApiException` — `"This authorization is being refreshed by another request"` *(synchronization key not taken in time)*
+- `refreshAuthentication` — `ApiException` — `"The authentication can no longer be refreshed"` *(every declared refresh strategy refused)*
 - `findPrincipalByOwnerUuid` — `ApiException` — `"findPrincipalByOwnerUuid: entity, authenticatorDomain and repository are required"`
 - `findPrincipalByOwnerUuid` — `ApiException` — `"findPrincipalByOwnerUuid: no authorization domain linked to '" + (domain != null ? domain.getDomainName() : "<null>") + "'"`
 - `findPrincipalByOwnerUuid` — `ApiException` — `"findPrincipalByOwnerUuid: authorization domain '" + authzDomain.getDomainName() + "' is not owned"`

@@ -184,7 +184,7 @@ Static helpers `createUuidFilter(ObjectAddress, String)` and `createIdFilter(...
 
 **Authorization lifecycle** — `createAuthorizationEntity`, `createAuthorizationEntity2`, `findReusableAuthorization`, `publishReusedAuthorization`, `persistIfStorable`, `isAuthorizationStorable`, `isAuthorizationSignable`, `isAuthorizationRefreshable`, `encodeAuthorization`, `encodeIfPossible`.
 
-**Refresh path** — `findPrincipalByOwnerUuid`, `synthAuthFromPrincipal`, `refreshNotRevoked`, `refreshNotExpired`.
+**Refresh path** — `refreshNotRevoked`, `refreshNotExpired` (the presented token), `claimRefresh` (the stored record and the rotation, `SecurityRefreshExpressions`), `findPrincipalByOwnerUuid`, `checkAccountStatus`, `refreshAuthentication` (the strategy's `refresh`, or `synthAuthFromPrincipal` without one), then `issueAuthorization` — the login's issuance.
 
 ## Usage
 
@@ -287,6 +287,62 @@ reaches what it needs:
 
 Revocation is enforced identically on every combination. `DIRECT` both ways removes the two nested
 workflows a protected request otherwise pays; `PIPELINE` keeps the verification visible as an operation.
+
+### Refreshing an authorization
+
+A refresh trades a still-valid authorization for a new one (`REFRESH_AUTHORIZATION.gs`). The token the client
+presents was signed at login and never changes, so it says nothing about what happened since. A refresh therefore
+also looks at the state of the moment:
+
+| Check | Where it is read | Refused with |
+|-------|------------------|--------------|
+| signature, refresh window, refresh not revoked | the presented token | 401 |
+| the stored record exists and is not revoked | the store, when the authorization is storable | 401 `Authorization not found or revoked` |
+| the record was not already exchanged | the store | 401 `This authorization has already been refreshed` — and every live authorization of the owner is revoked |
+| the account is enabled, not locked, not expired | the principal, re-read | 401, as at login |
+| the rights of the moment | the strategy's `refresh` method | 401 when it does not authenticate |
+
+**Rotation.** Before the new authorization is issued, the stored record of the old one is marked exchanged — its
+`.refreshable().revokable(field)`. The old token keeps working until it expires, so requests already in flight do
+not fail, but it can no longer be refreshed. A client presenting it again is presenting a token someone else
+already exchanged, the classic sign of a theft: every live authorization of that owner is revoked, the thief's and
+the victim's alike, and the victim logs in again. A login never hands back an exchanged authorization.
+
+**Two tabs refreshing at once look like a theft.** A front-end must serialize its refreshes (one in flight, the
+others wait for its result). And for the rotation to hold under concurrency, declare a synchronization policy on
+the **authorization** domain — `.synchronization(mutexManager, mutexType)`, distributed across instances: the
+claim (read, check, mark) runs under its key. Without it, two refreshes of one token arriving together can both
+succeed.
+
+**The rights of the moment** come from the authentication strategy, which declares a `refresh` method beside
+`authenticate` — the login without the credentials:
+
+```java
+var auth = builder.security().authentication(strategySupplier);
+auth.authenticate("authenticate")
+        .withParam(0, new PrincipalSupplierBuilder())
+        .withParam(1, new AuthenticateCredentialsSupplierBuilder())
+        .withParam(2, new AuthenticatorDefinitionSupplierBuilder());
+auth.refresh("refresh")                                   // IAuthentication refresh(Object principal, IAuthenticatorDefinition def)
+        .withParam(0, new PrincipalSupplierBuilder())     // the principal re-read from the authenticator domain
+        .withParam(1, new AuthenticatorDefinitionSupplierBuilder());
+auth.up();
+```
+
+Without one, a refreshed token copies the authorities of the one it replaces, and a warning says so once.
+
+**Issuance** is the login's: the issuer declared by `.authorization(issuer, "method")` when there is one, else the
+framework's build and sign.
+
+**The refresh window is fixed at login.** A refreshed authorization inherits the refresh expiration of the one it
+replaces, so `refreshLifeTime` is the longest a session lasts, however often it is refreshed; only the access part
+(`lifeTime`) is renewed. The framework sets it before signing. A declared issuer produces the token itself: it
+finds the limit on the operation request under `refreshNotAfter` (an `Instant`, absent at login) and must not
+issue past it.
+
+What it needs from the store: the authorization must be **storable** (`.revokable(...)` makes it so) and its DTO
+must keep the revoked and refresh-revoked fields. Without the refresh-revoked field, nothing rotates; a warning says
+which of the two is missing.
 
 ### Fluent request builder
 

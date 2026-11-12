@@ -279,8 +279,11 @@ class RefreshAuthorizationIntegrationTest extends AbstractCrudScriptTest {
             RefreshableTokenEntity original = loginAndGetToken();
             byte[] originalSig = original.getSignature();
 
-            WorkflowResult result = executeScript(userCtx, refreshRequest(original));
-            assertEquals(0, result.code(), "refresh should succeed with code 0");
+            OperationRequest refresh = refreshRequest(original);
+            WorkflowResult result = executeScript(userCtx, refresh);
+            assertEquals(0, result.code(), () -> "refresh should succeed with code 0, failed on: "
+                    + refresh.arg(com.garganttua.api.core.expression.SecurityAuthorizationExpressions.LAST_EXCEPTION_ARG)
+                            .orElse(null));
             assertInstanceOf(RefreshableTokenEntity.class, result.output());
 
             RefreshableTokenEntity refreshed = (RefreshableTokenEntity) result.output();
