@@ -75,28 +75,33 @@ public class PrincipalSupplier implements IContextualSupplier<Object, IRuntimeCo
             throw new SupplyException("No authenticator definition found on domain");
         }
 
-        // 4. A principal the caller already holds (token verification, refresh) needs no login lookup — and a
-        //    refresh carries no AuthenticationRequest at all: its body is the authorization being traded.
-        Object principal;
-        if (request.arg(KnownPrincipal.ARG).orElse(null) instanceof KnownPrincipal known) {
-            Optional<?> entityOpt = request.arg("entity");
-            String login = entityOpt.orElse(null) instanceof IAuthenticationRequest authRequest
-                    ? authRequest.login() : "<known principal>";
-            principal = knownPrincipal(known, domainContext, login);
-        } else {
-            // 5. Find the authenticator entity by login in the repository
-            Optional<?> entityOpt = request.arg("entity");
-            if (entityOpt.isEmpty()) {
-                throw new SupplyException("No 'entity' (AuthenticationRequest) found in operation request");
-            }
-            IAuthenticationRequest authRequest = (IAuthenticationRequest) entityOpt.get();
-            principal = findPrincipal(request, domainContext, domDef, authDef, authRequest.login());
-        }
+        // 4-5. The principal: known to the caller, or found by the login of the request
+        Object principal = resolvePrincipal(request, domainContext, domDef, authDef);
 
         // 6. Check account status (enabled, non-locked, non-expired) unless alwaysEnabled
         checkAccountStatus(authDef, principal);
 
         return Optional.of(principal);
+    }
+
+    /**
+     * A principal the caller already holds (token verification, refresh) needs no login lookup — and a refresh
+     * carries no AuthenticationRequest at all: its body is the authorization being traded. Otherwise the
+     * authenticator entity is found by the login of the request.
+     */
+    private Object resolvePrincipal(IOperationRequest request, IDomain<?> domainContext, DomainDefinition<?> domDef,
+            IAuthenticatorDefinition authDef) throws SupplyException {
+        Optional<?> entityOpt = request.arg("entity");
+        if (request.arg(KnownPrincipal.ARG).orElse(null) instanceof KnownPrincipal known) {
+            String login = entityOpt.orElse(null) instanceof IAuthenticationRequest authRequest
+                    ? authRequest.login() : "<known principal>";
+            return knownPrincipal(known, domainContext, login);
+        }
+        if (entityOpt.isEmpty()) {
+            throw new SupplyException("No 'entity' (AuthenticationRequest) found in operation request");
+        }
+        IAuthenticationRequest authRequest = (IAuthenticationRequest) entityOpt.get();
+        return findPrincipal(request, domainContext, domDef, authDef, authRequest.login());
     }
 
     private Object knownPrincipal(KnownPrincipal known, IDomain<?> domainContext, String login)

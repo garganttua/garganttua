@@ -37,6 +37,10 @@ import com.garganttua.core.supply.dsl.ISupplierBuilder;
 @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAuthenticationBuilder<E>, E, IAuthenticationContext> implements IAuthenticationBuilder<E> {
 
+    private static final String METHOD_NAME_REQUIRED = "Method name cannot be null";
+    private static final String METHOD_REQUIRED = "Method cannot be null";
+    private static final String METHOD_ADDRESS_REQUIRED = "Method address cannot be null";
+
     private ISupplierBuilder<?, ? extends ISupplier<?>> supplier;
     private IAuthenticationMethodBinderBuilder<?> authenticate;
     private List<Pair<IClass<? extends Annotation>, IClass<?>>> fieldAnnotations = new ArrayList<>();
@@ -55,21 +59,21 @@ public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAu
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> authenticate(String methodName) throws ApiException {
-        Objects.requireNonNull(methodName, "Method name cannot be null");
+        Objects.requireNonNull(methodName, METHOD_NAME_REQUIRED);
         this.authenticate = new AuthenticationMethodBinderBuilder<>(this, this.supplier, methodName);
         return this.authenticate;
     }
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> authenticate(IMethod method) throws ApiException {
-        Objects.requireNonNull(method, "Method cannot be null");
+        Objects.requireNonNull(method, METHOD_REQUIRED);
         this.authenticate = new AuthenticationMethodBinderBuilder<>(this, this.supplier, method.getName());
         return this.authenticate;
     }
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> authenticate(ObjectAddress methodAddress) throws ApiException {
-        Objects.requireNonNull(methodAddress, "Method address cannot be null");
+        Objects.requireNonNull(methodAddress, METHOD_ADDRESS_REQUIRED);
         String methodName = methodAddress.getElement(methodAddress.length() - 1);
         this.authenticate = new AuthenticationMethodBinderBuilder<>(this, this.supplier, methodName);
         return this.authenticate;
@@ -77,20 +81,20 @@ public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAu
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> refresh(String methodName) throws ApiException {
-        Objects.requireNonNull(methodName, "Method name cannot be null");
+        Objects.requireNonNull(methodName, METHOD_NAME_REQUIRED);
         this.refresh = new AuthenticationMethodBinderBuilder<>(this, this.supplier, methodName);
         return this.refresh;
     }
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> refresh(IMethod method) throws ApiException {
-        Objects.requireNonNull(method, "Method cannot be null");
+        Objects.requireNonNull(method, METHOD_REQUIRED);
         return refresh(method.getName());
     }
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> refresh(ObjectAddress methodAddress) throws ApiException {
-        Objects.requireNonNull(methodAddress, "Method address cannot be null");
+        Objects.requireNonNull(methodAddress, METHOD_ADDRESS_REQUIRED);
         return refresh(methodAddress.getElement(methodAddress.length() - 1));
     }
 
@@ -105,19 +109,19 @@ public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAu
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> applySecurityOnEntity(String methodName) throws ApiException {
-        Objects.requireNonNull(methodName, "Method name cannot be null");
+        Objects.requireNonNull(methodName, METHOD_NAME_REQUIRED);
         return bindApplySecurityOnEntity(methodName);
     }
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> applySecurityOnEntity(IMethod method) throws ApiException {
-        Objects.requireNonNull(method, "Method cannot be null");
+        Objects.requireNonNull(method, METHOD_REQUIRED);
         return bindApplySecurityOnEntity(method.getName());
     }
 
     @Override
     public IAuthenticationMethodBinderBuilder<?> applySecurityOnEntity(ObjectAddress methodAddress) throws ApiException {
-        Objects.requireNonNull(methodAddress, "Method address cannot be null");
+        Objects.requireNonNull(methodAddress, METHOD_ADDRESS_REQUIRED);
         return bindApplySecurityOnEntity(methodAddress.getElement(methodAddress.length() - 1));
     }
 
@@ -134,21 +138,21 @@ public class AuthenticationBuilder<E> extends AbstractAutomaticLinkedBuilder<IAu
 
     @Override
     public IUseCaseBuilder<?, ?, ?> useCase(String methodName) throws ApiException {
-        Objects.requireNonNull(methodName, "Method name cannot be null");
+        Objects.requireNonNull(methodName, METHOD_NAME_REQUIRED);
         return this.useCases.computeIfAbsent(methodName,
                 name -> new UseCaseBuilder<>(name, (IDomainBuilder<?>) null));
     }
 
     @Override
     public IUseCaseBuilder<?, ?, ?> useCase(IMethod method) throws ApiException {
-        Objects.requireNonNull(method, "Method cannot be null");
+        Objects.requireNonNull(method, METHOD_REQUIRED);
         return this.useCases.computeIfAbsent(method.getName(),
                 name -> new UseCaseBuilder<>(name, (IDomainBuilder<?>) null));
     }
 
     @Override
     public IUseCaseBuilder<?, ?, ?> useCase(ObjectAddress methodAddress) throws ApiException {
-        Objects.requireNonNull(methodAddress, "Method address cannot be null");
+        Objects.requireNonNull(methodAddress, METHOD_ADDRESS_REQUIRED);
         String name = methodAddress.getElement(methodAddress.length() - 1);
         return this.useCases.computeIfAbsent(name,
                 n -> new UseCaseBuilder<>(n, (IDomainBuilder<?>) null));
