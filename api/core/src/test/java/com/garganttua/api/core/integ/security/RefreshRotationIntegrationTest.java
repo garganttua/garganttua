@@ -39,6 +39,7 @@ import com.garganttua.api.core.security.authentication.AuthenticationRequest;
 import com.garganttua.api.core.security.authentication.AuthenticatorDefinitionSupplierBuilder;
 import com.garganttua.api.core.security.authentication.PrincipalSupplierBuilder;
 import com.garganttua.api.core.security.authorization.AuthenticationSupplierBuilder;
+import com.garganttua.api.core.security.authorization.RefreshedAuthorizationSupplierBuilder;
 import com.garganttua.api.core.service.OperationRequest;
 import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.crypto.KeyAlgorithm;
@@ -221,13 +222,15 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
     public static class StampingIssuer {
         private int issued;
 
-        public Object issue(IAuthentication auth) {
+        public Object issue(IAuthentication auth, Object replaced) {
             Account account = (Account) auth.principal();
             Token token = new Token();
             token.setUuid(UUID.randomUUID().toString());
             token.setTenantId(account.getTenantId());
             token.setOwnerId(OwnerIds.qualify("accounts", account.getUuid()));
-            token.setTokenType("STAMPED-" + (++this.issued));
+            // What a real issuer does with the replaced authorization: carry over what it put in it at login.
+            token.setTokenType("STAMPED-" + (++this.issued)
+                    + (replaced instanceof Token previous ? "<-" + previous.getUuid() : ""));
             token.setAuthorities(auth.authorities());
             token.setExpiresAt(Instant.now().plusSeconds(900));
             token.setRevoked(false);
@@ -289,7 +292,8 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
             if (issuer) {
                 authenticator.authorization(
                         new FixedSupplierBuilder<>(new StampingIssuer(), IClass.getClass(StampingIssuer.class)), "issue")
-                        .withParam(0, new AuthenticationSupplierBuilder());
+                        .withParam(0, new AuthenticationSupplierBuilder())
+                        .withParam(1, new RefreshedAuthorizationSupplierBuilder(), true);
             }
             var link = authenticator.authorization((IDomainBuilder) tokenDomain)
                     .lifeTime(15, TimeUnit.MINUTES).refreshLifeTime(8, TimeUnit.HOURS);
@@ -533,7 +537,7 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
     class Issuer {
 
         @Test
-        @DisplayName("a refresh goes through the declared issuer, as a login does")
+        @DisplayName("a refresh goes through the declared issuer, handed the authorization it replaces")
         void declaredIssuer() throws Exception {
             Fixture api = new Fixture(true, true);
             Token login = api.login();
@@ -542,7 +546,8 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
             Refreshed refreshed = api.refresh(login);
 
             assertEquals(0, refreshed.code(), () -> "refresh failed on " + refreshed.failure());
-            assertEquals("STAMPED-2", refreshed.token().getTokenType(), "issued by the issuer, not copied");
+            assertEquals("STAMPED-2<-" + login.getUuid(), refreshed.token().getTokenType(),
+                    "issued by the issuer, which was handed the authorization it replaces");
             assertTrue(api.stored(login).getRefreshRevoked(), "rotated as well");
             assertFalse(api.stored(refreshed.token()).getRefreshRevoked(), "and the issued one is stored");
         }

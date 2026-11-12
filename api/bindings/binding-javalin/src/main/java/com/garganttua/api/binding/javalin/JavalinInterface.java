@@ -281,6 +281,11 @@ public class JavalinInterface implements IInterface {
 		// (its authenticate operation is then present in the configured operations).
 		record(mounted, route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
 				BusinessOperation.authenticate, false));
+		// Refresh entry point (anonymous), beside it on the same authenticator: the authorization to trade
+		// travels in the Authorization header, as on every request; the new one comes back in
+		// X-Authorization. Registered only when the authenticator's authorization is refreshable.
+		record(mounted, route(server, HttpVerb.POST, base + "/refresh", domain, configured,
+				BusinessOperation.refreshAuthorization, false));
 
 		// Name what is ACTUALLY mounted, not what was declared: with a mount path in play, the two
 		// differ, and this line is how an operator checks which of the two is online.

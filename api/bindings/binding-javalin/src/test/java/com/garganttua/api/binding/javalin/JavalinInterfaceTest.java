@@ -96,6 +96,7 @@ class JavalinInterfaceTest {
 		volatile String lastMethod;
 		volatile String lastPath;
 		volatile byte[] lastBody;
+		volatile String lastAuthorization;
 		volatile ICaller lastCaller;
 		volatile int invokeCount;
 		/** When set, invoke() returns this (so applyOutcome reconciles the response). */
@@ -132,6 +133,7 @@ class JavalinInterfaceTest {
 				if (raw instanceof Context ctx) {
 					this.lastMethod = protocol.getMethod(ctx);
 					this.lastPath = protocol.getPath(ctx);
+					this.lastAuthorization = protocol.getAuthorization(ctx);
 					this.lastBody = protocol.getRawBody(ctx);
 					this.lastCaller = protocol.getCaller(ctx);
 					protocol.buildResponse(ctx,
@@ -938,6 +940,35 @@ class JavalinInterfaceTest {
 					"the login route must dispatch the authenticate operation");
 			assertArrayEquals("john|pw|T1".getBytes(StandardCharsets.UTF_8), domain.lastBody,
 					"the credentials body must reach the protocol");
+		}
+
+		@Test
+		@DisplayName("POST /{domain}/refresh routes to the refresh op, with the token of the Authorization header")
+		void refreshRouteExposed() throws Exception {
+			IClass<?> e = fakeEntityClass();
+			startWith(List.of(
+					OperationDefinition.authenticate("users", e),
+					OperationDefinition.refreshAuthorization("users", e)));
+
+			HttpResponse<String> resp = http.send(HttpRequest.newBuilder()
+					.uri(URI.create("http://localhost:" + port + "/users/refresh"))
+					.header("Authorization", "Bearer old-token")
+					.POST(HttpRequest.BodyPublishers.noBody())
+					.build(), HttpResponse.BodyHandlers.ofString());
+
+			assertEquals(200, resp.statusCode());
+			assertEquals(BusinessOperation.refreshAuthorization, domain.lastOperation.getBusinessOperation(),
+					"the refresh route must dispatch the refresh operation");
+			assertEquals("Bearer old-token", domain.lastAuthorization, "the presented token reaches the pipeline");
+		}
+
+		@Test
+		@DisplayName("no refresh route when the authorization is not refreshable (404)")
+		void noRefreshRouteWhenAbsent() throws Exception {
+			IClass<?> e = fakeEntityClass();
+			startWith(List.of(OperationDefinition.authenticate("users", e)));
+
+			assertEquals(404, send("POST", "/users/refresh", null).statusCode());
 		}
 
 		@Test

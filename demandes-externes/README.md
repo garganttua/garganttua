@@ -226,15 +226,15 @@ Traitées le 2026-11-10, sur la branche `perf/token-verification`, **à paraîtr
 | `JavalinProtocol.buildResponse` avec un objet ni `byte[]` ni `String` | son `toString()` | refusé : `ApiException`, 500 |
 | Expression `or` | seulement sur un ensemble de conditions | aussi `or(a, b)` sur deux valeurs, comme `and(a, b)` |
 
-## Fiches répondues — prochaine ALPHA
+## Fiches répondues — `3.0.0-ALPHA35`
 
-Traitée le 2026-11-12 sur `main`, **à paraître dans la version qui suit `3.0.0-ALPHA34`**.
+Traitée le 2026-11-12 sur `main`, **à paraître dans `3.0.0-ALPHA35`**.
 
 | Fiche | Émise par | Réponse |
 |---|---|---|
-| [le-rafraichissement-du-jeton-ignore-la-revocation-et-letat-du-compte](le-rafraichissement-du-jeton-ignore-la-revocation-et-letat-du-compte.md) | palliad | Les six constats confirmés, les points 1 à 5 corrigés. Le rafraîchissement lit l'enregistrement stocké (absent, révoqué : 401). Il contrôle l'état du compte et recalcule les autorités par une méthode `.refresh(...)` déclarée sur la stratégie. Il fait tourner l'autorisation (l'ancienne est marquée échangée), et une réutilisation révoque toute la lignée. Il émet par l'émetteur déclaré. En plus : la fenêtre de rafraîchissement est fixée à la connexion. Jeton de rafraîchissement distinct : non fait, proposé en fiche à part. |
+| [le-rafraichissement-du-jeton-ignore-la-revocation-et-letat-du-compte](le-rafraichissement-du-jeton-ignore-la-revocation-et-letat-du-compte.md) | palliad | Les huit constats confirmés, tous corrigés sauf le point 6. Le rafraîchissement lit l'enregistrement stocké (absent, révoqué : 401). Il contrôle l'état du compte et recalcule les autorités par une méthode `.refresh(...)` déclarée sur la stratégie. Il fait tourner l'autorisation (l'ancienne est marquée échangée), et une réutilisation révoque toute la lignée. Il émet par l'émetteur déclaré, qui reçoit l'autorisation remplacée. La fenêtre de rafraîchissement est fixée à la connexion. La route `POST /<authentificateur>/refresh` est montée, avec le jeton dans `Authorization`. Jeton de rafraîchissement distinct (point 6) : non fait, proposé en fiche à part. |
 
-## Changements de comportement à la montée après `3.0.0-ALPHA34`
+## Changements de comportement à la montée en `3.0.0-ALPHA35`
 
 | Élément | Avant | Après |
 |---|---|---|
@@ -245,3 +245,5 @@ Traitée le 2026-11-12 sur `main`, **à paraître dans la version qui suit `3.0.
 | Émission au rafraîchissement | `createAuthorizationEntity2`, même avec un émetteur déclaré | `issueAuthorization` : l'émetteur déclaré, comme à la connexion |
 | Autorités du jeton rafraîchi | recopiées | celles de la méthode `.refresh(...)` de la stratégie quand elle est déclarée ; recopiées sinon |
 | Réutilisation d'une autorisation à la connexion | pouvait rendre une autorisation déjà échangée | l'exclut |
+| `POST /<authentificateur>/refresh` (liaison Javalin) | 404 | monté, jeton dans `Authorization`, nouveau jeton dans `X-Authorization` |
+| Corps d'un rafraîchissement | désérialisé dans la classe de l'authentificateur | non lu |

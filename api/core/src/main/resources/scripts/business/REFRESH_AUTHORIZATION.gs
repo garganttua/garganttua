@@ -3,8 +3,9 @@
 #@workflow
 #  Trades a still-valid authorization for a freshly issued one.
 #
-#  The client presents an existing authorization in the request body (the
-#  same wire form the issuer returned at login). The script checks the token
+#  The client presents an existing authorization — over HTTP in the
+#  Authorization header (POST /<authenticator>/refresh), in-process under the
+#  request's entity — in the wire form the issuer returned at login. The script checks the token
 #  itself (signature, refresh-revoked, refresh-expired), then — the token
 #  being signed once and never changing — judges a storable authorization by
 #  its STORED record: absent or revoked, refused; already exchanged, refused
@@ -27,11 +28,9 @@
 #  @return 500: misconfiguration (signable but no key realm wired) or persistence failure
 #@end
 
-// Extract the authorization entity carried in the body
-entity <- :arg(@0, "entity")
-requirePresent(@entity)
+// The authorization presented: the Authorization header over HTTP, the request entity in-process
+entity <- presentedForRefresh(@0)
 ! => recordCaughtException(@0, @exception) -> 401
-entity <- optionalGet(@entity)
 
 // The client presents the SAME wire form the issuer returned at login — for an
 // encoded authorization that is the transport form (e.g. a JWT string), not the
@@ -84,6 +83,9 @@ _authResult <- refreshAuthentication(@_principal, @_claimed, @2, @0)
 // It inherits the refresh window of the one it replaces (refreshNotAfter):
 // the window is fixed at login, a refresh does not push it back.
 setRequestArg(@0, "refreshNotAfter", refreshWindowEnd(@entity, @2))
+// A declared issuer may carry over what it put in the replaced authorization
+// (RefreshedAuthorizationSupplierBuilder / @RefreshedAuthorization; null at login).
+setRequestArg(@0, "refreshedAuthorization", @entity)
 output <- issueAuthorization(@_authResult, @2, @0)
 ! => recordCaughtException(@0, @exception) -> 500
 
@@ -97,8 +99,10 @@ setRequestArg(@0, "encodedAuthorization", @_encoded)
 persistIfStorable(@output, @2)
 ! => recordCaughtException(@0, @exception) -> 500
 
-// Propagate the principal to downstream stages.
+// Propagate the principal to downstream stages, and the sanitized security
+// context the transport renders as the body — symmetric to CREATE_AUTHORIZATION.
 setRequestArg(@0, "principal", @_principal)
+setRequestArg(@0, "authentication", authenticationResponse(@_authResult, @output, @_encoded, @2))
 
 // Emit the encoded transport form (e.g. JWT) as the output when an encode method
 // produced one; otherwise ship the entity. Symmetric to CREATE_AUTHORIZATION.

@@ -40,6 +40,10 @@ public class SerializationExpressions {
 		if (opDef.type() == OperationType.usesCase) {
 			return opDef.useCase() != null && opDef.useCase().inputType() != null;
 		}
+		// A refresh reads its token where every request carries one — the Authorization header — not in a body.
+		if (opDef.type() == OperationType.refreshAuthorization) {
+			return false;
+		}
 		TechnicalOperation tech = opDef.technicalOperation();
 		return tech == TechnicalOperation.create || tech == TechnicalOperation.update;
 	}

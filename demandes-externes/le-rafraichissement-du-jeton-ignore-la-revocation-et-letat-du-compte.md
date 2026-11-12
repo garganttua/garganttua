@@ -46,6 +46,12 @@ authentification synthétique (`synthAuthFromPrincipal`), puis émet, signe, enc
    `maintenant + refreshLifeTime` à **chaque** émission, rafraîchissement compris. Une session rafraîchie régulièrement
    ne finit donc jamais. palliad veut une session de 10 heures au plus après la connexion, quoi qu'il arrive.
 
+8. **La route n'est pas montée** (mesuré le 2026-11-12 sur le back de dev, ALPHA34 reconstruite). Avec
+   `.refreshable()` déclaré, `DomainWorkflowSupport` enregistre bien le workflow `refreshAuthorization` et
+   `DomainDefinition` déclare l'opération, mais `JavalinInterface` ne monte que `POST /users/authenticate` (ligne 282) :
+   `POST /users/refresh` répond 404 (« Endpoint POST /users/refresh not found »), comme `/authorizations/refresh`. Le
+   journal de démarrage liste les routes du domaine `users` : aucune ne rafraîchit.
+
 ## Ce qui est demandé
 
 - **Lire l'enregistrement stocké au rafraîchissement** (quand le domaine est `storable`) et refuser s'il est révoqué ou
@@ -58,6 +64,8 @@ authentification synthétique (`synthAuthFromPrincipal`), puis émet, signe, enc
   l'autorisation présentée, pour qu'il puisse en reprendre des données (chez palliad : les noms, la méthode de connexion).
 - **Ancrer la fin de rafraîchissement sur la connexion d'origine** : l'autorisation neuve reprend la fin de
   rafraîchissement de celle qu'elle remplace (ou `auth_time + refreshLifeTime`), au lieu de la repousser.
+- **Monter la route** `POST /<authentificateur>/refresh` dans la liaison Javalin, comme `/authenticate`, avec le
+  nouveau jeton dans `X-Authorization`.
 - En option : un jeton de rafraîchissement **distinct** du jeton d'accès (opaque, stocké sous forme d'empreinte, jamais
   envoyé à chaque requête).
 
@@ -66,11 +74,10 @@ authentification synthétique (`synthAuthFromPrincipal`), puis émet, signe, enc
 palliad ne branche pas `.refreshable()` tant que les points 1 à 4 ne sont pas corrigés : les jetons restent à 24 heures,
 avec la révocation à l'état, qui marche. Aucun correctif n'est appliqué au cadre.
 
-## Réponse — 2026-11-12, sur `main`, à paraître dans la prochaine ALPHA
+## Réponse — 2026-11-12, sur `main`, à paraître dans `3.0.0-ALPHA35`
 
-**Les six constats sont confirmés.** Les points 1 à 5 sont corrigés ; le point 6 (jeton de rafraîchissement
-distinct) ne l'est pas, voir plus bas. Nous avons trouvé un septième défaut en chemin : la fenêtre de
-rafraîchissement glissait.
+**Les huit constats sont confirmés.** Tous sont corrigés, sauf le point 6 (jeton de rafraîchissement distinct),
+voir plus bas. Nous avions trouvé le point 7 en chemin, de notre côté, et le point 8 en préparant l'ALPHA35.
 
 ### Ce qui est fait
 
@@ -110,19 +117,36 @@ Le rafraîchissement juge désormais l'état du moment, pas seulement le jeton p
      refreshed`, et **toutes les autorisations vivantes du propriétaire sont révoquées**, celles du voleur comme
      celles de la victime, qui se reconnecte. Un `WARN` le journalise.
    - Une connexion ne rend plus jamais une autorisation déjà échangée : la réutilisation à la connexion les exclut.
-5. **L'émetteur déclaré est utilisé.** Le rafraîchissement passe par `issueAuthorization`, comme la connexion :
-   votre `.authorization(issuer, "issue")` émet le jeton rafraîchi, nom et prénom compris.
-6. **En plus : la fenêtre de rafraîchissement est fixée à la connexion.**
+5. **L'émetteur déclaré est utilisé, et reçoit l'autorisation remplacée.**
+   - Le rafraîchissement passe par `issueAuthorization`, comme la connexion : votre
+     `.authorization(issuer, "issue")` émet le jeton rafraîchi.
+   - Pour reprendre ce qu'il avait mis dans l'ancienne (les noms, la méthode de connexion), il déclare un
+     paramètre de plus : `.withParam(i, new RefreshedAuthorizationSupplierBuilder(), true)`, ou un paramètre
+     `@RefreshedAuthorization @Nullable`.
+   - Ce paramètre vaut `null` à la connexion, et l'autorisation décodée et vérifiée au rafraîchissement. C'est
+     ainsi que l'émetteur distingue les deux cas.
+7. **La fenêtre de rafraîchissement est fixée à la connexion** (votre point 7).
    - Chaque émission la recalculait à « maintenant + `refreshLifeTime` ». Une session rafraîchie toutes les
      15 minutes ne finissait donc jamais, ce qui contredisait la « durée maximale de session » de votre besoin.
    - Une autorisation rafraîchie hérite désormais de la fin de fenêtre de celle qu'elle remplace :
      `refreshLifeTime` est la durée maximale d'une session, et seul le jeton d'accès (`lifeTime`) est renouvelé.
+     Pour vos 10 heures : `refreshLifeTime(10, HOURS)`.
    - Le cadre la pose avant la signature.
    - **Votre émetteur, qui produit le jeton lui-même, doit la respecter.** Il la trouve sur la requête
      d'opération, sous `refreshNotAfter` (un `Instant`, absent à la connexion). Nous n'avons pas pu lire votre
      émetteur, absent du dépôt local de palliad.
+8. **La route est montée** (votre point 8) : `POST /<authentificateur>/refresh`, chez vous `/users/refresh`.
+   - Le jeton à échanger voyage dans `Authorization: Bearer <jwt>`, comme sur toute requête, sans corps. Un
+     jeton d'accès déjà expiré est accepté : seule compte sa fenêtre de rafraîchissement.
+   - Le nouveau jeton revient dans `X-Authorization`, et le contexte de sécurité épuré dans le corps, comme à la
+     connexion.
+   - En appel interne, l'autorisation se passe toujours sous `entity`.
+   - Le corps n'est plus lu pour un rafraîchissement : il aurait été désérialisé dans la classe de
+     l'authentificateur.
 
-`RefreshRotationIntegrationTest` couvre chaque point : révocation stockée, enregistrement absent, rotation,
+L'épreuve HTTP (`GarganttuaApplicationE2ETest.RefreshOverHttp`, un vrai serveur Javalin) enchaîne connexion,
+rafraîchissement par `/accounts/refresh`, rejet du rejeu et révocation de la session. `RefreshRotationIntegrationTest`
+couvre chaque point : révocation stockée, enregistrement absent, rotation,
 réutilisation, compte suspendu, autorités du moment, refus de la stratégie, recopie sans stratégie, émetteur,
 fenêtre fixe, connexion après rotation. Lancés sur l'ancien script, ces tests échouent tous, sauf celui de la
 recopie sans stratégie, qui garde volontairement le comportement d'avant.

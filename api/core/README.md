@@ -290,9 +290,13 @@ workflows a protected request otherwise pays; `PIPELINE` keeps the verification 
 
 ### Refreshing an authorization
 
-A refresh trades a still-valid authorization for a new one (`REFRESH_AUTHORIZATION.gs`). The token the client
-presents was signed at login and never changes, so it says nothing about what happened since. A refresh therefore
-also looks at the state of the moment:
+A refresh trades a still-valid authorization for a new one (`REFRESH_AUTHORIZATION.gs`). Over HTTP it is
+`POST /<authenticator>/refresh` — beside `/authenticate`, e.g. `/users/refresh` — with the token in the
+`Authorization` header, as on every request, and no body; the new token comes back in `X-Authorization`, the
+sanitized security context in the body. In-process, the authorization goes under the request's `entity`.
+
+The token the client presents was signed at login and never changes, so it says nothing about what happened since.
+A refresh therefore also looks at the state of the moment:
 
 | Check | Where it is read | Refused with |
 |-------|------------------|--------------|
@@ -339,6 +343,10 @@ replaces, so `refreshLifeTime` is the longest a session lasts, however often it 
 (`lifeTime`) is renewed. The framework sets it before signing. A declared issuer produces the token itself: it
 finds the limit on the operation request under `refreshNotAfter` (an `Instant`, absent at login) and must not
 issue past it.
+
+**A declared issuer is handed the authorization it replaces**, to carry over what it put in it at login (a name,
+the way the person logged in): `.withParam(i, new RefreshedAuthorizationSupplierBuilder(), true)`, or a
+`@RefreshedAuthorization @Nullable` parameter. It is `null` at login, which is how the issuer tells the two apart.
 
 What it needs from the store: the authorization must be **storable** (`.revokable(...)` makes it so) and its DTO
 must keep the revoked and refresh-revoked fields. Without the refresh-revoked field, nothing rotates; a warning says

@@ -465,7 +465,7 @@ public class SecuritySigningExpressions {
 	}
 
 	/** Strips a leading {@code <scheme> } (e.g. {@code Bearer }) from a raw header, returning the value. */
-	private static @Nullable String stripAuthorizationScheme(@Nullable String raw) {
+	static @Nullable String stripAuthorizationScheme(@Nullable String raw) {
 		if (raw == null) {
 			return null;
 		}

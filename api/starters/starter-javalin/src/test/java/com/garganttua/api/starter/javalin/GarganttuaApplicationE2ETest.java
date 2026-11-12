@@ -2,6 +2,7 @@ package com.garganttua.api.starter.javalin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -268,6 +269,59 @@ class GarganttuaApplicationE2ETest {
 					.header("Accept", "application/json")
 					.POST(BodyPublishers.ofString("{\"name\":\"" + name + "\"}"))
 					.build(), BodyHandlers.ofString());
+		}
+	}
+
+	/** A short session refreshed over HTTP: the route, the header in and out, the rotation. */
+	@Nested
+	@DisplayName("refreshing a session over HTTP")
+	class RefreshOverHttp {
+
+		private HttpResponse<String> authenticate() throws Exception {
+			return http.send(HttpRequest.newBuilder()
+					.uri(URI.create("http://localhost:7099/accounts/authenticate"))
+					.header("Content-Type", "application/json")
+					.header("Accept", "application/json")
+					.POST(BodyPublishers.ofString("{\"login\":\"" + RefreshFixtures.LOGIN + "\",\"credentials\":\""
+							+ RefreshFixtures.PASSWORD + "\"}"))
+					.build(), BodyHandlers.ofString());
+		}
+
+		private HttpResponse<String> refresh(String token) throws Exception {
+			return http.send(HttpRequest.newBuilder()
+					.uri(URI.create("http://localhost:7099/accounts/refresh"))
+					.header("Authorization", "Bearer " + token)
+					.header("Accept", "application/json")
+					.POST(BodyPublishers.noBody())
+					.build(), BodyHandlers.ofString());
+		}
+
+		private static String token(HttpResponse<String> response) {
+			return response.headers().firstValue("X-Authorization").orElse(null);
+		}
+
+		@Test
+		@DisplayName("POST /accounts/refresh trades the token of the Authorization header for a new one, once")
+		void refreshAndRotate() throws Exception {
+			RefreshFixtures.Account ana = new RefreshFixtures.Account();
+			ana.setId(RefreshFixtures.LOGIN);
+			ana.setUuid("account-ana");
+			api.getDomain("accounts").orElseThrow().getRepository().save(ana);
+
+			HttpResponse<String> login = authenticate();
+			assertEquals(200, login.statusCode(), login.body());
+			String first = token(login);
+			assertNotNull(first, "the login hands the token in X-Authorization");
+
+			HttpResponse<String> refreshed = refresh(first);
+			assertEquals(200, refreshed.statusCode(), refreshed.body());
+			String second = token(refreshed);
+			assertNotNull(second, "the refresh hands the new token in X-Authorization");
+			assertNotEquals(first, second);
+
+			HttpResponse<String> replay = refresh(first);
+			assertEquals(401, replay.statusCode(), "an exchanged token does not refresh twice: " + replay.body());
+			assertEquals(401, refresh(second).statusCode(), "and its reuse revoked the whole session");
 		}
 	}
 

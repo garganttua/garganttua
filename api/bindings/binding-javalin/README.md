@@ -125,6 +125,8 @@ The generated routes for a `users` domain are:
 | PUT    | `/users/{uuid}`  | updateOne   | full body, an absent field follows its declared null policy |
 | DELETE | `/users/{uuid}`  | deleteOne   | |
 | DELETE | `/users`         | deleteAll   | |
+| POST   | `/users/authenticate` | authenticate | when `users` is an authenticator — the credentials in the body, the token back in `X-Authorization` |
+| POST   | `/users/refresh` | refreshAuthorization | when its authorization is `.refreshable()` — the token to trade in `Authorization: Bearer …`, no body; the new one back in `X-Authorization` |
 
 **Prefer PATCH for updates.** Both verbs reach the same `updateOne` operation; PATCH additionally flags
 the request as partial (`IOperationRequest.PARTIAL_UPDATE`), so a field the client did not send is left

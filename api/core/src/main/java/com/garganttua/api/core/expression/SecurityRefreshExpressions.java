@@ -75,6 +75,32 @@ public final class SecurityRefreshExpressions {
 	}
 
 	/**
+	 * The authorization a refresh is handed: the request's {@code entity} when the caller put it there
+	 * (in-process), else the token of the {@code Authorization} header, scheme stripped — over HTTP, a refresh
+	 * presents its token as every request does. Decoded afterwards by {@code decodeAuthorizationEntity}.
+	 *
+	 * @throws ApiException when the request carries neither
+	 */
+	@Expression(name = "presentedForRefresh", description = "Refresh: the authorization presented — the request's "
+			+ "entity (in-process), else the Authorization header's token without its scheme (HTTP).")
+	public static Object presentedForRefresh(@Nullable Object request) {
+		if (!(unwrapOptional(request) instanceof IOperationRequest operationRequest)) {
+			throw new ApiException("presentedForRefresh: operation request is required");
+		}
+		Object entity = unwrapOptional(operationRequest.arg("entity").orElse(null));
+		if (entity != null) {
+			return entity;
+		}
+		Object raw = operationRequest.arg(IOperationRequest.RAW_AUTHORIZATION).orElse(null);
+		String token = SecuritySigningExpressions.stripAuthorizationScheme(
+				AuthorizationProtocolExpressions.rawAuthorizationAsString(raw));
+		if (token == null || token.isBlank()) {
+			throw new ApiException("No authorization to refresh: present it in the Authorization header");
+		}
+		return token;
+	}
+
+	/**
 	 * Claims the authorization presented for a refresh.
 	 *
 	 * @param authzEntity   the presented authorization, decoded and signature-checked

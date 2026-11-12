@@ -38,6 +38,7 @@ import com.garganttua.api.core.security.key.DomainKeySupplierBuilder;
 import com.garganttua.api.core.security.resolver.ApiContextElementResolver;
 import com.garganttua.api.core.security.resolver.AuthenticateCredentialsElementResolver;
 import com.garganttua.api.core.security.resolver.AuthenticationResultElementResolver;
+import com.garganttua.api.core.security.resolver.RefreshedAuthorizationElementResolver;
 import com.garganttua.api.core.security.resolver.AuthenticatorDefinitionElementResolver;
 import com.garganttua.api.core.security.resolver.AuthoritiesElementResolver;
 import com.garganttua.api.core.security.resolver.AuthorizationTokenElementResolver;
@@ -85,6 +86,7 @@ class SupplierResolverMappingTest {
             check(new RepositoryElementResolver(), RepositorySupplierBuilder.class);
             check(new TenantElementResolver(), TenantSupplierBuilder.class);
             check(new AuthenticationResultElementResolver(), AuthenticationSupplierBuilder.class);
+            check(new RefreshedAuthorizationElementResolver(), com.garganttua.api.core.security.authorization.RefreshedAuthorizationSupplierBuilder.class);
             check(new RequestElementResolver(), RequestSupplierBuilder.class);
             check(new SigningKeyElementResolver(), DomainKeySupplierBuilder.class);
     }
