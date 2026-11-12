@@ -12,12 +12,12 @@ Maven plugin for Garganttua AOT processing. This plugin integrates AOT descripto
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-aot-maven-plugin</artifactId>
-    <version>3.0.0-ALPHA34</version>
+    <version>3.0.0-ALPHA35</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA34
+3.0.0-ALPHA35
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
