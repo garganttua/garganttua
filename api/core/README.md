@@ -260,6 +260,41 @@ ApiBuilder.builder()
     .build();
 ```
 
+### Several ways into one authenticator: connections
+
+An authenticator has a default login field. A **connection** adds another — a professional number, an external
+identity — with its own scope and strategies, sharing everything else: account state, authorities, the
+authorization issued, its key, its issuer, its refresh. A token issued through a connection is the domain's like any
+other (owner `<domain>:<uuid>`).
+
+```java
+.authenticator()
+    .login("id").scope(AuthenticatorScope.system)          // the default connection
+    .connection("psc")
+        .login("rpps").scope(AuthenticatorScope.tenant)    // unique within a tenant only
+        .authentication(proSanteConnect)
+    .up()
+    .authentication(password)
+        .authorization(tokenDomain)
+```
+
+- **Choosing it.** Over HTTP, `POST /<domain>/authenticate/<name>`, beside `/authenticate`; in-process, the
+  request arg `IOperationRequest.CONNECTION`. None named: the default, exactly as before. An unknown name is 404 over
+  HTTP, 400 in-process.
+- **The search** matches the request's login against the connection's field, within its scope (`tenant`: the
+  caller's tenant, `X-Tenant-Id`). **A login matching several accounts is refused** (401) — through any connection,
+  the default included — instead of authenticating whichever the store returns first.
+- **The strategies** tried are the connection's only. `AuthenticatorDefinitionSupplierBuilder` hands a strategy the
+  authenticator *as reached*: `login()` is the connection's field.
+- **The method** a strategy returns (`IAuthentication.authorization()`) is stamped on the token's `type`, as at any
+  login. A login reuses a live token **of the same method** only: a login through another connection is not handed
+  the token of the session opened otherwise. (A store that does not keep the type reuses as before.)
+- **A refresh** tries every declared `refresh` — the default's, then each connection's — handing each the replaced
+  authorization (`RefreshedAuthorizationSupplierBuilder`): a strategy declines a token of another method by not
+  authenticating.
+- **By annotation**, a second `@AuthenticatorLogin(connection = "psc", scope = AuthenticatorScope.tenant,
+  authentications = Psc.class)` field declares the same; the unnamed one stays the default login.
+
 ### Verifying a self-verifying token: choosing the path
 
 A token domain that declares its own `.authenticator()` verifies each presented token through that

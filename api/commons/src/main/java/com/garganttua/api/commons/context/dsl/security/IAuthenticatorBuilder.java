@@ -68,6 +68,13 @@ public interface IAuthenticatorBuilder<E> extends IAutomaticLinkedBuilder<IAuthe
     IAuthenticatorBuilder<E> scope(AuthenticatorScope scope);
 
     /**
+     * Opens — or reopens — the named connection {@code name}: a second way into this authenticator, with its own
+     * login field, scope and strategies, sharing everything else. Its route is {@code /authenticate/<name>}, so the
+     * name is lower-case letters, digits and dashes.
+     */
+    IAuthenticatorConnectionBuilder<E> connection(String name) throws ApiException;
+
+    /**
      * Links an authentication (the verify cascade) to this authenticator and
      * returns the per-authentication sub-builder where the authorization is
      * declared — both the token domain {@code .authorization(domain)} and the

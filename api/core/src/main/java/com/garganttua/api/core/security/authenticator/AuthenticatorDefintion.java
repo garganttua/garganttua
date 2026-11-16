@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.garganttua.api.commons.definition.IAuthenticationDefinition;
+import com.garganttua.api.commons.definition.IAuthenticatorConnection;
 import com.garganttua.api.commons.definition.IAuthenticatorDefinition;
 import com.garganttua.api.commons.definition.IDomainAuthenticatorAuthorizationDefinition;
 import com.garganttua.api.commons.security.authenticator.AuthenticatorScope;
@@ -26,6 +27,19 @@ public record AuthenticatorDefintion(
         Map<Annotation, ObjectAddress> requiredAuthenticationFields,
         List<IAuthenticationDefinition> authenticationDefinitions,
         IDomainAuthenticatorAuthorizationDefinition authorizationDefinition,
-        IMethodBinder<?> authorizationMethodBinder) implements IAuthenticatorDefinition {
+        IMethodBinder<?> authorizationMethodBinder,
+        List<IAuthenticatorConnection> connections) implements IAuthenticatorDefinition {
 
+    /** An authenticator with its default login only. */
+    public AuthenticatorDefintion(boolean alwaysEnabled, ObjectAddress login, ObjectAddress authorities,
+            ObjectAddress credentialsNonExpired, ObjectAddress enabled, ObjectAddress accountNonLocked,
+            ObjectAddress accountNonExpired, AuthenticatorScope scope,
+            Map<Annotation, ObjectAddress> requiredAuthenticationFields,
+            List<IAuthenticationDefinition> authenticationDefinitions,
+            IDomainAuthenticatorAuthorizationDefinition authorizationDefinition,
+            IMethodBinder<?> authorizationMethodBinder) {
+        this(alwaysEnabled, login, authorities, credentialsNonExpired, enabled, accountNonLocked, accountNonExpired,
+                scope, requiredAuthenticationFields, authenticationDefinitions, authorizationDefinition,
+                authorizationMethodBinder, List.of());
+    }
 }

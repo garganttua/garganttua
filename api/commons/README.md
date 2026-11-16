@@ -110,7 +110,7 @@ Entity annotations control how the framework interprets a POJO class for storage
 
 | Annotation | Description |
 |---|---|
-| `@AuthenticatorLogin` | Login identifier field (e.g. email, username). |
+| `@AuthenticatorLogin` | Login identifier field (e.g. email, username). With `connection = "name"` (and optionally `scope`, `authentications`), the login field of that named connection — a second way into the authenticator. |
 | `@AuthenticatorEnabled` | Account-enabled boolean field. |
 | `@AuthenticatorAuthorities` | Field holding the list of authority names granted to this authenticator. |
 | `@AuthenticatorCredentialsNonExpired` | Credentials-not-expired flag field. |

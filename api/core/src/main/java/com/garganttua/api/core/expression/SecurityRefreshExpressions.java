@@ -297,13 +297,19 @@ public final class SecurityRefreshExpressions {
 		}
 	}
 
+	/**
+	 * Every declared {@code refresh}, the default login's first, then each connection's: a token does not say which
+	 * connection issued it, so they are tried in turn — a strategy handed the replaced authorization
+	 * ({@code @RefreshedAuthorization}) declines a token of another method by not authenticating.
+	 */
 	private static List<IMethodBinder<?>> refreshStrategies(IAuthenticatorDefinition authDef) {
-		List<IAuthenticationDefinition> definitions = authDef.authenticationDefinitions();
-		if (definitions == null) {
-			return List.of();
+		List<IAuthenticationDefinition> definitions = new ArrayList<>();
+		if (authDef.authenticationDefinitions() != null) {
+			definitions.addAll(authDef.authenticationDefinitions());
 		}
+		authDef.connections().forEach(connection -> definitions.addAll(connection.authenticationDefinitions()));
 		return definitions.stream().map(IAuthenticationDefinition::refreshMethodBinder).filter(Objects::nonNull)
-				.<IMethodBinder<?>>map(binder -> binder).toList();
+				.distinct().<IMethodBinder<?>>map(binder -> binder).toList();
 	}
 
 	/**

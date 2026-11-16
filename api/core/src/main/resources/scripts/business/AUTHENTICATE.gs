@@ -30,6 +30,10 @@ entity <- optionalGet(@entity)
 
 // Get the authenticator configuration for this domain
 authContext <- authenticatorContext(@2)
+// The connection the request names (.connection(name), route /authenticate/<name>):
+// its login field, scope and strategies. Unknown → 400. None named → the default.
+authContext <- authenticatorConnection(@authContext, @0)
+! => recordCaughtException(@0, @exception) -> 400
 
 // Check authenticator scope — a tenant-scoped authenticator requires the tenant on
 // the CALLER (over HTTP: the X-Tenant-Id header), NOT in the AuthenticationRequest

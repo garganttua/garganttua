@@ -5,7 +5,9 @@ import com.garganttua.core.reflection.annotations.Reflected;
 
 import com.garganttua.core.reflection.IField;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import com.garganttua.api.core.security.authenticator.AuthenticatorContext;
@@ -15,9 +17,11 @@ import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticationBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticatorAuthorizationBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticatorBuilder;
+import com.garganttua.api.commons.context.dsl.security.IAuthenticatorConnectionBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticatorMethodBinderBuilder;
 import com.garganttua.api.commons.context.dsl.security.IDomainSecurityBuilder;
 import com.garganttua.api.commons.definition.IAuthenticationDefinition;
+import com.garganttua.api.commons.definition.IAuthenticatorConnection;
 import com.garganttua.api.commons.definition.IAuthenticatorDefinition;
 import com.garganttua.api.commons.security.authenticator.AuthenticatorScope;
 import com.garganttua.api.commons.security.context.IAuthenticatorContext;
@@ -58,6 +62,7 @@ public class AuthenticatorBuilder<E> extends
     private List<IAuthenticationBuilder<?>> selectedAuthentications = new ArrayList<>();
     private IAuthenticatorAuthorizationBuilder<E> authenticatorAuthorizationBuilder;
     private IAuthenticatorMethodBinderBuilder<E> authorizationMethodBinderBuilder;
+    private final Map<String, AuthenticatorConnectionBuilder<E>> connections = new LinkedHashMap<>();
 
     public AuthenticatorBuilder(IDomainSecurityBuilder<E> domainBuilder, IClass<?> entityClass) {
         super(domainBuilder);
@@ -261,6 +266,16 @@ public class AuthenticatorBuilder<E> extends
     }
 
     @Override
+    public IAuthenticatorConnectionBuilder<E> connection(String name) throws ApiException {
+        AuthenticatorConnectionBuilder<E> connection = this.connections.get(name);
+        if (connection == null) {
+            connection = new AuthenticatorConnectionBuilder<>(this, name, this.entityClass);
+            this.connections.put(name, connection);
+        }
+        return connection;
+    }
+
+    @Override
     public com.garganttua.api.commons.context.dsl.security.IAuthenticatorAuthenticationBuilder<E> authentication(
             IAuthenticationBuilder<?> authentication) throws ApiException {
         Objects.requireNonNull(authentication, "Authentication cannot be null");
@@ -356,9 +371,18 @@ public class AuthenticatorBuilder<E> extends
                 null,
                 authenticationDefinitions,
                 authorizationDef,
-                authorizationMethodBinder);
+                authorizationMethodBinder,
+                buildConnections());
 
         return new AuthenticatorContext(authenticatorDefinition);
+    }
+
+    private List<IAuthenticatorConnection> buildConnections() throws ApiException {
+        List<IAuthenticatorConnection> built = new ArrayList<>();
+        for (AuthenticatorConnectionBuilder<E> connection : this.connections.values()) {
+            built.add(connection.build());
+        }
+        return List.copyOf(built);
     }
 
     /**

@@ -325,6 +325,40 @@ class GarganttuaApplicationE2ETest {
 		}
 	}
 
+	/** A second way into the same authenticator, over HTTP: its route, its field, its strategy. */
+	@Nested
+	@DisplayName("logging in through a named connection over HTTP")
+	class ConnectionOverHttp {
+
+		private HttpResponse<String> authenticate(String path, String login, String credentials) throws Exception {
+			return http.send(HttpRequest.newBuilder()
+					.uri(URI.create("http://localhost:7099/accounts/authenticate" + path))
+					.header("Content-Type", "application/json")
+					.header("Accept", "application/json")
+					.POST(BodyPublishers.ofString("{\"login\":\"" + login + "\",\"credentials\":\"" + credentials + "\"}"))
+					.build(), BodyHandlers.ofString());
+		}
+
+		@Test
+		@DisplayName("POST /accounts/authenticate/code finds the account by its code and issues the domain's token")
+		void throughTheConnection() throws Exception {
+			RefreshFixtures.Account carl = new RefreshFixtures.Account();
+			carl.setId("carl");
+			carl.setUuid("account-carl");
+			carl.setCode("C-42");
+			api.getDomain("accounts").orElseThrow().getRepository().save(carl);
+
+			HttpResponse<String> byCode = authenticate("/code", "C-42", "code-proof");
+			assertEquals(200, byCode.statusCode(), byCode.body());
+			assertNotNull(byCode.headers().firstValue("X-Authorization").orElse(null), "a token, as at any login");
+
+			assertEquals(401, authenticate("/code", "C-42", RefreshFixtures.PASSWORD).statusCode(),
+					"only the connection's own strategy is tried");
+			assertEquals(404, authenticate("/nowhere", "C-42", "code-proof").statusCode(),
+					"an undeclared connection has no route");
+		}
+	}
+
 	/** A response read off the socket: status, headers (lower-cased), body. */
 	private record RawResponse(int status, String headers, String body) {
 	}

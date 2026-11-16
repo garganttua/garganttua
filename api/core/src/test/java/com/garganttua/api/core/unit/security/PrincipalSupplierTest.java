@@ -244,17 +244,14 @@ class PrincipalSupplierTest {
         }
 
         @Test
-        @DisplayName("returns the first entity when the pipeline returns several")
-        void returnsFirstOfMultiple() throws SupplyException {
+        @DisplayName("refuses a login that matches several accounts, instead of taking the first")
+        void refusesSeveralMatches() {
             setupRuntimeContext();
-            Object first = new Object();
-            Object second = new Object();
-            stubPipelineReadAll(List.of(first, second));
+            stubPipelineReadAll(List.of(new Object(), new Object()));
 
-            Optional<Object> result = supplier.supply(runtimeContext);
+            SupplyException refused = assertThrows(SupplyException.class, () -> supplier.supply(runtimeContext));
 
-            assertTrue(result.isPresent());
-            assertSame(first, result.get());
+            assertTrue(refused.getMessage().startsWith("Several accounts match login"), refused.getMessage());
         }
 
         @Test

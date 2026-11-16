@@ -6,6 +6,8 @@ import java.util.Objects;
 
 import com.garganttua.api.commons.context.IApi;
 import com.garganttua.api.commons.context.IDomain;
+import com.garganttua.api.commons.definition.IAuthenticatorConnection;
+import com.garganttua.api.commons.definition.IAuthenticatorDefinition;
 import com.garganttua.api.commons.endpoint.IInterface;
 import com.garganttua.api.commons.endpoint.Interface;
 import com.garganttua.api.commons.operation.BusinessOperation;
@@ -16,11 +18,14 @@ import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.commons.service.IOperationResponse;
 import com.garganttua.api.commons.service.WrittenFields;
 import com.garganttua.api.commons.service.OperationResponseCode;
+import com.garganttua.api.core.expression.SecurityExpressions;
 import com.garganttua.api.core.expression.SerializationExpressions;
 import com.garganttua.core.lifecycle.ILifecycle;
 import com.garganttua.core.lifecycle.LifecycleStatus;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
+
+import com.garganttua.api.binding.javalin.JavalinRoutes.HttpVerb;
 
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -139,7 +144,7 @@ public class JavalinInterface implements IInterface {
 	public JavalinInterface(int port, String mountPath) {
 		this.port = port;
 		this.ownsServer = true;
-		this.mountPath = normaliseMountPath(mountPath);
+		this.mountPath = JavalinRoutes.normaliseMountPath(mountPath);
 	}
 
 	/**
@@ -171,27 +176,7 @@ public class JavalinInterface implements IInterface {
 		this.app = Objects.requireNonNull(app, "Javalin app cannot be null");
 		this.ownsServer = false;
 		this.port = -1;
-		this.mountPath = normaliseMountPath(mountPath);
-	}
-
-	/**
-	 * Normalises a declared mount path to either {@code ""} or {@code "/segment[/segment…]"}:
-	 * a missing leading slash is added, trailing slashes are dropped, and {@code null} / blank /
-	 * {@code "/"} all mean "the root", so that {@code "api"}, {@code "/api"} and {@code "/api/"}
-	 * cannot produce three different mountings — nor {@code /api//invoices}.
-	 */
-	private static String normaliseMountPath(String mountPath) {
-		if (mountPath == null || mountPath.isBlank()) {
-			return "";
-		}
-		String trimmed = mountPath.trim();
-		while (trimmed.endsWith("/")) {
-			trimmed = trimmed.substring(0, trimmed.length() - 1);
-		}
-		if (trimmed.isEmpty()) {
-			return "";
-		}
-		return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
+		this.mountPath = JavalinRoutes.normaliseMountPath(mountPath);
 	}
 
 	/** {@return the normalised prefix every route of this connector is mounted under} Empty for the root. */
@@ -249,12 +234,12 @@ public class JavalinInterface implements IInterface {
 			if (op.getBusinessOperation() != BusinessOperation.useCase) {
 				continue;
 			}
-			String path = this.mountPath + toJavalinPath(op);
+			String path = this.mountPath + JavalinRoutes.toJavalinPath(op);
 			boolean hasUuid = path.contains("{uuid}");
-			for (HttpVerb verb : verbsOf(op.technicalOperation())) {
+			for (HttpVerb verb : JavalinRoutes.verbsOf(op.technicalOperation())) {
 				boolean partial = verb == HttpVerb.PATCH;
 				Handler handler = ctx -> dispatch(domain, op, ctx, hasUuid ? ctx.pathParam("uuid") : null, partial);
-				register(server, verb, path, handler);
+				JavalinRoutes.register(server, verb, path, handler);
 				mounted.add(verb + " " + path);
 			}
 		}
@@ -262,19 +247,19 @@ public class JavalinInterface implements IInterface {
 		// BEFORE the CRUD table, for the same reason the use cases are: /<domain>/self is a literal
 		// path that collides with readOne's /<domain>/{uuid}, and Javalin resolves a collision by
 		// registration order. Registered after, it would be swallowed as uuid = "self".
-		record(mounted, route(server, HttpVerb.GET, base + "/self", domain, configured,
+		JavalinRoutes.record(mounted, route(server, HttpVerb.GET, base + "/self", domain, configured,
 				BusinessOperation.readSelf, false));
 
-		record(mounted, route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false));
-		record(mounted, route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false));
-		record(mounted, route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.POST,   base, domain, configured, BusinessOperation.create,    false));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.GET,    base, domain, configured, BusinessOperation.readAll,   false));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.GET,    one,  domain, configured, BusinessOperation.readOne,   true));
 		// Update is reachable under both verbs; only PATCH flags the body as partial.
-		record(mounted, route(server, HttpVerb.PATCH,  one,  domain, configured, BusinessOperation.update,    true));
-		record(mounted, route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true));
-		record(mounted, route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true));
-		record(mounted, route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.PATCH,  one,  domain, configured, BusinessOperation.update,    true));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.PUT,    one,  domain, configured, BusinessOperation.update,    true));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.DELETE, one,  domain, configured, BusinessOperation.deleteOne, true));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.DELETE, base, domain, configured, BusinessOperation.deleteAll, false));
 		// The grants of one entity, present when the domain declares .shares(field).
-		record(mounted, route(server, HttpVerb.PUT, one + "/shares", domain, configured, BusinessOperation.share, true));
+		JavalinRoutes.record(mounted, route(server, HttpVerb.PUT, one + "/shares", domain, configured, BusinessOperation.share, true));
 
 		mountSecurityRoutes(server, base, domain, configured, mounted);
 
@@ -293,50 +278,33 @@ public class JavalinInterface implements IInterface {
 	 */
 	private void mountSecurityRoutes(Javalin server, String base, IDomain<?> domain,
 			List<OperationDefinition> configured, List<String> mounted) {
-		record(mounted, route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
+		JavalinRoutes.record(mounted, route(server, HttpVerb.POST, base + "/authenticate", domain, configured,
 				BusinessOperation.authenticate, false));
-		record(mounted, route(server, HttpVerb.POST, base + "/refresh", domain, configured,
+		mountConnectionRoutes(server, base, domain, configured, mounted);
+		JavalinRoutes.record(mounted, route(server, HttpVerb.POST, base + "/refresh", domain, configured,
 				BusinessOperation.refreshAuthorization, false));
 	}
 
 	/**
-	 * The HTTP verbs a use case's technical operation maps to. An {@code update} use case is
-	 * reachable under both PATCH and PUT — PATCH first, since it is the preferred verb — exactly
-	 * like the CRUD update route.
+	 * One {@code POST <base>/authenticate/<name>} per named connection of the authenticator
+	 * ({@code .connection(name)}): the same authenticate operation, through that connection's login field, scope
+	 * and strategies. An undeclared name has no route, hence 404.
 	 */
-	private static List<HttpVerb> verbsOf(com.garganttua.api.commons.operation.TechnicalOperation op) {
-		if (op == null) {
-			return List.of(HttpVerb.GET);
+	private void mountConnectionRoutes(Javalin server, String base, IDomain<?> domain,
+			List<OperationDefinition> configured, List<String> mounted) {
+		OperationDefinition authenticate = JavalinRoutes.findOperation(configured, BusinessOperation.authenticate);
+		IAuthenticatorDefinition authenticator = authenticate == null ? null
+				: SecurityExpressions.authenticatorContext(domain);
+		if (authenticator == null) {
+			return;
 		}
-		return switch (op) {
-			case create -> List.of(HttpVerb.POST);
-			case update -> List.of(HttpVerb.PATCH, HttpVerb.PUT);
-			case delete -> List.of(HttpVerb.DELETE);
-			case read -> List.of(HttpVerb.GET);
-		};
-	}
-
-	/**
-	 * The Javalin route path for an operation, RELATIVE to this connector's mount path: its declared
-	 * {@link OperationDefinition#getPath()} with the framework's {@code ${uuid}} placeholder
-	 * rewritten to Javalin's {@code {uuid}}. The caller prepends {@code mountPath}.
-	 *
-	 * <p>
-	 * This covers a use case declared with {@code completePath(...)} as well: "complete" is
-	 * complete <em>within the mounting</em>, not absolute. A connector that let some of its own
-	 * routes escape its prefix would hand the application back the two HTTP namespaces the mount
-	 * path exists to remove.
-	 * </p>
-	 */
-	private static String toJavalinPath(OperationDefinition op) {
-		String path = op.getPath() != null ? op.getPath().path() : null;
-		if (path == null || path.isBlank()) {
-			return "/";
+		for (IAuthenticatorConnection connection : authenticator.connections()) {
+			String path = base + "/authenticate/" + connection.name();
+			JavalinRoutes.register(server, HttpVerb.POST, path,
+					ctx -> dispatch(domain, authenticate, ctx, null, false, connection.name()));
+			mounted.add(HttpVerb.POST + " " + path);
 		}
-		return path.replace("${uuid}", "{uuid}");
 	}
-
-	private enum HttpVerb { GET, POST, PATCH, PUT, DELETE }
 
 	/**
 	 * Registers one route, but only when the domain actually exposes {@code bo} (the
@@ -346,44 +314,14 @@ public class JavalinInterface implements IInterface {
 	 */
 	private String route(Javalin server, HttpVerb verb, String path, IDomain<?> domain,
 			List<OperationDefinition> configured, BusinessOperation bo, boolean hasUuid) {
-		OperationDefinition operation = findOperation(configured, bo);
+		OperationDefinition operation = JavalinRoutes.findOperation(configured, bo);
 		if (operation == null) {
 			return null; // operation not enabled on this domain — no route
 		}
 		boolean partial = verb == HttpVerb.PATCH;
 		Handler handler = ctx -> dispatch(domain, operation, ctx, hasUuid ? ctx.pathParam("uuid") : null, partial);
-		register(server, verb, path, handler);
+		JavalinRoutes.register(server, verb, path, handler);
 		return verb + " " + path;
-	}
-
-	/** Binds a handler to a Javalin route for the given verb. */
-	/** Records a mounted route, skipping the operations the domain does not expose. */
-	private static void record(List<String> mounted, String route) {
-		if (route != null) {
-			mounted.add(route);
-		}
-	}
-
-	private void register(Javalin server, HttpVerb verb, String path, Handler handler) {
-		switch (verb) {
-			case GET -> server.get(path, handler);
-			case POST -> server.post(path, handler);
-			case PATCH -> server.patch(path, handler);
-			case PUT -> server.put(path, handler);
-			case DELETE -> server.delete(path, handler);
-		}
-	}
-
-	private static OperationDefinition findOperation(List<OperationDefinition> operations, BusinessOperation bo) {
-		if (operations == null) {
-			return null;
-		}
-		for (OperationDefinition op : operations) {
-			if (op.getBusinessOperation() == bo) {
-				return op;
-			}
-		}
-		return null;
 	}
 
 	/**
@@ -400,8 +338,17 @@ public class JavalinInterface implements IInterface {
 	 */
 	private void dispatch(IDomain<?> domain, OperationDefinition operation, Context ctx, String uuid,
 			boolean partial) {
+		dispatch(domain, operation, ctx, uuid, partial, null);
+	}
+
+	/** As above, through the named authenticator connection when {@code connection} is not null. */
+	private void dispatch(IDomain<?> domain, OperationDefinition operation, Context ctx, String uuid,
+			boolean partial, String connection) {
 		try {
 			IOperationRequest request = IOperationRequest.create();
+			if (connection != null) {
+				request.arg(IOperationRequest.CONNECTION, connection);
+			}
 			request.arg(IOperationRequest.OPERATION, operation);
 			request.arg(IOperationRequest.RAW_REQUEST, ctx);
 			if (uuid != null) {

@@ -42,6 +42,13 @@ final class RefreshFixtures {
                 .withParam(0, new PrincipalSupplierBuilder())
                 .withParam(1, new AuthenticatorDefinitionSupplierBuilder());
         auth.up();
+        var byCode = builder.security().authentication(
+                new FixedSupplierBuilder<>(new CodeStrategy(), IClass.getClass(CodeStrategy.class)));
+        byCode.authenticate("authenticate")
+                .withParam(0, new PrincipalSupplierBuilder())
+                .withParam(1, new AuthenticateCredentialsSupplierBuilder())
+                .withParam(2, new AuthenticatorDefinitionSupplierBuilder());
+        byCode.up();
 
         var sessions = builder.domain(IClass.getClass(Session.class))
                 .owned("ownerId")
@@ -57,8 +64,9 @@ final class RefreshFixtures {
                 .owner("uuid").superOwner("superOwner")
                 .entity().id("id").uuid("uuid").up()
                 .dto(IClass.getClass(AccountDto.class)).id("id").uuid("uuid").up();
-        accounts.security().authenticator()
-                .login("id").alwaysEnabled(true).authentication(auth)
+        var authenticator = accounts.security().authenticator().login("id").alwaysEnabled(true);
+        authenticator.connection("code").login("code").authentication(byCode).up();
+        authenticator.authentication(auth)
                 .authorization((IDomainBuilder) sessions)
                 .lifeTime(15, java.util.concurrent.TimeUnit.MINUTES)
                 .refreshLifeTime(10, java.util.concurrent.TimeUnit.HOURS);
@@ -83,9 +91,22 @@ final class RefreshFixtures {
         }
     }
 
+    /** The second way in: an access code, through the {@code code} connection. */
+    public static class CodeStrategy {
+        public IAuthentication authenticate(Object principal, Object credentials, IAuthenticatorDefinition def) {
+            String given = credentials instanceof byte[] bytes ? new String(bytes, StandardCharsets.UTF_8)
+                    : String.valueOf(credentials);
+            return new Authentication("code-proof".equals(given), principal, null, "code", List.of("READ"),
+                    null, null, false, false, true, true, true, true);
+        }
+    }
+
     public static class Account {
         private String id;
         private String uuid;
+        private String code;
+        public String getCode() { return code; }
+        public void setCode(String code) { this.code = code; }
         private Boolean superOwner = false;
         public Boolean getSuperOwner() { return superOwner; }
         public void setSuperOwner(Boolean superOwner) { this.superOwner = superOwner; }
@@ -98,6 +119,9 @@ final class RefreshFixtures {
     public static class AccountDto {
         private String id;
         private String uuid;
+        private String code;
+        public String getCode() { return code; }
+        public void setCode(String code) { this.code = code; }
         private Boolean superOwner = null;
         public Boolean getSuperOwner() { return superOwner; }
         public void setSuperOwner(Boolean superOwner) { this.superOwner = superOwner; }

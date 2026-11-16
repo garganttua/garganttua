@@ -32,6 +32,12 @@ public interface IOperationRequest {
 	ArgKey<Byte[]> RAW_BODY = ArgKey.of("rawBody", IClass.getClass(Byte[].class));
 	ArgKey<Object> BODY = ArgKey.of("body", IClass.getClass(Object.class));
 	ArgKey<String> ENTITY_UUID = ArgKey.of("entityUuid", IClass.getClass(String.class));
+
+	/**
+	 * The authenticator connection an {@code authenticate} request goes through ({@code .connection(name)}), set by
+	 * the transport from the route {@code /authenticate/<name>}. Absent: the authenticator's default login.
+	 */
+	ArgKey<String> CONNECTION = ArgKey.of("connection", IClass.getClass(String.class));
 	/**
 	 * Transport marker: the body carries only the fields the client means to change — HTTP
 	 * {@code PATCH} rather than {@code PUT}. When set, the update stage reads every declared

@@ -78,6 +78,17 @@ public class SecurityAuthorizationExpressions {
 	@Expression(name = "lookupValidAuthorization", description = "Looks up a valid (non-expired, non-revoked) authorization owned by the principal via a direct repository query on the authorization domain. Bypasses the workflow on purpose: this is a framework-internal lookup, not user-triggered traffic, so the authorization pipeline (which expects a caller-supplied token) does not apply.")
 	public static @Nullable Object lookupValidAuthorization(@Nullable Object authorizationDefObj,
 			@Nullable Object domainContextObj, @Nullable Object principalUuid, @Nullable Object tenantId) {
+		return lookupReusable(authorizationDefObj, domainContextObj, principalUuid, tenantId, null);
+	}
+
+	/**
+	 * The reusable authorization of the principal — issued by the same method ({@code IAuthentication.authorization()},
+	 * stored under the authorization's {@code type}) when one is given: a login through another connection, or with
+	 * another factor, must not be handed the token of the session opened otherwise.
+	 */
+	private static @Nullable Object lookupReusable(@Nullable Object authorizationDefObj,
+			@Nullable Object domainContextObj, @Nullable Object principalUuid, @Nullable Object tenantId,
+			@Nullable Object method) {
 		if (authorizationDefObj == null || domainContextObj == null || principalUuid == null) {
 			return null;
 		}
@@ -92,7 +103,24 @@ public class SecurityAuthorizationExpressions {
 			IFilter combinedFilter = buildReuseFilter(
 					authzDef, authzDomain, authenticatorDomain, principalUuid, tenantId);
 			List<Object> results = SecurityExpressions.invokeReadAll(authzDomain, combinedFilter);
-			return (results != null && !results.isEmpty()) ? results.get(0) : null;
+			if (results == null) {
+				return null;
+			}
+			// Same method only — checked here, not in the query: a store that does not keep the type reads it
+			// back null, and such a record stays reusable as it always was.
+			return results.stream()
+					.filter(r -> method == null || authzDef.type() == null
+							|| readMethod(r, authzDef) == null || method.equals(readMethod(r, authzDef)))
+					.findFirst().orElse(null);
+		} catch (RuntimeException e) {
+			return null;
+		}
+	}
+
+	/** {@return the method an authorization was issued by — its {@code type} field} {@code null} when unreadable. */
+	private static @Nullable Object readMethod(Object authorization, IDomainAuthorizationDefinition authzDef) {
+		try {
+			return DefaultMapper.reflection().getFieldValue(authorization, authzDef.type().toString());
 		} catch (RuntimeException e) {
 			return null;
 		}
@@ -235,7 +263,7 @@ public class SecurityAuthorizationExpressions {
 		String principalUuid = readPrincipalUuid(authResult, authenticatorDomain);
 		if (principalUuid == null) return null;
 		String tenantId = readPrincipalTenantId(authResult, authenticatorDomain);
-		return lookupValidAuthorization(authzDef, authenticatorDomain, principalUuid, tenantId);
+		return lookupReusable(authzDef, authenticatorDomain, principalUuid, tenantId, authResult.authorization());
 	}
 
 	/**

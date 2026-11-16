@@ -72,6 +72,11 @@ _principal <- findPrincipalByOwnerUuid(@_claimed, @2, @1)
 checkAccountStatus(authenticatorContext(@2), @_principal)
 ! => recordCaughtException(@0, @exception) -> 401
 
+// The replaced authorization, for the refresh strategies and the declared
+// issuer (RefreshedAuthorizationSupplierBuilder / @RefreshedAuthorization; null
+// at login): carry over what was put in it, decline a token of another method.
+setRequestArg(@0, "refreshedAuthorization", @entity)
+
 // Re-derive the authentication: the authenticator's refresh strategy decides
 // the authorities of the moment (a refusal refuses the refresh); without one,
 // those of the replaced authorization are copied.
@@ -83,9 +88,6 @@ _authResult <- refreshAuthentication(@_principal, @_claimed, @2, @0)
 // It inherits the refresh window of the one it replaces (refreshNotAfter):
 // the window is fixed at login, a refresh does not push it back.
 setRequestArg(@0, "refreshNotAfter", refreshWindowEnd(@entity, @2))
-// A declared issuer may carry over what it put in the replaced authorization
-// (RefreshedAuthorizationSupplierBuilder / @RefreshedAuthorization; null at login).
-setRequestArg(@0, "refreshedAuthorization", @entity)
 output <- issueAuthorization(@_authResult, @2, @0)
 ! => recordCaughtException(@0, @exception) -> 500
 

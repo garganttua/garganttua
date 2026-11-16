@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import com.garganttua.api.core.domain.DomainDefinition;
+import com.garganttua.api.core.security.authenticator.ConnectionAuthenticatorDefinition;
 import com.garganttua.api.core.expression.SecurityExpressions;
 import com.garganttua.api.core.filter.Filter;
 import com.garganttua.api.core.mapper.DefaultMapper;
@@ -70,9 +71,15 @@ public class PrincipalSupplier implements IContextualSupplier<Object, IRuntimeCo
         if (secDef == null) {
             throw new SupplyException("No security definition found on domain");
         }
-        IAuthenticatorDefinition authDef = secDef.authenticatorDefinition();
-        if (authDef == null) {
+        if (secDef.authenticatorDefinition() == null) {
             throw new SupplyException("No authenticator definition found on domain");
+        }
+        // Through the connection the request names: its login field and scope.
+        IAuthenticatorDefinition authDef;
+        try {
+            authDef = ConnectionAuthenticatorDefinition.forRequest(secDef.authenticatorDefinition(), request);
+        } catch (RuntimeException e) {
+            throw new SupplyException(e.getMessage(), e);
         }
 
         // 4-5. The principal: known to the caller, or found by the login of the request
@@ -150,6 +157,12 @@ public class PrincipalSupplier implements IContextualSupplier<Object, IRuntimeCo
         }
         if (results == null || results.isEmpty()) {
             throw new SupplyException("User not found for login: " + login);
+        }
+        if (results.size() > 1) {
+            // Taking "the first" of two accounts sharing a login would authenticate whichever the store returns.
+            throw new SupplyException("Several accounts match login '" + login + "' on '"
+                    + domainContext.getDomainName() + "': refused — a login must designate one account"
+                    + (authDef.scope() == AuthenticatorScope.tenant ? " within its tenant" : ""));
         }
         return results.get(0);
     }

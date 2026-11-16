@@ -3,6 +3,8 @@ package com.garganttua.api.core.security.authentication;
 import java.lang.reflect.Type;
 import java.util.Optional;
 
+import com.garganttua.api.core.security.authenticator.ConnectionAuthenticatorDefinition;
+import com.garganttua.api.commons.service.IOperationRequest;
 import com.garganttua.api.core.domain.Domain;
 import com.garganttua.api.core.domain.DomainDefinition;
 import com.garganttua.api.commons.context.IDomain;
@@ -55,7 +57,14 @@ public class AuthenticatorDefinitionSupplier implements IContextualSupplier<IAut
             var domDef = (DomainDefinition<?>) domCtx.getDomainDefinition();
             var secDef = domDef.domainSecurityDefinition();
             if (secDef != null && secDef.authenticatorDefinition() != null) {
-                return Optional.of(secDef.authenticatorDefinition());
+                // Through the connection the request names, so a strategy sees the login field it was reached by.
+                Object request = context.getVariable("request", IClass.getClass(IOperationRequest.class)).orElse(null);
+                try {
+                    return Optional.of(ConnectionAuthenticatorDefinition.forRequest(secDef.authenticatorDefinition(),
+                            request));
+                } catch (RuntimeException e) {
+                    throw new SupplyException(e.getMessage(), e);
+                }
             }
         }
 

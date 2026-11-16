@@ -13,6 +13,7 @@ import com.garganttua.api.commons.context.dsl.IDomainBuilder;
 import com.garganttua.api.commons.context.dsl.security.IApiSecurityBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticationBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticatorBuilder;
+import com.garganttua.api.commons.context.dsl.security.IAuthenticatorConnectionBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthorizationBuilder;
 import com.garganttua.api.commons.context.dsl.security.IDomainSecurityBuilder;
 import com.garganttua.api.commons.context.dsl.security.IRefreshableAuthorizationBuilder;
@@ -274,23 +275,67 @@ public final class SecurityAnnotationScanner {
         }
 
         // Link to the configured authentication strategies
-        for (Class<?> auth : a.authentications()) {
-            if (auth == null || auth == void.class) continue;
-            IClass<?> authIClass = IClass.getClass(auth);
-            Optional<IAuthenticationBuilder<IApiSecurityBuilder>> linked = apiSec.isAuthenticationAvailable(authIClass);
-            if (linked.isEmpty()) {
-                log.warn(
-                        "@Authenticator on {} references @Authentication {} but it was not registered; ignoring linkage",
-                        authrClass.getSimpleName(), authIClass.getSimpleName());
-                continue;
-            }
-            authrBuilder.authentication(linked.get());
+        for (IAuthenticationBuilder<?> strategy : linkedStrategies(apiSec, a.authentications(), authrClass)) {
+            authrBuilder.authentication(strategy);
         }
+        wireLogins(apiSec, authrBuilder, authrClass, new java.util.HashSet<>(java.util.Arrays.asList(a.authentications())));
 
         wireAuthorizationDomain(a, authrClass, authrBuilder);
 
         authrBuilder.up();
         sec.up();
+    }
+
+    /** The registered strategies the classes name; an unregistered one is skipped with a warning. */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static List<IAuthenticationBuilder<?>> linkedStrategies(IApiSecurityBuilder apiSec, Class<?>[] classes,
+            IClass<?> authrClass) {
+        List<IAuthenticationBuilder<?>> linked = new java.util.ArrayList<>();
+        for (Class<?> auth : classes) {
+            if (auth == null || auth == void.class) continue;
+            Optional<IAuthenticationBuilder<IApiSecurityBuilder>> strategy =
+                    apiSec.isAuthenticationAvailable(IClass.getClass(auth));
+            if (strategy.isEmpty()) {
+                log.warn("Authenticator {} references @Authentication {} but it was not registered; ignoring linkage",
+                        authrClass.getSimpleName(), auth.getSimpleName());
+                continue;
+            }
+            linked.add(strategy.get());
+        }
+        return linked;
+    }
+
+    /**
+     * The {@code @AuthenticatorLogin} fields, superclasses included: the one without connection is the default login
+     * (its strategies join the authenticator's, those of {@code @Authenticator} not twice); each named one declares
+     * that connection — login, scope, strategies — as {@code .connection(name)} would.
+     */
+    private static void wireLogins(IApiSecurityBuilder apiSec, IAuthenticatorBuilder<Object> authrBuilder,
+            IClass<?> authrClass, Set<Class<?>> alreadyLinked) throws ApiException {
+        for (IClass<?> type = authrClass; type != null && !Object.class.getName().equals(type.getName());
+                type = type.getSuperclass()) {
+            for (IField field : type.getDeclaredFields()) {
+                AuthenticatorLogin login = field.getAnnotation(IClass.getClass(AuthenticatorLogin.class));
+                if (login == null) continue;
+                if (login.connection().isBlank()) {
+                    authrBuilder.login(field.getName());
+                    Class<?>[] own = java.util.Arrays.stream(login.authentications())
+                            .filter(c -> !alreadyLinked.contains(c)).toArray(Class<?>[]::new);
+                    for (IAuthenticationBuilder<?> strategy : linkedStrategies(apiSec, own, authrClass)) {
+                        authrBuilder.authentication(strategy);
+                    }
+                    continue;
+                }
+                IAuthenticatorConnectionBuilder<Object> connection =
+                        authrBuilder.connection(login.connection()).login(field.getName());
+                if (login.scope().length > 0) {
+                    connection.scope(login.scope()[0]);
+                }
+                for (IAuthenticationBuilder<?> strategy : linkedStrategies(apiSec, login.authentications(), authrClass)) {
+                    connection.authentication(strategy);
+                }
+            }
+        }
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
@@ -367,9 +412,6 @@ public final class SecurityAnnotationScanner {
 
     private void applyAuthenticatorFields(IReflection reflection, IAuthenticatorBuilder<Object> authrBuilder, IClass<?> authrClass)
             throws ApiException {
-        Optional<IField> loginF = reflection.findFieldAnnotatedWith(authrClass, IClass.getClass(AuthenticatorLogin.class));
-        if (loginF.isPresent()) authrBuilder.login(loginF.get().getName());
-
         Optional<IField> enabledF = reflection.findFieldAnnotatedWith(authrClass, IClass.getClass(AuthenticatorEnabled.class));
         if (enabledF.isPresent()) authrBuilder.enabled(enabledF.get().getName());
 

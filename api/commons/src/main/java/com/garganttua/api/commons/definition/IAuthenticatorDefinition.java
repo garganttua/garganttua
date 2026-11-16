@@ -29,6 +29,14 @@ public interface IAuthenticatorDefinition {
 
     List<IAuthenticationDefinition> authenticationDefinitions();
 
+    /**
+     * The named connections declared beside the default login ({@code .connection(name)}), each with its own login
+     * field, scope and strategies. Empty for an authenticator with a single way in.
+     */
+    default List<IAuthenticatorConnection> connections() {
+        return List.of();
+    }
+
     IDomainAuthenticatorAuthorizationDefinition authorizationDefinition();
 
     /**

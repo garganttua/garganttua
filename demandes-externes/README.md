@@ -247,3 +247,19 @@ Traitée le 2026-11-12 sur `main`, **à paraître dans `3.0.0-ALPHA35`**.
 | Réutilisation d'une autorisation à la connexion | pouvait rendre une autorisation déjà échangée | l'exclut |
 | `POST /<authentificateur>/refresh` (liaison Javalin) | 404 | monté, jeton dans `Authorization`, nouveau jeton dans `X-Authorization` |
 | Corps d'un rafraîchissement | désérialisé dans la classe de l'authentificateur | non lu |
+
+## Fiches répondues — prochaine ALPHA
+
+Traitée le 2026-11-16 sur `main`, **à paraître dans la version qui suit `3.0.0-ALPHA35`**.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [un-authentificateur-ne-connait-qu-un-champ-de-connexion](un-authentificateur-ne-connait-qu-un-champ-de-connexion.md) | palliad | Forme A : `.authenticator().connection("psc").login("rpps").scope(tenant).authentication(psc)`, ou `@AuthenticatorLogin(connection = "psc", …)`. Route `POST /<domaine>/authenticate/<connexion>`, recherche dans la portée de la connexion, stratégies propres, jeton du domaine. Plusieurs comptes trouvés : refus. Réutilisation d'un jeton par méthode. Rafraîchissement en cascade sur les `refresh` déclarés. |
+
+## Changements de comportement à la montée après `3.0.0-ALPHA35`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Connexion dont l'identifiant désigne plusieurs comptes (dans sa portée) | le premier rendu par le stockage était authentifié | refus, 401 |
+| Réutilisation d'un jeton vivant à la connexion | tout jeton vivant du compte | seulement un jeton de la même méthode (`type`), quand le stockage la garde |
+| `@AuthenticatorLogin.authentications` | ignoré | lu : les stratégies du champ (connexion nommée, ou ajoutées à l'authentificateur) |
