@@ -28,12 +28,12 @@ When building native images with GraalVM, all reflection and resource metadata m
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-native-image-maven-plugin</artifactId>
-    <version>3.0.0-ALPHA35</version>
+    <version>3.0.0-ALPHA36</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA35
+3.0.0-ALPHA36
 
 ### Dependencies
  - `org.apache.maven.plugin-tools:maven-plugin-annotations:provided`

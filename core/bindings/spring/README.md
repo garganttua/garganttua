@@ -14,12 +14,12 @@ Spring dependencies are declared with `provided` scope, so the consuming applica
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-spring</artifactId>
-    <version>3.0.0-ALPHA35</version>
+    <version>3.0.0-ALPHA36</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA35
+3.0.0-ALPHA36
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`

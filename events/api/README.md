@@ -16,12 +16,12 @@ Zero business logic.
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-events-api</artifactId>
-    <version>3.0.0-ALPHA35</version>
+    <version>3.0.0-ALPHA36</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA35
+3.0.0-ALPHA36
 
 ### Dependencies
  - `com.garganttua.core:garganttua-commons`
