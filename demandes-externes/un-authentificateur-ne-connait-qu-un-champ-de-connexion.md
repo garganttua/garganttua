@@ -82,7 +82,7 @@ Dans les deux cas :
 - **Une recherche « par n'importe quel champ ».** Seuls les champs déclarés comme champs de connexion doivent pouvoir
   servir à trouver un principal.
 
-## Réponse — 2026-11-16, sur `main`, à paraître dans la prochaine ALPHA
+## Réponse — 2026-11-16, sur `main`, à paraître dans `3.0.0-ALPHA36`
 
 **Forme A retenue : plusieurs connexions sur un même authentificateur.** La forme B aurait touché tous les endroits
 qui supposent un seul authentificateur par domaine (vérification, rafraîchissement, état du compte, émission), pour
