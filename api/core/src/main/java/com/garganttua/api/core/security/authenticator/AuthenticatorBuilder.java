@@ -267,6 +267,7 @@ public class AuthenticatorBuilder<E> extends
 
     @Override
     public IAuthenticatorConnectionBuilder<E> connection(String name) throws ApiException {
+        AuthenticatorConnectionBuilder.requireValidName(name);
         AuthenticatorConnectionBuilder<E> connection = this.connections.get(name);
         if (connection == null) {
             connection = new AuthenticatorConnectionBuilder<>(this, name, this.entityClass);

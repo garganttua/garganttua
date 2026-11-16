@@ -33,6 +33,9 @@ import com.garganttua.core.supply.SupplyException;
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class PrincipalSupplier implements IContextualSupplier<Object, IRuntimeContext> {
 
+    /** A login designates one account: more is a refusal, never "the first". */
+    private static final int ONE_ACCOUNT = 1;
+
     private static final IClass<Object> SUPPLIED_CLASS = IClass.getClass(Object.class);
     private static final IClass<IRuntimeContext> CONTEXT_CLASS = IClass.getClass(IRuntimeContext.class);
 
@@ -158,7 +161,7 @@ public class PrincipalSupplier implements IContextualSupplier<Object, IRuntimeCo
         if (results == null || results.isEmpty()) {
             throw new SupplyException("User not found for login: " + login);
         }
-        if (results.size() > 1) {
+        if (results.size() > ONE_ACCOUNT) {
             // Taking "the first" of two accounts sharing a login would authenticate whichever the store returns.
             throw new SupplyException("Several accounts match login '" + login + "' on '"
                     + domainContext.getDomainName() + "': refused — a login must designate one account"

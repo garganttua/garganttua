@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.core.SuppressFBWarnings;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticationBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticatorBuilder;
 import com.garganttua.api.commons.context.dsl.security.IAuthenticatorConnectionBuilder;
@@ -24,6 +25,9 @@ import com.garganttua.core.reflection.fields.FieldResolver;
  * {@code up()} returns to the authenticator, which builds its connections with itself.
  */
 @Reflected
+@SuppressFBWarnings(value = { "IS2_INCONSISTENT_SYNC" }, justification = "Single-threaded DSL builder used once "
+        + "during configuration; doBuild() is synchronized to publish a consistent snapshot.")
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class AuthenticatorConnectionBuilder<E> extends
         AbstractAutomaticLinkedBuilder<IAuthenticatorConnectionBuilder<E>, IAuthenticatorBuilder<E>, IAuthenticatorConnection>
         implements IAuthenticatorConnectionBuilder<E> {
@@ -31,19 +35,27 @@ public class AuthenticatorConnectionBuilder<E> extends
     /** A route segment: lower-case letters, digits and dashes. */
     private static final Pattern NAME = Pattern.compile("[a-z0-9][a-z0-9-]*");
 
+    /**
+     * Refuses a connection name that is not a route segment.
+     *
+     * @throws ApiException when the name is null or not lower-case letters, digits and dashes
+     */
+    static void requireValidName(String name) throws ApiException {
+        if (name == null || !NAME.matcher(name).matches()) {
+            throw new ApiException("Connection name '" + name
+                    + "' is not a route segment: use lower-case letters, digits and dashes");
+        }
+    }
+
     private final String name;
     private final IClass<?> entityClass;
     private ObjectAddress login;
     private AuthenticatorScope scope;
     private final List<IAuthenticationBuilder<?>> authentications = new ArrayList<>();
 
-    AuthenticatorConnectionBuilder(IAuthenticatorBuilder<E> authenticator, String name, IClass<?> entityClass)
-            throws ApiException {
+    /** @param name a valid route segment — see {@link #requireValidName(String)} */
+    AuthenticatorConnectionBuilder(IAuthenticatorBuilder<E> authenticator, String name, IClass<?> entityClass) {
         super(authenticator);
-        if (name == null || !NAME.matcher(name).matches()) {
-            throw new ApiException("Connection name '" + name
-                    + "' is not a route segment: use lower-case letters, digits and dashes");
-        }
         this.name = name;
         this.entityClass = Objects.requireNonNull(entityClass, "Entity class cannot be null");
     }
