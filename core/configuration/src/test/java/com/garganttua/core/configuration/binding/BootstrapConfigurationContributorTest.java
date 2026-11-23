@@ -4,9 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import com.garganttua.core.dsl.IBuilder;
+import com.garganttua.core.reflection.JdkReflectionProvider;
+import com.garganttua.core.reflection.dsl.ReflectionBuilder;
 
 /**
  * Verifies the bootstrap CONFIGURATION-stage contributor: it discovers a classpath
@@ -15,6 +18,17 @@ import com.garganttua.core.dsl.IBuilder;
  * builders, and applies it — leaving non-matching builders untouched.
  */
 class BootstrapConfigurationContributorTest {
+
+    /**
+     * The contributor resolves the configuration formats through {@code IClass}: this test installs its own
+     * reflection, instead of relying on a test that happened to run before it in the same JVM.
+     */
+    @BeforeAll
+    static void setUpReflection() throws Exception {
+        ReflectionBuilder.builder()
+            .withProvider(new JdkReflectionProvider())
+            .build();
+    }
 
     @Test
     void appliesDiscoveredConfigToTheMatchingConfigurableBuilder() {
