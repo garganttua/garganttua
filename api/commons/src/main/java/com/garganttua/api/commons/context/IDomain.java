@@ -71,6 +71,16 @@ public interface IDomain<E> extends ILifecycle, IObservable {
 		return Optional.empty();
 	}
 
+	/**
+	 * How this domain caches its reads by uuid, when it was told to. Empty by default: nothing is cached.
+	 *
+	 * @return the policy, or empty
+	 * @see CachePolicy
+	 */
+	default Optional<CachePolicy> cache() {
+		return Optional.empty();
+	}
+
 	default String getDomainName(){
 		return getDomainDefinition().domainName();
 	}

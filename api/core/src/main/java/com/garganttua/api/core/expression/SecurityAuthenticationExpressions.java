@@ -81,12 +81,9 @@ public class SecurityAuthenticationExpressions {
 		}
 		// owned stores a qualified id (${domainName}:${uuid}); strip the prefix for a direct read by
 		// bare uuid (the principal is an authenticator entity, outside the pipeline scope).
-		IFilter filter = Filter.eq(uuidField.toString(), OwnerIds.idOf(ownerUuid.toString()));
-		List<Object> results = repo.getEntities(Optional.empty(), Optional.of(filter), Optional.empty());
-		if (results == null || results.isEmpty()) {
-			throw new ApiException("Principal not found for ownerId: " + ownerUuid);
-		}
-		return results.get(0);
+		// By uuid: through the authenticator domain's cache when it declares one (CachePolicy).
+		return repo.getByUuid(OwnerIds.idOf(ownerUuid.toString()))
+				.orElseThrow(() -> new ApiException("Principal not found for ownerId: " + ownerUuid));
 	}
 
 	/** Reads the (qualified) ownerId off an authorization entity, throwing when absent / unreadable. */

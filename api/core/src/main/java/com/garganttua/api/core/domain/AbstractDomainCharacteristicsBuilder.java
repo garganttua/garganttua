@@ -40,6 +40,9 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     /** This domain's own policy; null means "whatever the api declared", which is usually nothing. */
     protected volatile com.garganttua.api.commons.context.SynchronizationPolicy synchronizationPolicy;
 
+    /** How this domain caches its reads by uuid; null means nothing is cached. */
+    protected volatile com.garganttua.api.commons.context.CachePolicy cachePolicy;
+
     protected AbstractDomainCharacteristicsBuilder(IApiBuilder builder) throws ApiException {
         super(builder);
     }
@@ -47,6 +50,12 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     /** Reflection provider — whatever the user installed via {@code IClass.setReflection()}. */
     private static IReflectionProvider provider() {
         return IClass.getReflection();
+    }
+
+    @Override
+    public IDomainBuilder<E> cache(com.garganttua.api.commons.context.CachePolicy policy) {
+        this.cachePolicy = java.util.Objects.requireNonNull(policy, "Cache policy cannot be null");
+        return this;
     }
 
     @Override

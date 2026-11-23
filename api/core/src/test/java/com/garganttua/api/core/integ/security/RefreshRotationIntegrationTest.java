@@ -45,6 +45,10 @@ import com.garganttua.core.crypto.IKeyRealm;
 import com.garganttua.core.crypto.KeyAlgorithm;
 import com.garganttua.core.crypto.KeyRealmBuilder;
 import com.garganttua.core.crypto.SignatureAlgorithm;
+import com.garganttua.core.cache.CacheSpec;
+import com.garganttua.core.cache.ICacheManager;
+import com.garganttua.core.cache.LocalCache;
+import com.garganttua.core.cache.dsl.CacheManagerBuilder;
 import com.garganttua.core.mutex.InterruptibleLeaseMutex;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.supply.dsl.FixedSupplierBuilder;
@@ -245,12 +249,19 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
         final CapturingDao accounts = new CapturingDao();
         final CapturingDao tokens = new CapturingDao();
         final IDomain<?> accountDomain;
+        private IApi api;
 
         Fixture(boolean refreshStrategy, boolean issuer) throws Exception {
             this(refreshStrategy, issuer, null);
         }
 
         Fixture(boolean refreshStrategy, boolean issuer, RecordingMutexManager locks) throws Exception {
+            this(refreshStrategy, issuer, locks, null);
+        }
+
+        /** With both domains caching their reads by uuid in {@code caches}, when not null. */
+        Fixture(boolean refreshStrategy, boolean issuer, RecordingMutexManager locks, ICacheManager caches)
+                throws Exception {
             IKeyRealm realm = KeyRealmBuilder.builder().name("rotation-realm").algorithm(KeyAlgorithm.EC_256)
                     .signatureAlgorithm(SignatureAlgorithm.SHA256).build();
             IApiBuilder builder = newBuilder();
@@ -274,6 +285,9 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
             if (locks != null) {
                 tokenDomain.synchronization(locks, IClass.getClass(InterruptibleLeaseMutex.class));
             }
+            if (caches != null) {
+                tokenDomain.cache(caches, IClass.getClass(LocalCache.class), CacheSpec.of());
+            }
             var authorization = tokenDomain.security().authorization()
                     .type("tokenType").authorities("authorities").expirable("expiresAt").revokable("revoked");
             if (!issuer) {
@@ -287,6 +301,9 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
                     .tenant(true).superTenant("superTenant").owner("uuid").superOwner("superOwner")
                     .entity().id("id").uuid("uuid").tenantId("tenantId").up()
                     .dto(IClass.getClass(AccountDto.class)).id("id").uuid("uuid").tenantId("tenantId").db(accounts).up();
+            if (caches != null) {
+                accountDomainBuilder.cache(caches, IClass.getClass(LocalCache.class), CacheSpec.of());
+            }
             var authenticator = accountDomainBuilder.security().authenticator()
                     .login("id").scope(AuthenticatorScope.tenant).enabled("enabled").authentication(auth);
             if (issuer) {
@@ -302,8 +319,8 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
             }
             accountDomainBuilder.up();
 
-            IApi api = buildAndStart(builder);
-            this.accountDomain = api.getDomain("accounts").orElseThrow();
+            this.api = buildAndStart(builder);
+            this.accountDomain = this.api.getDomain("accounts").orElseThrow();
 
             AccountDto ana = new AccountDto();
             ana.setId(LOGIN);
@@ -334,6 +351,10 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
         TokenDto stored(Token token) {
             return this.tokens.getStorage().stream().map(TokenDto.class::cast)
                     .filter(dto -> dto.getUuid().equals(token.getUuid())).findFirst().orElseThrow();
+        }
+
+        IDomain<?> tokenDomain() {
+            return this.api.getDomain("tokens").orElseThrow();
         }
 
         AccountDto account() {
@@ -529,6 +550,58 @@ class RefreshRotationIntegrationTest extends AbstractCrudScriptTest {
 
             assertEquals(0, refreshed.code(), () -> "refresh failed on " + refreshed.failure());
             assertEquals(List.of("READ"), refreshed.token().getAuthorities());
+        }
+    }
+
+    @Nested
+    @DisplayName("with the authorization and account domains cached")
+    class Cached {
+
+        private Fixture cached() throws Exception {
+            return new Fixture(true, false, null, CacheManagerBuilder.builder().build());
+        }
+
+        @Test
+        @DisplayName("the exchanged authorization is still seen as spent: a replay revokes the lineage")
+        void reuseStillDetected() throws Exception {
+            Fixture api = cached();
+            Token login = api.login();
+            Token legitimate = api.refresh(login).token();
+
+            Refreshed replay = api.refresh(login);
+
+            assertEquals(401, replay.code());
+            assertEquals("This authorization has already been refreshed", replay.failure());
+            assertEquals(401, api.refresh(legitimate).code());
+        }
+
+        @Test
+        @DisplayName("a revocation written through the repository is seen by the next refresh")
+        void revocationSeen() throws Exception {
+            Fixture api = cached();
+            Token login = api.login();
+            var tokens = api.tokenDomain().getRepository();
+            Token stored = (Token) tokens.getByUuid(login.getUuid()).orElseThrow();   // now cached
+            stored.setRevoked(true);
+            tokens.save(stored);
+
+            Refreshed refreshed = api.refresh(login);
+
+            assertEquals(401, refreshed.code());
+            assertEquals("Authorization not found or revoked", refreshed.failure());
+        }
+
+        @Test
+        @DisplayName("a suspension written through the repository is seen by the next refresh")
+        void suspensionSeen() throws Exception {
+            Fixture api = cached();
+            Token login = api.login();
+            var accounts = api.accountDomain.getRepository();
+            Account ana = (Account) accounts.getByUuid("account-ana").orElseThrow();   // now cached
+            ana.setEnabled(false);
+            accounts.save(ana);
+
+            assertEquals(401, api.refresh(login).code());
         }
     }
 

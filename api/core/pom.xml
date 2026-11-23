@@ -114,6 +114,12 @@
 			<artifactId>garganttua-configuration</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- test: the in-memory caches, to declare a domain cache in integration tests -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-cache</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-engine</artifactId>

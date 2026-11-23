@@ -16,6 +16,7 @@ import org.javatuples.Pair;
 
 import com.garganttua.api.core.repository.RepositoryException;
 import com.garganttua.api.core.mapper.DefaultMapper;
+import com.garganttua.core.cache.ICache;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.IDomain;
 import com.garganttua.api.commons.context.IDtoContext;
@@ -47,6 +48,17 @@ public class Repository implements IRepository {
 
     private IDomain<?> domainContext;
     private final Object domainContextLock = new Object();
+
+    /** The DTOs of an entity by its uuid, when the domain caches its reads; null when it does not. */
+    private volatile ICache<String, List<Object>> cache;
+
+    /**
+     * Reads by uuid through {@code byUuid} from now on. It holds DTOs, not entities: each read maps a fresh entity,
+     * so what a request does to its entity never reaches the cache.
+     */
+    public void useCache(ICache<String, List<Object>> byUuid) {
+        this.cache = Objects.requireNonNull(byUuid, "Cache cannot be null");
+    }
 
     public Repository(List<IDtoContext<?>> dtoContexts, IClass<?> entityClass) {
         this.dtoContexts = Collections.unmodifiableList(new ArrayList<>(
@@ -125,9 +137,14 @@ public class Repository implements IRepository {
         Objects.requireNonNull(entity, "Entity cannot be null");
         log.debug("Saving entity of type {}", entity.getClass().getSimpleName());
 
-        for (IDtoContext<?> dtoContext : dtoContexts) {
-            Object dto = mapEntityToDto(entity, dtoContext.getDtoDefinition());
-            dtoContext.save(dto);
+        try {
+            for (IDtoContext<?> dtoContext : dtoContexts) {
+                Object dto = mapEntityToDto(entity, dtoContext.getDtoDefinition());
+                dtoContext.save(dto);
+            }
+        } finally {
+            // Even a write that failed half-way may have changed the store: the cached copy is no longer vouched for.
+            invalidateCached(entity);
         }
     }
 
@@ -136,9 +153,24 @@ public class Repository implements IRepository {
         Objects.requireNonNull(entity, "Entity cannot be null");
         log.debug("Deleting entity of type {}", entity.getClass().getSimpleName());
 
-        for (IDtoContext<?> dtoContext : dtoContexts) {
-            Object dto = mapEntityToDto(entity, dtoContext.getDtoDefinition());
-            dtoContext.delete(dto);
+        try {
+            for (IDtoContext<?> dtoContext : dtoContexts) {
+                Object dto = mapEntityToDto(entity, dtoContext.getDtoDefinition());
+                dtoContext.delete(dto);
+            }
+        } finally {
+            invalidateCached(entity);
+        }
+    }
+
+    private void invalidateCached(Object entity) {
+        ICache<String, List<Object>> byUuid = this.cache;
+        if (byUuid == null) {
+            return;
+        }
+        String uuid = extractUuidFromEntity(entity);
+        if (uuid != null) {
+            byUuid.invalidate(uuid);
         }
     }
 
@@ -149,6 +181,28 @@ public class Repository implements IRepository {
         Objects.requireNonNull(entity, "Entity cannot be null");
         String uuid = extractUuidFromEntity(entity);
         return doesExist(uuid);
+    }
+
+    @Override
+    public Optional<Object> getByUuid(String uuid) throws ApiException {
+        Objects.requireNonNull(uuid, "UUID cannot be null");
+        ICache<String, List<Object>> byUuid = this.cache;
+        List<Object> dtos = byUuid == null ? findDtosByUuid(uuid) : byUuid.get(uuid, () -> findDtosByUuid(uuid));
+        return dtos == null ? Optional.empty() : Optional.ofNullable(mapDtosToEntity(dtos));
+    }
+
+    /** {@return the DTOs of the entity {@code uuid} — one per DTO context holding it} {@code null} when none. */
+    private List<Object> findDtosByUuid(String uuid) {
+        List<Map<String, Object>> dtoMaps = new ArrayList<>();
+        for (IDtoContext<?> dtoContext : dtoContexts) {
+            ObjectAddress uuidField = dtoContext.getDtoDefinition().uuid();
+            if (uuidField != null) {
+                dtoMaps.add(queryDtoContext(dtoContext, Optional.empty(),
+                        Optional.of(Filter.eq(uuidField.toString(), uuid)), Optional.empty(), Optional.empty()));
+            }
+        }
+        Map<String, List<Object>> merged = mergeMaps(dtoMaps, false);
+        return merged.isEmpty() ? null : List.copyOf(merged.values().iterator().next());
     }
 
     @Override

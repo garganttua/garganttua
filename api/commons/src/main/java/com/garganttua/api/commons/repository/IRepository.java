@@ -55,6 +55,15 @@ public interface IRepository {
 
 	boolean doesExist(String uuid) throws ApiException;
 
+	/**
+	 * The entity whose uuid is {@code uuid}, read through the domain's cache when it declares one. No access
+	 * filter applies — the caller checks what it reads, as for any framework-internal lookup.
+	 *
+	 * @param uuid the entity's uuid
+	 * @return the entity, empty when none has that uuid
+	 */
+	Optional<Object> getByUuid(String uuid) throws ApiException;
+
 	long getCount(IFilter filter) throws ApiException;
 
 }

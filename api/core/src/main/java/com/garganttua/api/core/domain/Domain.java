@@ -140,6 +140,26 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         return java.util.Optional.ofNullable(this.synchronizationPolicy);
     }
 
+    private volatile com.garganttua.api.commons.context.CachePolicy cachePolicy;
+
+    /**
+     * Declares how this domain caches its reads by uuid, and hands the cache to its repository. Set once at build
+     * time from the DSL, before the domain serves anything.
+     *
+     * @param policy the policy, or null to cache nothing
+     */
+    public void setCache(com.garganttua.api.commons.context.CachePolicy policy) {
+        this.cachePolicy = policy;
+        if (policy != null && this.repository instanceof Repository repo) {
+            repo.useCache(policy.cacheFor(this.domainDefinition.domainName()));
+        }
+    }
+
+    @Override
+    public java.util.Optional<com.garganttua.api.commons.context.CachePolicy> cache() {
+        return java.util.Optional.ofNullable(this.cachePolicy);
+    }
+
     public void setWorkflow(IWorkflow workflow) {
         this.workflow = Objects.requireNonNull(workflow, "Workflow cannot be null");
     }

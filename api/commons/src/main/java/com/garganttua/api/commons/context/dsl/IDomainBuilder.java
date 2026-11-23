@@ -8,7 +8,10 @@ import com.garganttua.api.commons.context.dsl.security.IDomainSecurityBuilder;
 import com.garganttua.api.commons.event.IEventPublisher;
 import com.garganttua.api.commons.endpoint.IInterface;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.context.CachePolicy;
 import com.garganttua.api.commons.context.SynchronizationPolicy;
+import com.garganttua.core.cache.CacheSpec;
+import com.garganttua.core.cache.ICacheManager;
 import com.garganttua.core.mutex.IMutex;
 import com.garganttua.core.mutex.IMutexManager;
 import com.garganttua.core.dsl.IAutomaticLinkedBuilder;
@@ -47,6 +50,22 @@ public interface IDomainBuilder<E> extends IAutomaticLinkedBuilder<IDomainBuilde
      * @see SynchronizationPolicy
      */
     IDomainBuilder<E> synchronization(SynchronizationPolicy policy) throws ApiException;
+
+    /**
+     * Caches THIS domain's reads by uuid — those the framework makes to verify a token or refresh it, and any
+     * {@code IRepository.getByUuid} — under {@code policy}: invalidated by every write of the repository, on every
+     * node for a distributed implementation. Nothing is cached without it.
+     *
+     * @param policy the manager, implementation and spec of the cache
+     * @return this builder
+     * @see CachePolicy
+     */
+    IDomainBuilder<E> cache(CachePolicy policy) throws ApiException;
+
+    /** @see #cache(CachePolicy) */
+    default IDomainBuilder<E> cache(ICacheManager manager, IClass<?> cacheType, CacheSpec spec) throws ApiException {
+        return cache(new CachePolicy(manager, cacheType, spec));
+    }
 
     /** @see #synchronization(SynchronizationPolicy) */
     default IDomainBuilder<E> synchronization(IMutexManager manager, IClass<? extends IMutex> mutexType)

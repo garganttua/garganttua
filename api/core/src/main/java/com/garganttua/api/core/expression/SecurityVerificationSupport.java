@@ -108,13 +108,8 @@ final class SecurityVerificationSupport {
 		if (uuid == null) {
 			return Optional.empty();
 		}
-		IFilter filter = Filter.eq(uuidAddr.toString(), uuid);
-		List<Object> results = authzDomain.getRepository()
-				.getEntities(Optional.empty(), Optional.of(filter), Optional.empty());
-		if (results != null && !results.isEmpty()) {
-			return Optional.of(results.get(0));
-		}
-		return Optional.empty();
+		// By uuid: through the authorization domain's cache when it declares one (CachePolicy).
+		return authzDomain.getRepository().getByUuid(uuid);
 	}
 
 	/**
@@ -178,13 +173,9 @@ final class SecurityVerificationSupport {
 			throw new ApiException("verifyAuthorization: owner domain '" + ownerDomain.getDomainName()
 					+ "' has no uuid field");
 		}
-		IFilter filter = Filter.eq(uuidField.toString(), ownerUuid);
-		List<Object> results = ownerDomain.getRepository()
-				.getEntities(Optional.empty(), Optional.of(filter), Optional.empty());
-		if (results == null || results.isEmpty()) {
-			throw new ApiException("verifyAuthorization: owner not found for ownerId '" + qualified + "'");
-		}
-		return results.get(0);
+		// By uuid: through the owner domain's cache when it declares one (CachePolicy).
+		return ownerDomain.getRepository().getByUuid(ownerUuid).orElseThrow(
+				() -> new ApiException("verifyAuthorization: owner not found for ownerId '" + qualified + "'"));
 	}
 
 	/**
