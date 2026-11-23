@@ -35,10 +35,11 @@ final class JavalinHttpCache {
         if (policy.isEmpty() || !"GET".equals(ctx.method().name()) || ctx.status().getCode() != OK) {
             return;
         }
-        byte[] body = body(ctx);
-        if (body == null) {
+        Optional<byte[]> written = body(ctx);
+        if (written.isEmpty()) {
             return;
         }
+        byte[] body = written.get();
         String etag = etag(body);
         ctx.header("ETag", etag);
         ctx.header("Cache-Control", policy.get().cacheControl(ctx.header("Authorization") != null));
@@ -51,18 +52,18 @@ final class JavalinHttpCache {
         }
     }
 
-    /** {@return the body written so far, or {@code null} when there is none or it cannot be read back} */
-    private static byte[] body(Context ctx) {
+    /** {@return the body written so far; empty when there is none or it cannot be read back} */
+    private static Optional<byte[]> body(Context ctx) {
         InputStream in = ctx.resultInputStream();
         if (in == null) {
-            return null;
+            return Optional.empty();
         }
         try (in) {
-            return in.readAllBytes();
+            return Optional.of(in.readAllBytes());
         } catch (IOException e) {
             log.warn("HTTP cache: the response body could not be read back, sent without validator ({})",
                     e.getMessage());
-            return null;
+            return Optional.empty();
         }
     }
 

@@ -55,13 +55,12 @@ consommateurs. La direction est alors annoncée dans l'en-tête.
 
 ## Fiches ouvertes
 
-Trois fiches de palliad encore ouvertes, déposées les 2026-11-05 et 06 : deux **mesurées** sur la capacité d'un serveur
+Deux fiches de palliad encore ouvertes, déposées les 2026-11-05 et 06 : une **mesurée** sur la capacité d'un serveur
 (ALPHA33, natif et JVM), une évolution bloquante pour l'hébergement HDS.
 
 | Fiche | À l'attention de | En une ligne |
 |---|---|---|
 | [le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage](le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage.md) | core, api | résoudre les membres une fois par type, pas à chaque appel ; la sonde `HotPathProbe` se dispute ses compteurs |
-| [un-cache-du-cadre-local-et-distribue](un-cache-du-cadre-local-et-distribue.md) | core, api | `ICache` local et Redis, invalidé par les écritures du pipeline |
 | [authentification-a-deux-facteurs](authentification-a-deux-facteurs.md) | api | une étape entre l'authentification et l'émission du jeton, et une réutilisation qui tient compte du niveau |
 
 Les fiches précédentes, déposées par palliad et autonom, ont été traitées — voir ci-dessous.
@@ -263,3 +262,20 @@ Traitée le 2026-11-16 sur `main`, **à paraître dans `3.0.0-ALPHA36`**.
 | Connexion dont l'identifiant désigne plusieurs comptes (dans sa portée) | le premier rendu par le stockage était authentifié | refus, 401 |
 | Réutilisation d'un jeton vivant à la connexion | tout jeton vivant du compte | seulement un jeton de la même méthode (`type`), quand le stockage la garde |
 | `@AuthenticatorLogin.authentications` | ignoré | lu : les stratégies du champ (connexion nommée, ou ajoutées à l'authentificateur) |
+
+## Fiches répondues — `3.0.0-ALPHA37`
+
+Traitée le 2026-11-23 sur `main`, **à paraître dans `3.0.0-ALPHA37`**.
+
+| Fiche | Émise par | Réponse |
+|---|---|---|
+| [un-cache-du-cadre-local-et-distribue](un-cache-du-cadre-local-et-distribue.md) | palliad | Un contrat `ICache` dans `garganttua-commons`, et quatre implémentations : `LocalCache`, `NoCache`, `RedisCache`, `RedisNearCache` (copie locale, invalidations en pub/sub). Quatre niveaux déclarés par domaine : `cache` (par uuid, dont les deux lectures de la vérification du jeton), `queryCache` (recherches, clé de toute la requête avec son filtre d'accès), `tileCache` (recherches de carte par cases d'une grille fixe, recoupées exactement aux bornes) et `httpCache` (`ETag`, `304`, `Cache-Control`). Tous sont invalidés par les écritures du dépôt. Banc sur MongoDB, PostgreSQL et Redis réels : lecture par uuid ×16 (MongoDB) et ×11 (PostgreSQL), recherches répétées ×6,5, carte p50 ÷7 à ÷14. `RedisCache` est plus lent que PostgreSQL seul. Défaut trouvé par le banc et corrigé : un abonnement `RedisNearCache` par cache vidait le pool Jedis. |
+
+## Changements de comportement à la montée en `3.0.0-ALPHA37`
+
+| Élément | Avant | Après |
+|---|---|---|
+| `IRepository` | pas de lecture par uuid | nouvelle méthode abstraite `getByUuid(String)` : une implémentation tierce doit l'ajouter |
+| Vérification du jeton et rafraîchissement | autorisation stockée et principal lus par une recherche | lus par `getByUuid`, donc par le cache L3 quand le domaine en déclare un ; mêmes contrôles, même ordre |
+| Domaine sans cache déclaré | — | inchangé : rien n'est mis en cache sans `cache`, `queryCache`, `tileCache` ou `httpCache` |
+

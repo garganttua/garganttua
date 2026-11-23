@@ -545,6 +545,14 @@
 		<!-- Native proof of the PostgreSQL stack (GraalVM native-image + a PostgreSQL with PostGIS):
 		     slow and environment-bound, so never part of the default build. See
 		     e2e/native-postgres/run-e2e.sh. -->
+		<!-- The cache benchmark, against real stores (MongoDB, PostgreSQL, redis): never in the default build.
+		     See bench/cache-benchmark/src/test/java/com/garganttua/api/bench/CacheBenchmarkTest.java. -->
+		<profile>
+			<id>bench</id>
+			<modules>
+				<module>bench/cache-benchmark</module>
+			</modules>
+		</profile>
 		<profile>
 			<id>native-e2e</id>
 			<modules>

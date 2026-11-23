@@ -163,14 +163,14 @@ record TileQuery(Bounds latitude, Bounds longitude, Optional<IFilter> rest) {
         }
 
         private void lower(double value, boolean inclusive) {
-            if (this.low == null || value > this.low || (value == this.low && !inclusive)) {
+            if (this.low == null || value > this.low || Double.compare(value, this.low) == 0 && !inclusive) {
                 this.low = value;
                 this.lowInclusive = inclusive;
             }
         }
 
         private void upper(double value, boolean inclusive) {
-            if (this.high == null || value < this.high || (value == this.high && !inclusive)) {
+            if (this.high == null || value < this.high || Double.compare(value, this.high) == 0 && !inclusive) {
                 this.high = value;
                 this.highInclusive = inclusive;
             }

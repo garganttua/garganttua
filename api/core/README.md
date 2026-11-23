@@ -410,6 +410,29 @@ A domain declares a cache for its reads by uuid; nothing is cached without it.
 - **Which implementation.** Any `ICache` (see `garganttua-cache`): `LocalCache` on one node, `RedisNearCache` on a
   cluster, `RedisCache` with a codec for the domain's DTOs, `NoCache` to turn it off.
 
+Three more levels, each declared on its own, each with its own key:
+
+```java
+.domain(Organization.class)
+    .queryCache(cacheManager, IClass.getClass(LocalCache.class), CacheSpec.ttl(30, TimeUnit.SECONDS))
+    .tileCache(cacheManager, IClass.getClass(LocalCache.class), CacheSpec.of(), "latitude", "longitude")
+    .httpCache(HttpCachePolicy.revalidated())
+```
+
+- **Searches (`queryCache`).** `getEntities`, `getEntitiesPage` and `getCount` keyed by the whole query —
+  filter tree, page, sort, projection. The filter already holds the access condition the pipeline added, so two
+  callers who see different rows never share an entry. Every write of the domain empties it: a write can move any
+  row into or out of any search.
+- **Map searches (`tileCache`).** A search that bounds both fields on both sides with numbers, without page or
+  sort, is read by the cells of a fixed grid (`180 / 2^z` degrees, at most three per axis). Each cell is cached
+  under itself and the rest of the query; the union is trimmed to the exact bounds asked, inclusive or strict.
+  Panning reads only the new cells. Any other search is read as usual. Every write empties the tiles.
+- **HTTP (`httpCache`).** On a 200 GET, the Javalin binding adds a strong `ETag` and the declared
+  `Cache-Control`, and answers `304` without a body to a matching `If-None-Match`. `public` is sent only to an
+  anonymous request; an authenticated one gets `private`, and `Vary: Accept, Authorization` always.
+
+The measurements of every level, with and without, are in `api/bench/cache-benchmark` (`-Pbench`).
+
 ### Fluent request builder
 
 ```java

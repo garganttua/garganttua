@@ -123,11 +123,106 @@ sur le modèle des mutex.
 
 `LocalCache` en mono-nœud et en on-prem, `RedisNearCache` en cluster, sur votre Redis déjà présent pour les verrous.
 
-### Ce qui reste, dans l'ordre convenu
+## Réponse — 2026-11-23, sur `main`, à paraître dans `3.0.0-ALPHA37` : L4, L5, les tuiles, et le banc
 
-- **L5**, cache d'interface : `ETag` et `304` sur les GET, `Cache-Control` sur les routes déclarées. Il se fait dans
-  la liaison Javalin, puisque `interface-rest` est un module vide.
-- **L4**, résultat d'opération : le même `ICache` avec une durée de vie. La clé comprend l'appelant, puisque le
-  résultat est déjà filtré par les droits. Les résultats sont vidés à chaque écriture du domaine.
-- **Le cache géographique par tuiles**, une stratégie de clé sur `ICache` au niveau du dépôt. À mesurer d'abord
-  (`explain` sur une vraie recherche) : l'index géographique suffit peut-être.
+Tous les niveaux convenus sont livrés. Chacun se déclare seul sur le domaine, avec sa propre clé :
+
+```java
+.domain(Organization.class)
+    .cache(caches, IClass.getClass(RedisNearCache.class), CacheSpec.ttl(30, SECONDS))       // L3 : par uuid
+    .queryCache(caches, IClass.getClass(LocalCache.class), CacheSpec.ttl(30, SECONDS))      // L4 : recherches
+    .tileCache(caches, IClass.getClass(LocalCache.class), CacheSpec.of(), "latitude", "longitude")
+    .httpCache(HttpCachePolicy.revalidated())                                              // L5 : ETag, 304
+```
+
+### Ce qui est fait
+
+1. **L4, les recherches.** `getEntities`, `getEntitiesPage` et `getCount` passent par le cache, sous une clé qui
+   reprend toute la requête : l'arbre du filtre, la page, le tri, la projection.
+   - Le filtre contient déjà la condition d'accès que le pipeline ajoute. Deux appelants qui voient des lignes
+     différentes ne partagent donc jamais une entrée.
+   - Toute écriture du domaine vide ce cache, puisqu'elle peut faire entrer ou sortir une ligne de n'importe quelle
+     recherche.
+2. **Les tuiles, pour la carte.** C'est la réponse à « le zoom n'est jamais le même entre deux requêtes ».
+   - Une recherche qui borne la latitude et la longitude des deux côtés par des nombres, sans page ni tri, est lue
+     par les cases d'une grille fixe de `180 / 2^z` degrés, avec au plus trois cases par axe. Le niveau `z` suit le
+     zoom.
+   - Chaque case est mise en cache sous elle-même et sous le reste de la requête, filtre d'accès compris. L'union
+     des cases est recoupée **exactement** aux bornes demandées, strictes ou non.
+   - Déplacer la carte ne relit que les cases nouvelles. Votre recherche de carte (`healthcare-organization-api.adapter.ts` :
+     `latitude: {$gte, $lte}`, `longitude: {$gte, $lte}` et une projection qui garde les deux champs) est de cette
+     forme telle quelle.
+   - Une recherche `$near` / `$maxDistance` n'est pas lue par tuiles : elle passe normalement, ou par L4.
+3. **L5, le HTTP.** Il se fait dans la liaison Javalin, puisque `interface-rest` est un module vide.
+   - Un GET qui répond 200 reçoit un `ETag` fort et le `Cache-Control` déclaré. Un `If-None-Match` qui correspond
+     reçoit un `304` sans corps.
+   - `public` n'est envoyé qu'aux requêtes anonymes. Une requête authentifiée reçoit `private`, et toutes reçoivent
+     `Vary: Accept, Authorization`.
+4. **Un défaut trouvé par le banc, corrigé.** Chaque `RedisNearCache` tenait une connexion du pool pour toute la
+   durée de son abonnement. Avec huit caches, le pool Jedis par défaut était vide, et tout appel Redis attendait
+   indéfiniment, y compris les verrous s'ils partagent le pool.
+   - Les caches d'une même `RedisNearCacheFactory` partagent maintenant **un** abonnement (un motif sur tous les
+     canaux), donc une seule connexion, quel que soit leur nombre.
+   - Créez la fabrique une fois par application et fermez-la (`close()`) à l'arrêt.
+
+### Ce qui le prouve
+
+- `TileCacheIntegrationTest` :
+  - sur 200 cadrages aléatoires, bornes inclusives et strictes, avec ou sans autres conditions, les mêmes lignes
+    que la base ;
+  - une ligne exactement sur la borne ;
+  - le déplacement de la carte qui relit moins ;
+  - l'écriture qui vide les tuiles ;
+  - une recherche ouverte d'un côté, qui n'est pas lue par tuiles.
+- `DomainCacheIntegrationTest.Searches` : l'isolation entre deux tenants à travers le pipeline, et l'invalidation.
+- `JavalinHttpCacheTest`, plus l'E2E du starter : `ETag`, `public, max-age=300`, `304` à corps vide.
+- `RedisCachesTest` : dix caches d'une même fabrique sur un pool de **deux** connexions, tous abonnés et tous
+  invalidés.
+
+### Le banc : avec et sans cache
+
+Le module `api/bench/cache-benchmark` (profil `-Pbench`, hors du build normal) mesure chaque niveau contre un vrai
+MongoDB 7, un vrai PostgreSQL 17 et un vrai Redis 7, en Docker sur la boucle locale. Le client est seul, sur un seul
+fil. Les tableaux complets sont dans son README. L'essentiel :
+
+| Niveau | Base | Sans cache | Avec | Requêtes en base |
+|---|---|---|---|---|
+| L2/L3, lecture par uuid | MongoDB | 7 000 /s, p50 110 µs | `LocalCache` 116 000 /s, p50 1,2 µs ; `RedisNearCache` 104 000 /s | 50 000 → 3 564 |
+| L2/L3, lecture par uuid | PostgreSQL | 19 000 /s, p50 46 µs | `LocalCache` 215 000 /s ; `RedisNearCache` 152 000 /s | 50 000 → 3 564 |
+| L2/L3, avec 2 % d'écritures | MongoDB | 8 700 /s | `LocalCache` 63 000 /s ; `RedisNearCache` 53 000 /s | 50 000 → ~4 500 |
+| L4, mêmes recherches (250 lignes) | MongoDB | 2,0 ms | 0,3 ms | 5 000 → 0 |
+| L4, avec 2 % d'écritures | MongoDB | 1,7 ms | 0,8 ms | 5 100 → 1 936 |
+| Carte, 300 cadrages | MongoDB | p50 250 µs | tuiles : p50 20–36 µs | 301 → 115 |
+| Carte, 300 cadrages | PostgreSQL | p50 190 µs | tuiles : p50 13–18 µs | 301 → 115 |
+| L5, liste de 200 lignes | MongoDB | 6,9 ms, 67 Ko | `304` : 6,0 ms, 0 octet ; `304` + L4 : 3,7 ms | 1 000 → 0 avec L4 |
+
+Ce que les chiffres disent, y compris ce qu'on n'attendait pas :
+
+- **`RedisNearCache` est le cache distribué à prendre.** Il fait presque aussi bien que `LocalCache`, puisqu'un
+  succès ne fait aucun aller-retour.
+- **`RedisCache` est plus lent que PostgreSQL sans cache** sur une lecture par clé primaire : 14 800 /s contre
+  19 000 /s. L'aller-retour Redis plus la sérialisation coûtent plus que l'index. Il ne vaut que devant une base
+  lente ou lointaine.
+- **Le cache de requêtes à clé exacte ne sert à rien sur une carte** : 288 requêtes en base sur 301. Les tuiles
+  divisent ces requêtes par 2,6 et la médiane par 7 à 14. Le prix : un cadrage qui manque ses cases lit jusqu'à neuf
+  fois sa surface, et le p99 monte (MongoDB 2,5 ms ; PostgreSQL 1,0 ms en `LocalCache`). Sur 30 000 points, l'index
+  suffisait presque. Le gain grandit avec la densité et avec la distance à la base.
+- **Le `304` économise le réseau, pas le serveur.** Sans L4, le pipeline relit et sérialise tout pour calculer
+  l'`ETag` : il économise 67 Ko par réponse mais seulement 12 % du temps. Avec L4 dessous, une requête passe de
+  6,9 à 3,7 ms. Le reste est le coût du pipeline et de la conversion de 200 lignes, que le cache ne touche pas.
+- **Les écritures pèsent lourd sur L4** : chacune vide toutes les recherches du domaine. À 2 % d'écritures, le gain
+  passe de ×6,5 à ×2. Réservez L4 aux domaines lus bien plus qu'écrits.
+
+### Pour vous
+
+Le plus rentable, dans l'ordre :
+
+1. **L2/L3** sur le domaine d'autorisations et sur le domaine authentificateur, en `RedisNearCache`. Cela retire
+   deux lectures de chaque requête authentifiée.
+2. **Les tuiles** sur le domaine des établissements, si la carte est un chemin chaud.
+3. **L4** sur les référentiels peu écrits.
+4. **L5** sur les listes publiques.
+
+Pour la conformité HDS : les caches stockent les données brutes sous le contrôle d'accès, et le HTTP n'est `public`
+que pour l'anonyme. En `RedisCache`, les données de santé passent par Redis. `RedisNearCache` ne fait passer que des
+clés.
