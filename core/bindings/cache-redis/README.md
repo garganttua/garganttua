@@ -40,6 +40,10 @@ The distributed implementations of `ICache` (see `garganttua-cache`) over redis,
 ### Key Features
 
 - **A node that is not subscribed does not use its copy** (`RedisNearCache`): it cannot know what it missed. When its subscription comes back, it empties its copy first — the invalidations sent meanwhile are lost — then uses it again. The subscription reconnects on its own, pausing 100 ms to 5 s.
+- **One subscription per factory, not per cache.** A subscription holds its connection for as long as it lives;
+  the caches of one `RedisNearCacheFactory` share a single one (a pattern on every cache channel), so the pool
+  needs one connection more than the calls it serves, whatever the number of caches. Create the factory once per
+  application, and `close()` it at shutdown.
 - **A failed invalidation is logged as an error**: other nodes may serve the old value for at most the time to live.
 - **Keys and channels** live under `garganttua:cache:<name>:`.
 

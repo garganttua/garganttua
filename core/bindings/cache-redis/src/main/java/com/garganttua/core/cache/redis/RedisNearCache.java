@@ -14,7 +14,6 @@ import com.garganttua.core.reflection.annotations.Reflected;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPubSub;
 
 /**
  * A cache each node keeps in its own memory, kept coherent by invalidations broadcast over redis: a node that
@@ -29,7 +28,8 @@ import redis.clients.jedis.JedisPubSub;
  * </p>
  *
  * <p>
- * The subscription runs on a daemon thread, reconnecting with a growing pause (100 ms to 5 s); {@link #close()}
+ * The caches of one {@link RedisNearCacheFactory} share one subscription, hence one connection of the pool, however
+ * many they are ({@link RedisInvalidations}). A cache opened alone by {@link #open} has its own; {@link #close()}
  * stops it.
  * </p>
  */
@@ -44,22 +44,18 @@ public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
     /** The message invalidating every key. */
     static final String ALL = "*";
 
-    private static final long FIRST_PAUSE_MILLIS = 100L;
-    private static final long MAX_PAUSE_MILLIS = 5_000L;
-
     private final String name;
     private final JedisPool pool;
     private final String channel;
     private final long ttlMillis;
     private final LocalCache<K, V> local;
     private final AtomicLong bypassed = new AtomicLong();
-    private final Subscriber subscriber = new Subscriber();
-    private final Thread listener;
-    private volatile boolean subscribed;
-    private volatile boolean closed;
+    private final RedisInvalidations invalidations;
+    private final boolean ownsInvalidations;
 
     /**
-     * Creates the cache and starts listening to its invalidations — it is used only once subscribed.
+     * Creates a cache with its own subscription to its invalidations — it is used only once subscribed. Several
+     * caches of one node share theirs when created by a {@link RedisNearCacheFactory}.
      *
      * @param name the cache's name, which names its redis channel
      * @param spec its bound and time to live
@@ -67,19 +63,41 @@ public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
      * @return the cache, listening
      */
     public static <K, V> RedisNearCache<K, V> open(String name, CacheSpec spec, JedisPool pool) {
-        RedisNearCache<K, V> cache = new RedisNearCache<>(name, spec, pool);
-        cache.listener.start();
-        return cache;
+        return new RedisNearCache<K, V>(name, spec, RedisInvalidations.start(pool), true).listening();
     }
 
-    private RedisNearCache(String name, CacheSpec spec, JedisPool pool) {
+    /** A cache listening on a subscription it shares with the other caches of its factory. */
+    static <K, V> RedisNearCache<K, V> open(String name, CacheSpec spec, RedisInvalidations shared) {
+        return new RedisNearCache<K, V>(name, spec, shared, false).listening();
+    }
+
+    private RedisNearCache(String name, CacheSpec spec, RedisInvalidations invalidations, boolean owns) {
         this.name = Objects.requireNonNull(name, "Cache name cannot be null");
-        this.pool = Objects.requireNonNull(pool, "Jedis pool cannot be null");
+        this.invalidations = Objects.requireNonNull(invalidations, "Invalidations cannot be null");
+        this.pool = invalidations.connections();
+        this.ownsInvalidations = owns;
         this.channel = RedisKeys.channel(name);
         this.ttlMillis = spec.ttl().toMillis();
         this.local = new LocalCache<>(name, spec);
-        this.listener = new Thread(this::listen, "garganttua-cache-" + name + "-invalidations");
-        this.listener.setDaemon(true);
+    }
+
+    private RedisNearCache<K, V> listening() {
+        this.invalidations.register(this.channel, new RedisInvalidations.Listener() {
+            @Override
+            public void onMessage(String message) {
+                if (ALL.equals(message)) {
+                    RedisNearCache.this.local.evictAll();
+                } else if (message.startsWith(KEY)) {
+                    RedisNearCache.this.local.evict(message.substring(KEY.length()));
+                }
+            }
+
+            @Override
+            public void onResubscribed() {
+                RedisNearCache.this.local.evictAll();
+            }
+        });
+        return this;
     }
 
     @Override
@@ -89,12 +107,12 @@ public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
 
     /** {@return whether this node is subscribed to the invalidations, hence uses its copy} */
     public boolean isSubscribed() {
-        return this.subscribed;
+        return this.invalidations.isSubscribed();
     }
 
     @Override
     public Optional<V> get(K key) {
-        if (!this.subscribed) {
+        if (!isSubscribed()) {
             this.bypassed.incrementAndGet();
             return Optional.empty();
         }
@@ -103,7 +121,7 @@ public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
 
     @Override
     public V get(K key, Supplier<? extends V> loader) {
-        if (!this.subscribed) {
+        if (!isSubscribed()) {
             this.bypassed.incrementAndGet();
             return loader.get();
         }
@@ -112,7 +130,7 @@ public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
 
     @Override
     public void put(K key, V value) {
-        if (this.subscribed) {
+        if (isSubscribed()) {
             this.local.put(key, value);
         }
     }
@@ -137,12 +155,10 @@ public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
 
     @Override
     public void close() {
-        this.closed = true;
-        this.subscribed = false;
-        if (this.subscriber.isSubscribed()) {
-            this.subscriber.unsubscribe();
+        this.invalidations.unregister(this.channel);
+        if (this.ownsInvalidations) {
+            this.invalidations.close();
         }
-        this.listener.interrupt();
     }
 
     private void publish(String message) {
@@ -151,53 +167,6 @@ public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
         } catch (RuntimeException e) {
             log.error("Cache '{}': invalidation '{}' could not be broadcast — other nodes may serve the old value for "
                     + "at most {} ms ({})", this.name, message, this.ttlMillis, e.getMessage());
-        }
-    }
-
-    /** Subscribes, and resubscribes after any loss, until closed. */
-    private void listen() {
-        long pause = FIRST_PAUSE_MILLIS;
-        while (!this.closed) {
-            try (Jedis jedis = this.pool.getResource()) {
-                jedis.subscribe(this.subscriber, this.channel);   // blocks while subscribed
-                pause = FIRST_PAUSE_MILLIS;
-            } catch (RuntimeException e) {
-                if (!this.closed) {
-                    log.warn("Cache '{}': not subscribed to its invalidations, reading from the source until it is "
-                            + "({})", this.name, e.getMessage());
-                }
-            }
-            this.subscribed = false;
-            if (this.closed) {
-                return;
-            }
-            try {
-                Thread.sleep(pause);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            pause = Math.min(pause * 2, MAX_PAUSE_MILLIS);
-        }
-    }
-
-    private final class Subscriber extends JedisPubSub {
-
-        @Override
-        public void onSubscribe(String subscribedChannel, int subscribedChannels) {
-            // The invalidations sent while this node was not listening are lost: start from an empty copy.
-            RedisNearCache.this.local.evictAll();
-            RedisNearCache.this.subscribed = true;
-            log.debug("Cache '{}': subscribed to its invalidations", RedisNearCache.this.name);
-        }
-
-        @Override
-        public void onMessage(String messageChannel, String message) {
-            if (ALL.equals(message)) {
-                RedisNearCache.this.local.evictAll();
-            } else if (message.startsWith(KEY)) {
-                RedisNearCache.this.local.evict(message.substring(KEY.length()));
-            }
         }
     }
 }

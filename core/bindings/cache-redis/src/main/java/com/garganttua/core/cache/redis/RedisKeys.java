@@ -19,7 +19,10 @@ final class RedisKeys {
         return (entryPrefix(cacheName) + key).getBytes(StandardCharsets.UTF_8);
     }
 
+    /** The end of every invalidation channel's name. */
+    static final String CHANNEL_SUFFIX = ":invalidations";
+
     static String channel(String cacheName) {
-        return PREFIX + cacheName + ":invalidations";
+        return PREFIX + cacheName + CHANNEL_SUFFIX;
     }
 }

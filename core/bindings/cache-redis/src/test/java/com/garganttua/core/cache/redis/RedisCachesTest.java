@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,10 +21,12 @@ import org.junit.jupiter.api.Test;
 
 import com.garganttua.core.cache.CacheException;
 import com.garganttua.core.cache.CacheSpec;
+import com.garganttua.core.cache.ICache;
 import com.garganttua.core.cache.ICacheCodec;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.Protocol;
 
 /**
@@ -109,6 +113,36 @@ class RedisCachesTest {
             assumeTrue(address != null && !address.isBlank(), "-Dgarganttua.test.redis=host:port not set");
             String[] parts = address.split(":");
             return new JedisPool(parts[0], Integer.parseInt(parts[1]));
+        }
+
+        @Test
+        @DisplayName("ten near caches of one factory hold one connection: a pool of two still serves them all")
+        void nearCachesShareOneSubscription() throws Exception {
+            JedisPool remote = node();
+            String[] parts = System.getProperty("garganttua.test.redis").split(":");
+            JedisPoolConfig small = new JedisPoolConfig();
+            small.setMaxTotal(2);
+            small.setMaxWaitMillis(2_000);
+            try (JedisPool pool = new JedisPool(small, parts[0], Integer.parseInt(parts[1]));
+                    RedisNearCacheFactory here = new RedisNearCacheFactory(pool);
+                    RedisNearCacheFactory there = new RedisNearCacheFactory(remote)) {
+                List<ICache<String, String>> caches = new ArrayList<>();
+                List<ICache<String, String>> remotes = new ArrayList<>();
+                String prefix = unique();
+                for (int i = 0; i < 10; i++) {
+                    caches.add(here.createCache(prefix + i, CacheSpec.of()));
+                    remotes.add(there.createCache(prefix + i, CacheSpec.of()));
+                }
+                for (ICache<String, String> cache : caches) {
+                    RedisNearCache<String, String> near = (RedisNearCache<String, String>) cache;
+                    await(near::isSubscribed, "subscribed");
+                    cache.put("k", "v");
+                }
+                remotes.get(7).invalidate("k");
+                ICache<String, String> seventh = caches.get(7);
+                await(() -> seventh.get("k").isEmpty(), "the invalidation of the seventh");
+                assertEquals(Optional.of("v"), caches.get(6).get("k"), "the others keep their copy");
+            }
         }
 
         @Test
