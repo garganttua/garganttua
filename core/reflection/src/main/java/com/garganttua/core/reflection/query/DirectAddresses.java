@@ -2,9 +2,8 @@ package com.garganttua.core.reflection.query;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
+import com.garganttua.core.cache.StructureCache;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
@@ -50,13 +49,13 @@ final class DirectAddresses {
      * time. Keys hold the class descriptors strongly, exactly as {@code RuntimeClass}' own
      * instance cache does — the framework does not unload classes.
      */
-    private static final ConcurrentMap<ShapeKey, Shape> SHAPES = new ConcurrentHashMap<>();
+    private static final StructureCache<ShapeKey, Shape> SHAPES = StructureCache.named("reflection.direct-address-shapes");
 
     private record ShapeKey(IClass<?> owner, String elementName) {
     }
 
     private static Shape shape(IClass<?> objectClass, String elementName) {
-        return SHAPES.computeIfAbsent(new ShapeKey(objectClass, elementName),
+        return SHAPES.get(new ShapeKey(objectClass, elementName),
                 key -> new Shape(MemberLookup.getMethods(key.owner(), key.elementName()).size(),
                         key.owner().findDeclaredField(key.elementName()).isPresent()));
     }

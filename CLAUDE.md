@@ -158,7 +158,8 @@ architecture with strict acyclic dependencies (see `.claude/rules/module-archite
 ### Module layers
 
 1. **Foundation**: `garganttua-commons` (shared interfaces, annotations, exceptions; hosts the
-   observability primitives), `garganttua-dsl` (builder framework), `garganttua-supply`
+   observability primitives and the L0 structure caches — `StructureCache` / `ClassStructureCache`: what
+   depends only on code and types, computed once, never invalidated; use them, not a new `computeIfAbsent` map), `garganttua-dsl` (builder framework), `garganttua-supply`
    (supplier/provider), `garganttua-lifecycle` (state), `garganttua-mutex` (locking),
    `garganttua-cache` (`ICache` behind one contract: `LocalCache`, `NoCache`; `garganttua-cache-redis` for
    `RedisCache` / `RedisNearCache`).

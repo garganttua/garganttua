@@ -7,9 +7,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
+import com.garganttua.core.cache.StructureCache;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
 import com.garganttua.core.reflection.IMethod;
@@ -35,9 +34,9 @@ import com.garganttua.core.reflection.IMethod;
  */
 final class MemberLookup {
 
-    private static final ConcurrentMap<MemberKey, Optional<IField>> FIELDS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<MemberKey, Optional<IMethod>> METHOD = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<MemberKey, List<IMethod>> METHODS = new ConcurrentHashMap<>();
+    private static final StructureCache<MemberKey, Optional<IField>> FIELDS = StructureCache.named("reflection.member-fields");
+    private static final StructureCache<MemberKey, Optional<IMethod>> METHOD = StructureCache.named("reflection.member-method");
+    private static final StructureCache<MemberKey, List<IMethod>> METHODS = StructureCache.named("reflection.member-methods");
 
     /** Memo key: the owning class descriptor and the member name looked up on it. */
     private record MemberKey(IClass<?> owner, String name) {
@@ -47,7 +46,7 @@ final class MemberLookup {
     }
 
     static IField getField(IClass<?> clazz, String name) {
-        return FIELDS.computeIfAbsent(new MemberKey(clazz, name),
+        return FIELDS.get(new MemberKey(clazz, name),
                 key -> Optional.ofNullable(findField(key.owner(), key.name()))).orElse(null);
     }
 
@@ -65,7 +64,7 @@ final class MemberLookup {
     }
 
     static IMethod getMethod(IClass<?> clazz, String name) {
-        return METHOD.computeIfAbsent(new MemberKey(clazz, name),
+        return METHOD.get(new MemberKey(clazz, name),
                 key -> Optional.ofNullable(findMethod(key.owner(), key.name()))).orElse(null);
     }
 
@@ -94,7 +93,7 @@ final class MemberLookup {
      * The list is immutable: it is shared between callers by the memo above.
      */
     static List<IMethod> getMethods(IClass<?> clazz, String name) {
-        return METHODS.computeIfAbsent(new MemberKey(clazz, name),
+        return METHODS.get(new MemberKey(clazz, name),
                 key -> List.copyOf(findMethods(key.owner(), key.name())));
     }
 

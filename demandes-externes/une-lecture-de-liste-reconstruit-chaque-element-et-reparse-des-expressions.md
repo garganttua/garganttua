@@ -25,7 +25,7 @@ Profil JFR (JVM, échantillonnage de pile) de la SEULE lecture, répartition **D
 | Composant (inclusif) | Part | Haut de pile (exclusif) | Part |
 |---|---:|---|---:|
 | décodage document→DTO (`MongoDocumentReader`) | **19,5 %** | JDK tables de hachage / chaînes | **27 %** |
-| mapper DTO→entité (`garganttua-mapper`) | **18,9 %** | **parsing ANTLR** (`ParserATNSimulator.*`) | **~26 %** |
+| mapper DTO→entité (`garganttua-mapper`) | **18,9 %** | ~~parsing ANTLR~~ ⚠️ **ERREUR, voir Réponse** (c'était le démarrage) | ~~26 %~~ → **0 %** |
 | pilote MongoDB (requête + BSON) | **15 %** | JDK réflexion/invoke (`MethodHandle…set/get`) | **10 %** |
 | JSON (Jackson, réponse) | **8,2 %** | pilote Mongo 5,8 % · réflexion cadre 5,5 % · Jackson 5 % | — |
 
@@ -35,11 +35,12 @@ Décodage et mapper pèsent **autant l'un que l'autre**, devant la requête base
 
 ## Cause — quatre coûts par élément/champ
 
-**1. Parsing d'expressions ANTLR dans le chemin chaud (MESURÉ ~26 % du temps propre ; site exact à CONFIRMER).**
-`org.antlr.v4.runtime.atn.ParserATNSimulator` (le moteur de prédiction d'ANTLR4) domine le haut de pile pendant une
-lecture qui ne fait que répéter la MÊME requête. Un chemin par élément ou par champ **re-parse une expression** du
-langage de garganttua au lieu de réutiliser un AST déjà compilé. C'est le poste unitaire le plus gros et il n'est cité
-par aucune fiche existante.
+**1. ~~Parsing d'expressions ANTLR dans le chemin chaud~~ — ERREUR DE MÉTHODE (voir « Réponse » ci-dessous).**
+Le JFR, démarré au lancement de la JVM (`dumponexit`), a compté la **compilation des scripts au DÉMARRAGE**
+(`ScriptCompiler.parseStatements`, thread `main`, une seule fois) comme du temps de lecture. **Recalculé sur la seule
+lecture : ANTLR 0 %** — le cadre ne reparse rien par requête (workflows précompilés). Le vrai partage de la lecture est
+**mapper ~45 %, DAO (dont décodage document→DTO ~25 %) ~40 %, accès de champ `MethodHandle` ~22 % et tables de hachage
+~23 % en temps propre.** Les points 2, 3 et 4 ci-dessous restent valides ; ce point 1 est retiré.
 
 **2. Lecture BSON par clé-chaîne (LU).** `MongoDocumentReader.documentToDto` (l. 56) itère les champs déclarés du type
 et, pour chacun, `applyField` → `readRawValue` (l. 107) cherche la clé **par chaîne** dans le `Document`
@@ -171,4 +172,36 @@ construction des `Document`.
   retirerait le `Document.get` qui reste par champ et la construction du `Document` par le pilote. C'est un gros
   chantier ; nous le mesurerons après le précédent.
 - **Le point 4 de la fiche** (poignée de membre résolue une fois) est traité dans
+  `le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage.md`.
+
+## Réponse, suite — 2026-11-23, sur `main`, dans `3.0.0-ALPHA37`
+
+Les deux points laissés ouverts sont traités, l'un livré, l'autre écarté après mesure.
+
+- **Le décodeur BSON par type est livré** (`MongoDtoCodec`). Le pilote décode chaque document directement dans le
+  DTO, sans le `Document` qu'il construisait d'abord : plus de `Document.put` par champ côté pilote, ni de
+  `Document.get` par champ côté cadre.
+  - **Les valeurs sont celles du `Document`, par construction.** Chaque valeur est décodée comme le fait le
+    `DocumentCodec` du pilote : `null`, binaire de 16 octets en `UUID` selon son sous-type et la représentation
+    configurée, sinon le codec du registre pour son type BSON.
+  - **Et par vérification.** Avant de servir, le décodeur décode un document témoin (un champ de chaque type BSON) des
+    deux façons. Un registre qui décode autrement garde le chemin `Document`.
+  - **Les compositions gardent l'ancien chemin** : résoudre une référence interroge la base, ce qui ne doit pas
+    arriver pendant le décodage d'un lot.
+  - **Testé sur un vrai `mongod`** (`MongoDtoCodecTest`) : sur 7 formes de documents (complet, partiel, `null`
+    explicites, `_id` seul, clés inconnues, ordre différent, types à convertir), le DTO est celui du chemin `Document`,
+    champ pour champ, y compris un champ redéclaré par une sous-classe.
+- **L'accès direct aux champs privés en AOT est écarté, mesures à l'appui.** Lecture plus écriture d'un champ privé,
+  même micro-banc en JVM et en binaire natif GraalVM 25 :
+
+  | | JVM | natif |
+  |---|---:|---:|
+  | `Field` (aujourd'hui) | ≈ 10 ns | **≈ 9 ns** |
+  | `VarHandle` | ≈ 10 ns | ≈ 55 ns |
+  | `MethodHandle` adaptée | ≈ 8,5 ns | ≈ 1 470 ns |
+
+  En natif, la seule cible qui compte pour vous, `Field` est déjà l'accès le plus rapide qui garde la sémantique
+  (un setter la changerait). La part `MethodHandleObjectFieldAccessorImpl` de votre profil est le coût réel d'une
+  écriture de champ ; elle ne disparaît qu'en écrivant moins de champs, par exemple avec une projection plus étroite.
+- **Les tables de hachage du chemin**, dont le cache L0, sont traitées dans
   `le-moteur-de-scripts-passe-son-temps-dans-des-tables-de-hachage.md`.

@@ -3,10 +3,9 @@ package com.garganttua.core.reflection.dsl;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
+import com.garganttua.core.cache.StructureCache;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
@@ -44,10 +43,17 @@ class FieldDelegate {
      * used to resolve the class, parse the address, query the members and build an accessor on every call. A
      * failed resolution is not kept: it fails again, with the same exception, at the next call.
      */
-    private final Map<IClass<?>, Map<String, Resolved>> resolvedByName = new ConcurrentHashMap<>();
+    private final StructureCache<NameKey, Resolved> resolvedByName = StructureCache.named("reflection.fields-by-name");
 
     /** Likewise for fields read or written by address. */
-    private final Map<IClass<?>, Map<ObjectAddress, Resolved>> resolvedByAddress = new ConcurrentHashMap<>();
+    private final StructureCache<AddressKey, Resolved> resolvedByAddress =
+            StructureCache.named("reflection.fields-by-address");
+
+    private record NameKey(IClass<?> type, String name) {
+    }
+
+    private record AddressKey(IClass<?> type, ObjectAddress address) {
+    }
 
     FieldDelegate(IReflectionProvider provider) {
         this.provider = provider;
@@ -222,23 +228,13 @@ class FieldDelegate {
     }
 
     private Resolved byName(IClass<?> objectClass, String fieldName) throws ReflectionException {
-        Map<String, Resolved> fields = this.resolvedByName.computeIfAbsent(objectClass, c -> new ConcurrentHashMap<>());
-        Resolved known = fields.get(fieldName);
-        if (known == null) {
-            known = resolved(FieldResolver.fieldByFieldName(objectClass, provider, fieldName));
-            fields.put(fieldName, known);
-        }
-        return known;
+        return this.resolvedByName.get(new NameKey(objectClass, fieldName),
+                key -> resolved(FieldResolver.fieldByFieldName(key.type(), provider, key.name())));
     }
 
     private Resolved byAddress(IClass<?> objectClass, ObjectAddress address) throws ReflectionException {
-        Map<ObjectAddress, Resolved> fields = this.resolvedByAddress.computeIfAbsent(objectClass, c -> new ConcurrentHashMap<>());
-        Resolved known = fields.get(address);
-        if (known == null) {
-            known = resolved(FieldResolver.fieldByAddress(objectClass, provider, address));
-            fields.put(address, known);
-        }
-        return known;
+        return this.resolvedByAddress.get(new AddressKey(objectClass, address),
+                key -> resolved(FieldResolver.fieldByAddress(key.type(), provider, key.address())));
     }
 
     @SuppressWarnings("unchecked")

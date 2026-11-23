@@ -9,9 +9,7 @@ import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.garganttua.core.SuppressFBWarnings;
 import com.garganttua.core.reflection.IClass;
@@ -21,6 +19,7 @@ import com.garganttua.core.reflection.IMethod;
 import com.garganttua.core.reflection.IRecordComponent;
 import com.garganttua.core.reflection.IReflection;
 import com.garganttua.core.reflection.ITypeVariable;
+import com.garganttua.core.cache.ClassStructureCache;
 
 /**
  * JVM runtime-reflection implementation of {@link IClass}.
@@ -36,8 +35,13 @@ import com.garganttua.core.reflection.ITypeVariable;
 @SuppressWarnings("PMD.AvoidDuplicateLiterals")
 public class RuntimeClass<T> implements IClass<T> {
 
-	private static final Map<Class<?>, RuntimeClass<?>> CACHE = new ConcurrentHashMap<>();
-
+	/**
+	 * One mirror per class, attached to the class itself: a {@link ClassValue} answers without hashing nor locking,
+	 * where the map it replaces cost a {@code computeIfAbsent} on every {@code getType()}, {@code getDeclaringClass()}
+	 * and {@code IClass.getClass(...)} of a hot path. Same guarantee: concurrent first calls agree on one instance.
+	 */
+	private static final ClassStructureCache<RuntimeClass<?>> CACHE =
+			ClassStructureCache.named("reflection.runtime-classes", type -> new RuntimeClass<>(type));
 	private final Class<T> clazz;
 
 	private RuntimeClass(Class<T> clazz) {
@@ -54,7 +58,7 @@ public class RuntimeClass<T> implements IClass<T> {
 	 * @return the shared {@code RuntimeClass} instance for {@code clazz}
 	 */
 	public static <T> RuntimeClass<T> of(Class<T> clazz) {
-		return (RuntimeClass<T>) CACHE.computeIfAbsent(clazz, RuntimeClass::new);
+		return (RuntimeClass<T>) CACHE.get(clazz);
 	}
 
 	/**
@@ -65,7 +69,7 @@ public class RuntimeClass<T> implements IClass<T> {
 	 * @return the shared {@code RuntimeClass} instance for {@code clazz}
 	 */
 	public static RuntimeClass<?> ofUnchecked(Class<?> clazz) {
-		return CACHE.computeIfAbsent(clazz, k -> new RuntimeClass<>(k));
+		return CACHE.get(clazz);
 	}
 
 	/**

@@ -8,13 +8,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.bson.Document;
 import org.geojson.GeoJsonObject;
 
 import com.garganttua.api.binding.geojson.GeoJsonCodec;
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.core.cache.StructureCache;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
 import com.mongodb.DBRef;
@@ -42,7 +42,7 @@ final class MongoDocumentReader {
 	 * The fields a document fills, per class, opened for access — computed once per class instead of once per
 	 * document: the hierarchy walk, the static/transient filter and {@code setAccessible} do not depend on the row.
 	 */
-	private final Map<IClass<?>, List<IField>> fieldsByClass = new ConcurrentHashMap<>();
+	private final StructureCache<IClass<?>, List<IField>> fieldsByClass = StructureCache.named("mongodb.dto-fields");
 
 	MongoDocumentReader(MongoDatabase database, MongoDaoConfig config) {
 		this.database = database;
@@ -63,13 +63,45 @@ final class MongoDocumentReader {
 	private Object documentToDto(Document doc, IClass<?> clazz, Map<String, String> comps) throws ApiException {
 		try {
 			Object instance = clazz.getDeclaredConstructor().newInstance();
-			for (IField field : this.fieldsByClass.computeIfAbsent(clazz, MongoDocumentReader::readableFields)) {
+			for (IField field : this.fieldsByClass.get(clazz, MongoDocumentReader::readableFields)) {
 				applyField(instance, field, doc, comps);
 			}
 			return instance;
 		} catch (ApiException e) {
 			throw e;
 		} catch (Exception e) {
+			throw new ApiException("Failed to convert MongoDB Document to DTO", e);
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// What the direct decoder (MongoDtoCodec) shares with the Document path, so both map identically
+	// ------------------------------------------------------------------
+
+	/** {@return the fields a document fills on {@code clazz}} — the list {@link #documentToDto} walks. */
+	List<IField> fieldsOf(IClass<?> clazz) {
+		return this.fieldsByClass.get(clazz, MongoDocumentReader::readableFields);
+	}
+
+	/** {@return a fresh, empty DTO of the DAO's class}, as {@link #documentToDto} creates it. */
+	Object newDto() throws ApiException {
+		try {
+			return config.dtoClass().getDeclaredConstructor().newInstance();
+		} catch (Exception e) {
+			throw new ApiException("Failed to convert MongoDB Document to DTO", e);
+		}
+	}
+
+	/**
+	 * Maps one stored value onto a field of a DTO without compositions — exactly what {@link #applyField} does
+	 * once it has the value: a reference reaching a plain field is left out, anything else coerced and assigned.
+	 */
+	void applyValue(Object instance, IField field, Object value) throws ApiException {
+		try {
+			if (!isReference(value)) {
+				setScalarField(instance, field, value, field.getName());
+			}
+		} catch (IllegalAccessException e) {
 			throw new ApiException("Failed to convert MongoDB Document to DTO", e);
 		}
 	}

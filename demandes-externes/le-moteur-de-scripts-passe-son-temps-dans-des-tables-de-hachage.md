@@ -119,3 +119,54 @@ retirée par construction : plus de `computeIfAbsent` par appel, des `LongAdder`
   chaque appel. Ce passage n'a gardé que les champs, que le profil désignait.
 - **`AOTRegistry.get`** : il reste une recherche par nom de classe à chaque `IClass.getClass`. Une `ClassValue` la
   retirerait ; elle est à valider en natif avec le point précédent.
+
+## Réponse, suite — 2026-11-23, sur `main`, dans `3.0.0-ALPHA37` : le cache L0 et le reste des tables de hachage
+
+### Le cache L0 a maintenant un contrat
+
+Le niveau L0 de `un-cache-du-cadre-local-et-distribue.md` (la structure : membres résolus, accesseurs, invocateurs,
+lecteurs par type) n'était qu'un ensemble de tables, chacune écrite à sa façon. Il a maintenant un contrat, dans
+`garganttua-commons` :
+
+- **`StructureCache<K, V>`** : une valeur calculée une fois par clé et gardée pour la vie du processus.
+  - **Un succès coûte une lecture, sans verrou.** Les `computeIfAbsent` appelés à chaque accès, que les threads se
+    disputaient sous charge, ne servent plus qu'en cas d'absence.
+  - **Un échec n'est jamais gardé** : l'appel suivant échoue de la même façon.
+  - **Une valeur ne peut pas être nulle**, et des premiers appels concurrents reçoivent la même valeur.
+  - **`StructureCache.sizes()`** donne le nombre d'entrées de chaque cache, par nom : c'est la seule chose à surveiller
+    dans un cache qui ne rétrécit jamais.
+- **`ClassStructureCache<V>`**, quand la clé est la classe Java elle-même. Il repose sur une `ClassValue`, qui ne
+  hache rien. Micro-banc contre `ConcurrentHashMap.computeIfAbsent` : 2,4 contre 7 ns en JVM, 8 contre 11 à 15 ns en
+  natif.
+- **Ce n'est pas un `ICache`** : un cache L0 n'expire pas, ne s'invalide pas et ne quitte pas le processus. Le
+  distribuer coûterait un aller-retour là où l'on gagne des nanosecondes.
+
+### Les tables qui passent dessus
+
+| Cache L0 | Avant | Maintenant |
+|---|---|---|
+| `IClass` d'une classe Java, JVM (`RuntimeClass`) | `computeIfAbsent` à chaque `getType()`, `getDeclaringClass()` et `getClass()` | `ClassStructureCache` |
+| `IClass` d'une classe Java, AOT (descripteurs générés) | recherche par nom dans `AOTRegistry` à chaque appel | `ClassStructureCache`. Seuls les descripteurs générés y sont gardés : ils ne sont jamais remplacés, alors qu'un descripteur synthétisé doit pouvoir l'être |
+| champs lus par nom ou par adresse (`FieldDelegate`) | résolution complète à chaque appel (premier passage : deux tables) | `StructureCache`, une seule clé (type, nom) |
+| méthodes invoquées par nom (`MethodDelegate`) | résolution complète à chaque appel | `StructureCache` par forme d'appel (type, nom, retour, types d'arguments) |
+| membres et formes d'adresse (`MemberLookup`, `DirectAddresses`) | `computeIfAbsent` à chaque appel | `StructureCache` |
+| champs d'un DTO MongoDB (`MongoDocumentReader`) | parcours de la hiérarchie à chaque document | `StructureCache` |
+| configuration du mappeur | une recherche dans une table par élément | le dernier couple (source, destination) gardé, protégé par un numéro de version : une configuration enregistrée entre-temps n'est jamais ignorée |
+
+### Ce qui le prouve
+
+- `StructureCacheTest` : calcul unique, échec jamais gardé, valeur nulle refusée, 16 threads qui reçoivent la même
+  valeur, tailles par nom, `ClassValue` avec valeur nulle permise.
+- `MethodCallCacheTest` : surcharge choisie selon le type des arguments, redéfinition dans une sous-classe, méthode
+  absente qui échoue à chaque appel.
+- `LastMappingTest` : deux couples en alternance, configuration enregistrée entre deux mappings.
+- Les suites existantes de la réflexion, du mappeur, de l'injection, du runtime, des scripts, d'api-core et des deux
+  DAO.
+- **L'E2E natif MongoDB** (binaire AOT pur, GraalVM 25) : toutes ses vérifications passent sur ces changements.
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **La `VarHandle` pour les champs privés en AOT** est écartée : elle coûte 6 fois plus que `Field` en natif (mesures
+  dans la fiche consolidée).
+- **`Document.get` par champ** n'existe plus que pour les DTO à compositions : les autres sont décodés directement
+  (même fiche).

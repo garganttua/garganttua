@@ -6,8 +6,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.bson.Document;
+import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.conversions.Bson;
 
 import com.garganttua.api.commons.ApiException;
@@ -58,6 +60,8 @@ public class MongoDao implements IDao {
 	private final MongoDaoConfig config = new MongoDaoConfig();
 	private final MongoDocumentWriter writer = new MongoDocumentWriter(this.config);
 	private final MongoDocumentReader reader;
+	/** Built on the first read, once the domain is registered: see {@link #directDecoder()}. Empty until then. */
+	private final AtomicReference<Optional<MongoDtoCodec>> decoder = new AtomicReference<>();
 	private final MongoIndexManager indexes;
 	private volatile boolean projectDtoFields = true;
 
@@ -105,6 +109,8 @@ public class MongoDao implements IDao {
 			for (DtoComposition composition : dtoDefinition.compositions()) {
 				this.config.compositions().put(composition.field().getLastElement(), composition.collection());
 			}
+			// The DTO, its uuid or its compositions may have changed: the next read rebuilds its decoder.
+			this.decoder.set(null);
 			ensureIndexes(domainDefinition, dtoDefinition);
 		}
 	}
@@ -160,7 +166,10 @@ public class MongoDao implements IDao {
 		return find(pageable, filter, sort, Optional.empty());
 	}
 
+	// PreserveStackTrace: a decoding failure carries the ApiException the mapping raised; rethrowing that exception
+	// itself keeps its own stack trace — wrapping it again would only bury it under the driver's frames.
 	@Override
+	@SuppressWarnings("PMD.PreserveStackTrace")
 	public List<Object> find(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
 			Optional<List<String>> projection) throws ApiException {
 		Bson mongoFilter = filter.map(MongoFilterConverter::convert).orElse(new Document());
@@ -171,23 +180,61 @@ public class MongoDao implements IDao {
 			return new ArrayList<>();
 		}
 
-		FindIterable<Document> iterable = getCollection().find(mongoFilter);
 		// A page of size 0 is "no limit" (driver and PostgreSQL DAO alike): nothing to stabilise.
 		// A $near orders by distance itself: an _id key appended for stable pages would replace that order.
 		boolean byDistance = sort.isEmpty() && filter.map(MongoFilterConverter::hasNear).orElse(Boolean.FALSE);
-		orderBy(sort.orElse(null), page != null && page.getPageSize() != 0 && !byDistance).ifPresent(iterable::sort);
-		if (page != null) {
-			iterable.skip((int) offset);
-			iterable.limit(page.getPageSize());
-		}
-
-		applyProjection(iterable, projection);
+		Optional<Bson> order = orderBy(sort.orElse(null), page != null && page.getPageSize() != 0 && !byDistance);
 
 		List<Object> results = new ArrayList<>();
+		Optional<MongoDtoCodec> direct = directDecoder();
+		if (direct.isPresent()) {
+			MongoCollection<Document> collection = getCollection();
+			FindIterable<MongoDtoCodec.Decoded> iterable = collection
+					.withCodecRegistry(CodecRegistries.fromRegistries(CodecRegistries.fromCodecs(direct.get()),
+							collection.getCodecRegistry()))
+					.withDocumentClass(MongoDtoCodec.Decoded.class)
+					.find(mongoFilter);
+			shape(iterable, order, page, offset, projection);
+			try {
+				for (MongoDtoCodec.Decoded decoded : iterable) {
+					results.add(decoded.dto());
+				}
+			} catch (MongoDtoCodec.DecodingFailure e) {
+				throw e.apiException();
+			}
+			return results;
+		}
+		FindIterable<Document> iterable = getCollection().find(mongoFilter);
+		shape(iterable, order, page, offset, projection);
 		for (Document doc : iterable) {
 			results.add(this.reader.documentToDto(doc));
 		}
 		return results;
+	}
+
+	/** Sort, page and projection — the same on both read paths. */
+	private void shape(FindIterable<?> iterable, Optional<Bson> order, IPageable page, long offset,
+			Optional<List<String>> projection) {
+		order.ifPresent(iterable::sort);
+		if (page != null) {
+			iterable.skip((int) offset);
+			iterable.limit(page.getPageSize());
+		}
+		applyProjection(iterable, projection);
+	}
+
+	/**
+	 * The decoder that reads this DAO's documents straight into DTOs, built on first use against the database's
+	 * codec registry — empty when the DTO has compositions or the registry decodes differently (see
+	 * {@link MongoDtoCodec}); the {@code Document} path is then used, as before.
+	 */
+	private Optional<MongoDtoCodec> directDecoder() {
+		Optional<MongoDtoCodec> known = this.decoder.get();
+		if (known == null) {
+			known = MongoDtoCodec.of(this.reader, this.config, getCollection().getCodecRegistry());
+			this.decoder.set(known);
+		}
+		return known;
 	}
 
 	/**
@@ -237,7 +284,7 @@ public class MongoDao implements IDao {
 	 * copies the DTO's fields and nothing else. The filter is untouched — a query may still match on a
 	 * field the DTO does not map, since a projection only narrows what comes BACK.
 	 */
-	private void applyProjection(FindIterable<Document> iterable, Optional<List<String>> projection) {
+	private void applyProjection(FindIterable<?> iterable, Optional<List<String>> projection) {
 		if (projection == null || projection.isEmpty() || projection.get().isEmpty()) {
 			if (this.projectDtoFields && !this.config.dtoFieldNames().isEmpty()) {
 				include(iterable, new LinkedHashSet<>(this.config.dtoFieldNames()));
@@ -261,7 +308,7 @@ public class MongoDao implements IDao {
 	}
 
 	/** Projects onto {@code docFields}, plus the uuid and every composition field the read side needs. */
-	private void include(FindIterable<Document> iterable, Set<String> docFields) {
+	private void include(FindIterable<?> iterable, Set<String> docFields) {
 		docFields.add(this.config.uuidFieldName());
 		docFields.addAll(this.config.compositions().keySet());
 		iterable.projection(Projections.include(new ArrayList<>(docFields)));
@@ -376,6 +423,16 @@ public class MongoDao implements IDao {
 
 	private MongoCollection<Document> getCollection() {
 		return this.database.getCollection(this.collectionName);
+	}
+
+	/** Maps a {@link Document} the way the {@code Document} read path does. Package-private for the decoder tests. */
+	Object documentToDto(Document doc) throws ApiException {
+		return this.reader.documentToDto(doc);
+	}
+
+	/** Whether reads decode straight into DTOs (see {@link MongoDtoCodec}). Package-private for the tests. */
+	boolean decodesDirectly() {
+		return directDecoder().isPresent();
 	}
 
 	/** Converts a root DTO to its persistable {@link Document}. Package-private for the mapping tests. */

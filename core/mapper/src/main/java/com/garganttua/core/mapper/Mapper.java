@@ -41,6 +41,9 @@ public class Mapper implements IMapper, IObservable {
 
 	protected final Map<MappingKey, CachedMappingConfiguration> mappingConfigurations = new ConcurrentHashMap<>();
 
+	/** The pair mapped last — see {@link LastMapping}. */
+	private final LastMapping lastMapping = new LastMapping();
+
 	private final MapperConfiguration configuration = new MapperConfiguration();
 	private final IReflection reflection;
 	private final MappingRules mappingRules;
@@ -161,12 +164,7 @@ public class Mapper implements IMapper, IObservable {
 		}
 	}
 
-	private <destination> destination mapInternal(Object source, IClass<destination> destinationClass,
-			destination destination, Set<Object> visited) throws MapperException {
-		return mapInternal(source, destinationClass, destination, visited, null);
-	}
-
-	/** As above, with the configuration the caller already looked up for this source and destination, if any. */
+	/** {@code known}: the configuration the caller already looked up for this source and destination, if any. */
 	private <destination> destination mapInternal(Object source, IClass<destination> destinationClass,
 			destination destination, Set<Object> visited, CachedMappingConfiguration known) throws MapperException {
 		IClass<destination> resolvedDestClass = resolveDestinationClass(source, destinationClass, destination);
@@ -218,7 +216,7 @@ public class Mapper implements IMapper, IObservable {
 		IMappingRecursion recursion = new IMappingRecursion() {
 			@Override
 			public <D> D map(Object src, IClass<D> destCls) throws MapperException {
-				return mapInternal(src, destCls, null, visited);
+				return mapInternal(src, destCls, null, visited, null);
 			}
 		};
 
@@ -424,6 +422,7 @@ public class Mapper implements IMapper, IObservable {
 		CachedMappingConfiguration cached = createCachedMappingConfiguration(source, destination);
 		MappingKey key = new MappingKey(source, destination);
 		this.mappingConfigurations.put(key, cached);
+		this.lastMapping.recorded();
 		return cached.config();
 	}
 
@@ -433,11 +432,16 @@ public class Mapper implements IMapper, IObservable {
 		return getCachedMappingConfiguration(source, destination).config();
 	}
 
+	private CachedMappingConfiguration getCachedMappingConfiguration(IClass<?> source, IClass<?> destination)
+			throws MapperException {
+		return this.lastMapping.get(source, destination, this::lookUpMappingConfiguration);
+	}
+
 	// PreserveStackTrace: we rethrow the original MapperException cause unwrapped from the
 	// computeIfAbsent runtime wrapper; its own stack trace is preserved, so re-wrapping would
 	// only nest it redundantly.
 	@SuppressWarnings("PMD.PreserveStackTrace")
-	private CachedMappingConfiguration getCachedMappingConfiguration(IClass<?> source, IClass<?> destination)
+	private CachedMappingConfiguration lookUpMappingConfiguration(IClass<?> source, IClass<?> destination)
 			throws MapperException {
 		MappingKey key = new MappingKey(source, destination);
 		try {
@@ -470,6 +474,7 @@ public class Mapper implements IMapper, IObservable {
 				config.sourceRules(), config.source(), config.destination());
 
 		this.mappingConfigurations.put(key, new CachedMappingConfiguration(config, destExecutors, srcExecutors));
+		this.lastMapping.recorded();
 	}
 
 	@Override

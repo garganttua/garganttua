@@ -5,6 +5,7 @@ import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IReflectionProvider;
 
 import jakarta.annotation.Priority;
+import com.garganttua.core.cache.ClassStructureCache;
 
 /**
  * AOT implementation of {@link IReflectionProvider}.
@@ -48,8 +49,23 @@ public class AOTReflectionProvider implements IReflectionProvider {
         CoreInfrastructureSeed.bootstrap();
     }
 
+    /**
+     * The generated descriptor of a class, attached to the class itself — null when it has none (yet). Only the
+     * generated {@code AOTClass_*} are kept: they register at provider start-up and are never replaced. A synthesized
+     * descriptor is not: a generated one registered later must still win, as it does through the registry.
+     */
+    private final ClassStructureCache<IClass<?>> generated = ClassStructureCache.named(
+            "reflection.aot-generated-descriptors", type -> {
+                IClass<?> hit = AOTRegistry.getInstance().get(type.getName()).orElse(null);
+                return hit != null && !AOTClass.class.equals(hit.getClass()) ? hit : null;
+            });
     @Override
+    @SuppressWarnings("unchecked")
     public <T> IClass<T> getClass(Class<T> clazz) {
+        IClass<?> known = this.generated.get(clazz);
+        if (known != null) {
+            return (IClass<T>) known;
+        }
         java.util.Optional<IClass<T>> hit = AOTRegistry.getInstance().get(clazz.getName());
         if (hit.isPresent()) {
             return hit.get();

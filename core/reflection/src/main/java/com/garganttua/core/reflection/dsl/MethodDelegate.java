@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.List;
 import java.util.Optional;
 
+import com.garganttua.core.cache.StructureCache;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IMethod;
@@ -32,6 +33,17 @@ class MethodDelegate {
     private static final Logger log = Logger.getLogger(MethodDelegate.class);
 
     private final IReflectionProvider provider;
+
+    /** What a by-name call resolves to: the receiver's type, the name, the return type and the argument types. */
+    private record CallKey(IClass<?> owner, String name, IClass<?> returnType, List<IClass<?>> parameterTypes) {
+    }
+
+    /**
+     * Invokers resolved once per call shape. Resolving a method by name walks the hierarchy, builds a query and an
+     * address on every call, for an answer that depends only on the types; a call made on every request (the
+     * security expressions read signing data this way) paid it each time. A failed resolution is not kept.
+     */
+    private final StructureCache<CallKey, MethodInvoker<?, ?>> invokers = StructureCache.named("reflection.method-calls");
 
     MethodDelegate(IReflectionProvider provider) {
         this.provider = provider;
@@ -135,9 +147,7 @@ class MethodDelegate {
     <R> R invokeMethod(Object object, IMethod method, IClass<R> returnType, boolean force, Object... args)
             throws ReflectionException {
         IClass<?> ownerType = provider.getClass(object.getClass());
-        ResolvedMethod resolved = MethodResolver.methodByName(ownerType, provider, method.getName(), returnType,
-                method.getParameterTypes());
-        var invoker = new MethodInvoker<>(resolved, force);
+        MethodInvoker<?, ?> invoker = invoker(ownerType, method.getName(), returnType, method.getParameterTypes(), force);
         IMethodReturn<R> result = (IMethodReturn<R>) invoker.invoke(object, args);
         if (result.hasException()) {
             throw new ReflectionException(
@@ -162,8 +172,7 @@ class MethodDelegate {
                 paramTypes[i] = args[i] != null ? provider.getClass(args[i].getClass()) : IClass.getClass(Object.class);
             }
         }
-        ResolvedMethod resolved = MethodResolver.methodByName(ownerType, provider, methodName, returnType, paramTypes);
-        var invoker = new MethodInvoker<>(resolved, force);
+        MethodInvoker<?, ?> invoker = invoker(ownerType, methodName, returnType, paramTypes, force);
         IMethodReturn<R> result = (IMethodReturn<R>) invoker.invoke(object, args);
         if (result.hasException()) {
             throw new ReflectionException(
@@ -186,6 +195,18 @@ class MethodDelegate {
         IClass<?> ownerType = provider.getClass(object.getClass());
         ResolvedMethod resolvedMethod = MethodResolver.methodByAddress(ownerType, provider, address, returnType, paramTypes);
         return (IMethodReturn<R>) new MethodInvoker<>(resolvedMethod, force).invoke(object, args);
+    }
+
+    /** The invoker of a by-name call — kept per call shape unless {@code force}, which stays a one-off as before. */
+    private MethodInvoker<?, ?> invoker(IClass<?> ownerType, String methodName, IClass<?> returnType,
+            IClass<?>[] parameterTypes, boolean force) throws ReflectionException {
+        if (force) {
+            return new MethodInvoker<>(
+                    MethodResolver.methodByName(ownerType, provider, methodName, returnType, parameterTypes), true);
+        }
+        return this.invokers.get(new CallKey(ownerType, methodName, returnType, List.of(parameterTypes)),
+                key -> new MethodInvoker<>(
+                        MethodResolver.methodByName(ownerType, provider, methodName, returnType, parameterTypes), false));
     }
 
     private static String buildMethodSignature(IMethod method) {
