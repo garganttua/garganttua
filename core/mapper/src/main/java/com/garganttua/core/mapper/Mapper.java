@@ -36,6 +36,9 @@ import com.garganttua.core.reflection.IReflection;
 public class Mapper implements IMapper, IObservable {
     private static final Logger log = Logger.getLogger(Mapper.class);
 
+    /** The observability source of a mapping nobody observes — the detailed one is built only when observed. */
+    private static final String UNOBSERVED_SOURCE = "mapper";
+
 	protected final Map<MappingKey, CachedMappingConfiguration> mappingConfigurations = new ConcurrentHashMap<>();
 
 	private final MapperConfiguration configuration = new MapperConfiguration();
@@ -112,12 +115,13 @@ public class Mapper implements IMapper, IObservable {
 
 		long startNanos = System.nanoTime();
 		try (ObservabilityEmitter.Scope scope =
-				ObservabilityEmitter.open(this.observers, UUID.randomUUID())) {
+				ObservabilityEmitter.open(this.observers, UUID::randomUUID)) {
 			IClass<destination> resolvedDestClass = destinationClass;
 			if (resolvedDestClass == null && destination != null) {
 				resolvedDestClass = (IClass<destination>) this.reflection.getClass(destination.getClass());
 			}
-			String mapperSource = buildObservabilitySource(source, resolvedDestClass);
+			// Built only when someone listens: a mapping runs once per element of a list read.
+			String mapperSource = scope.hasObservers() ? buildObservabilitySource(source, resolvedDestClass) : UNOBSERVED_SOURCE;
 			scope.fireStart(mapperSource);
 			return mapWithScope(source, resolvedDestClass, destination, visited, scope, mapperSource, startNanos);
 		}
@@ -138,7 +142,7 @@ public class Mapper implements IMapper, IObservable {
 				cachedConfig = this.getCachedMappingConfiguration(
 						this.reflection.getClass(source.getClass()), resolvedDestClass);
 			}
-			destination result = mapInternal(source, resolvedDestClass, destination, visited);
+			destination result = mapInternal(source, resolvedDestClass, destination, visited, cachedConfig);
 			long durationNanos = System.nanoTime() - startNanos;
 			if (cachedConfig != null) {
 				int rulesCount = cachedConfig.config().mappingDirection() == MappingDirection.REGULAR
@@ -159,6 +163,12 @@ public class Mapper implements IMapper, IObservable {
 
 	private <destination> destination mapInternal(Object source, IClass<destination> destinationClass,
 			destination destination, Set<Object> visited) throws MapperException {
+		return mapInternal(source, destinationClass, destination, visited, null);
+	}
+
+	/** As above, with the configuration the caller already looked up for this source and destination, if any. */
+	private <destination> destination mapInternal(Object source, IClass<destination> destinationClass,
+			destination destination, Set<Object> visited, CachedMappingConfiguration known) throws MapperException {
 		IClass<destination> resolvedDestClass = resolveDestinationClass(source, destinationClass, destination);
 		if (resolvedDestClass == null) {
 			// Truly no information: nothing to map.
@@ -192,13 +202,15 @@ public class Mapper implements IMapper, IObservable {
 			return destination;
 		}
 
-		return mapByConfiguration(source, resolvedDestClass, destination, visited);
+		return mapByConfiguration(source, resolvedDestClass, destination, visited,
+				destinationClass != null ? known : null);
 	}
 
 	private <destination> destination mapByConfiguration(Object source, IClass<destination> resolvedDestClass,
-			destination destination, Set<Object> visited) throws MapperException {
+			destination destination, Set<Object> visited, CachedMappingConfiguration known) throws MapperException {
 		IClass<?> sourceClass = this.reflection.getClass(source.getClass());
-		CachedMappingConfiguration cachedConfig = this.getCachedMappingConfiguration(sourceClass, resolvedDestClass);
+		CachedMappingConfiguration cachedConfig = known != null ? known
+				: this.getCachedMappingConfiguration(sourceClass, resolvedDestClass);
 		MappingConfiguration mappingConfig = cachedConfig.config();
 
 		log.debug("Mapping {} -> {} ({})", sourceClass.getSimpleName(), resolvedDestClass.getSimpleName(), mappingConfig.mappingDirection());

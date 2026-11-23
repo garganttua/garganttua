@@ -53,6 +53,9 @@ import com.garganttua.core.observability.Logger;
 @SuppressFBWarnings(value = {"EI_EXPOSE_REP"}, justification = "Immutable-by-contract value/definition carrier; collections & arrays carried by reference as a snapshot (framework-internal, built once).")
 @SuppressWarnings({"PMD.ReplaceJavaUtilDate", "PMD.AvoidDuplicateLiterals"})
 public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
+
+    /** Measuring points of the hot path, resolved once (see {@link HotPathProbe#site(String)}). */
+    private static final HotPathProbe.Site PROBE_DOMAIN_WORKFLOW_EXECUTE = HotPathProbe.site("domain.workflowExecute");
 	private static final Logger log = Logger.getLogger(Domain.class);
 
     final DomainDefinition<E> domainDefinition;
@@ -436,7 +439,7 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
             long probe = HotPathProbe.start();
             WorkflowResult result = this.workflow.execute(
                     WorkflowInput.of(request, buildWorkflowParams()), effectiveOptions(request, options));
-            HotPathProbe.end("domain.workflowExecute", probe);
+            PROBE_DOMAIN_WORKFLOW_EXECUTE.end(probe);
             return mapWorkflowResult(result, request);
         } catch (Exception e) {
             log.error("Error executing workflow for domain {}: {}",

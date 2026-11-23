@@ -3,6 +3,7 @@ package com.garganttua.core.observability;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import com.garganttua.core.observability.ObservableContextHolder.Session;
 
@@ -52,6 +53,20 @@ public final class ObservabilityEmitter {
 		}
 		Session previous = ObservableContextHolder.push(localRegistry, localExecutionId);
 		return new Scope(localRegistry, localExecutionId, localRegistry, previous, true);
+	}
+
+	/**
+	 * As {@link #open(ObservableRegistry, UUID)}, the execution id drawn only when no parent session is bound —
+	 * that is, only when it is used. For a unit of work that runs once per element inside a request (a mapping),
+	 * where a parent session nearly always exists and a {@code UUID.randomUUID()} per call costs a secure-random
+	 * draw for nothing.
+	 */
+	public static Scope open(ObservableRegistry localRegistry, Supplier<UUID> localExecutionId) {
+		Session parent = ObservableContextHolder.current();
+		if (parent != null) {
+			return new Scope(parent.registry(), parent.executionId(), localRegistry, null, false);
+		}
+		return open(localRegistry, localExecutionId.get());
 	}
 
 	/**

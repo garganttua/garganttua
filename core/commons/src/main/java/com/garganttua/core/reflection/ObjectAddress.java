@@ -76,7 +76,7 @@ public final class ObjectAddress implements Cloneable {
             throw new IllegalArgumentException("Address cannot start or end with a dot, or be empty");
         }
         this.fields = address.split("\\.");
-        log.debug("Parsed fields: {}", Arrays.toString(fields));
+        log.debug("Parsed fields: {}", (Object) fields);   // formatted only if emitted
         if (this.detectLoops) {
             detectLoop(this.fields);
         }

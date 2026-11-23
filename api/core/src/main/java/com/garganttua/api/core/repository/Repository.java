@@ -43,6 +43,9 @@ public class Repository implements IRepository {
     private final List<IDtoContext<?>> dtoContexts;
     private final IClass<?> entityClass;
     private static final IReflection REFLECTION = DefaultMapper.reflection();
+
+    /** A domain whose entities each come from one DTO: nothing to merge. */
+    private static final int SINGLE_DTO = 1;
     private final IMapper mapper = DefaultMapper.mapper();
     private final IFilterMapper filterMapper = new FilterMapper();
 
@@ -393,6 +396,17 @@ public class Repository implements IRepository {
     // --- Internal: mapping ---
 
     private List<Object> mergeAndMapToEntities(List<Map<String, Object>> dtoMaps) throws ApiException {
+        if (dtoMaps.size() == SINGLE_DTO) {
+            // One DTO per entity, nothing to merge: no per-row list and map just to hand each DTO to the mapper.
+            List<Object> entities = new ArrayList<>(dtoMaps.get(0).size());
+            for (Object dto : dtoMaps.get(0).values()) {
+                Object entity = mapDtosToEntity(List.of(dto));
+                if (entity != null) {
+                    entities.add(entity);
+                }
+            }
+            return entities;
+        }
         Map<String, List<Object>> merged = mergeMaps(dtoMaps, false);
         return merged.values().stream()
                 .map(this::mapDtosToEntity)

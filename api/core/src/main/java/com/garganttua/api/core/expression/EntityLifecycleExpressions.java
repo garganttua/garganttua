@@ -49,6 +49,10 @@ import static com.garganttua.api.core.expression.ExpressionUtils.*;
 @Reflected(queryAllPublicMethods = true)
 public class EntityLifecycleExpressions {
 
+	/** Measuring points of the hot path, resolved once (see {@link HotPathProbe#site(String)}). */
+	private static final HotPathProbe.Site PROBE_ENTITY_DO_INJECTION = HotPathProbe.site("entity.doInjection");
+	private static final HotPathProbe.Site PROBE_ENTITY_RUN_AFTER_GET = HotPathProbe.site("entity.runAfterGet");
+
 	@Expression(name = "doInjection", description = "Injects @Inject and @Property fields into entities using BeanFactory (no @PostConstruct)")
 	public static List<Object> doInjection(Object request, Object entities) {
 		if (entities == null) return List.of();
@@ -72,7 +76,7 @@ public class EntityLifecycleExpressions {
 		for (Object entity : entityList) {
 			new BeanFactory<>(injectionOnlyDef, entity).supply();
 		}
-		HotPathProbe.end("entity.doInjection", probe);
+		PROBE_ENTITY_DO_INJECTION.end(probe);
 		return entityList;
 	}
 
@@ -98,7 +102,7 @@ public class EntityLifecycleExpressions {
 		} catch (Exception e) {
 			throw new ApiException("Failed to execute afterGet lifecycle hooks", e);
 		} finally {
-			HotPathProbe.end("entity.runAfterGet", probe);
+			PROBE_ENTITY_RUN_AFTER_GET.end(probe);
 		}
 		return entityList;
 	}

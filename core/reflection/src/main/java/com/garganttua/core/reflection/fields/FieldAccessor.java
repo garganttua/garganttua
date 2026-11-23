@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
@@ -56,6 +58,17 @@ public class FieldAccessor<T> implements ISupplier<IFieldValue<T>> {
 	private final ObjectAddress address;
 	private final IClass<T> fieldType;
 	private final boolean force;
+	/**
+	 * The field of a one-segment path, resolved once — what {@link #getValue} and {@link #setValue} read and write on
+	 * every call of a hot path (a mapper rule, a DAO column). Null for a nested path.
+	 */
+	private final IField single;
+	/** Whether that field's name is the address's: checked once, the error still raised at access, as before. */
+	private final boolean singleNameMatches;
+	/** Whether {@link #single} is open — {@code setAccessible} is done once, not once per call. */
+	private volatile boolean singleOpened;
+	/** The fields of a nested path already opened, likewise. */
+	private final Set<IField> opened = ConcurrentHashMap.newKeySet();
 
 	/**
 	 * Creates an accessor for the given resolved field without forcing access to
@@ -86,6 +99,13 @@ public class FieldAccessor<T> implements ISupplier<IFieldValue<T>> {
 		this.address = Objects.requireNonNull(resolvedField.address(), "Address cannot be null");
 		this.fieldType = (IClass<T>) ((IField) fieldPath.getLast()).getType();
 		this.force = force;
+		if (this.fieldPath.size() == 1) {
+			this.single = (IField) this.fieldPath.get(0);
+			this.singleNameMatches = this.single.getName().equals(this.address.getElement(0));
+		} else {
+			this.single = null;
+			this.singleNameMatches = false;
+		}
 		log.debug("FieldAccessor initialized for ownerType={}, address={}, force={}", ownerType.getName(), address, force);
 	}
 
@@ -102,17 +122,14 @@ public class FieldAccessor<T> implements ISupplier<IFieldValue<T>> {
 	 * @throws ReflectionException if the object is incompatible or a field cannot be read
 	 */
 	public IFieldValue<T> getValue(Object object) throws ReflectionException {
-		log.trace("getValue entry: object={}, ownerType={}, address={}", object, this.ownerType, this.address);
 		validateObject(object);
 
-		if (fieldPath.size() == 1) {
-			IField field = (IField) fieldPath.get(0);
-			String fieldName = this.address.getElement(0);
-			log.debug("Single field access: fieldName={}", fieldName);
-			checkFieldNameMatch(field, fieldName);
-			T value = (T) getFieldValue(object, field);
-			log.debug("Successfully retrieved value for address={}", this.address);
-			return SingleFieldValue.of(value, fieldType);
+		if (this.single != null) {
+			// The hot path (one mapper rule, one DAO column): nothing here can have changed since construction.
+			if (!this.singleNameMatches) {
+				checkFieldNameMatch(this.single, this.address.getElement(0));
+			}
+			return SingleFieldValue.of((T) getFieldValue(object, this.single), fieldType);
 		} else {
 			log.debug("Recursive field access with {} fields", fieldPath.size());
 			IFieldValue<T> result = this.getValueRecursively(object, 0, 0);
@@ -235,20 +252,17 @@ public class FieldAccessor<T> implements ISupplier<IFieldValue<T>> {
 	 * @throws ReflectionException if the object is incompatible or a field cannot be written
 	 */
 	public IFieldValue<T> setValue(Object object, IFieldValue<T> value) throws ReflectionException {
-		log.trace("setValue entry: object={}, value={}, ownerType={}, address={}", object, value, this.ownerType, this.address);
 		validateObject(object);
 
-		if (this.fieldPath.size() == 1) {
-			IField field = (IField) this.fieldPath.get(0);
-			String fieldName = this.address.getElement(0);
-			log.debug("Direct field assignment: fieldName={}", fieldName);
-			checkFieldNameMatch(field, fieldName);
-			setFieldValue(object, field, value.first());
+		if (this.single != null) {
+			if (!this.singleNameMatches) {
+				checkFieldNameMatch(this.single, this.address.getElement(0));
+			}
+			setFieldValue(object, this.single, value.first());
 		} else {
 			log.debug("Recursive field assignment with {} fields", this.fieldPath.size());
 			this.setValueRecursively(object, value.first(), 0, 0);
 		}
-		log.debug("Successfully set value for address={}", this.address);
 		return value;
 	}
 
@@ -474,7 +488,8 @@ public class FieldAccessor<T> implements ISupplier<IFieldValue<T>> {
 	}
 
 	private Object getFieldValue(Object object, IField field) throws ReflectionException {
-		try (var mgr = new FieldAccessManager(field, this.force)) {
+		try {
+			open(field);
 			return field.get(object);
 		} catch (IllegalAccessException | IllegalArgumentException e) {
 			throw new ReflectionException(
@@ -483,12 +498,34 @@ public class FieldAccessor<T> implements ISupplier<IFieldValue<T>> {
 	}
 
 	private void setFieldValue(Object object, IField field, Object value) throws ReflectionException {
-		try (var mgr = new FieldAccessManager(field, this.force)) {
+		try {
+			open(field);
 			field.set(object, value);
 		} catch (IllegalAccessException | IllegalArgumentException e) {
 			throw new ReflectionException(
 					"Cannot set field " + field.getName() + " of object " + object.getClass().getName()
 							+ " with value " + value, e);
+		}
+	}
+
+	/**
+	 * Opens {@code field} the first time this accessor touches it. A {@link FieldAccessManager} did it on every call
+	 * and left it open (the handle is shared), so opening it once changes nothing but the cost.
+	 */
+	// AvoidAccessibilityAlteration: opening the field is this accessor's job, as it was FieldAccessManager's.
+	// CompareObjectsWithEquals: identity is the point — is this the very field resolved at construction.
+	@SuppressWarnings({"PMD.AvoidAccessibilityAlteration", "PMD.CompareObjectsWithEquals"})
+	private void open(IField field) {
+		if (field == this.single) {
+			if (!this.singleOpened) {
+				field.setAccessible(true);
+				this.singleOpened = true;
+			}
+			return;
+		}
+		if (!this.opened.contains(field)) {
+			field.setAccessible(true);
+			this.opened.add(field);
 		}
 	}
 

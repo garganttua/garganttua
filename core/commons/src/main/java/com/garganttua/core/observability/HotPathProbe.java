@@ -97,6 +97,35 @@ public final class HotPathProbe {
 	 * @param label      attribution bucket, e.g. {@code "injection.copy"}
 	 * @param startNanos the value previously returned by {@link #start()}
 	 */
+	/**
+	 * A measuring point resolved once: {@link #site(String)} at construction, {@link Site#end(long)} on every call.
+	 * Unlike {@link #end(String, long)}, nothing is built nor looked up per call — no label concatenated, no
+	 * {@code computeIfAbsent} for every thread to contend on — so the probe can be left on under load.
+	 */
+	public static final class Site {
+		private final Counter counter;
+
+		private Site(Counter counter) {
+			this.counter = counter;
+		}
+
+		/** Records one call started at {@code startNanos} (the value {@link #start()} returned). */
+		public void end(long startNanos) {
+			if (this.counter != null) {
+				this.counter.nanos.add(System.nanoTime() - startNanos);
+				this.counter.calls.increment();
+			}
+		}
+	}
+
+	/** The site of a disabled probe: records nothing. */
+	private static final Site OFF = new Site(null);
+
+	/** {@return the measuring point of {@code label}} — one that records nothing when the probe is disabled. */
+	public static Site site(String label) {
+		return ENABLED ? new Site(COUNTERS.computeIfAbsent(label, k -> new Counter())) : OFF;
+	}
+
 	public static void end(String label, long startNanos) {
 		if (!ENABLED) {
 			return;
@@ -108,7 +137,11 @@ public final class HotPathProbe {
 
 	/** Clears every accumulated measurement (e.g. between a warm-up and the measured run). */
 	public static void reset() {
-		COUNTERS.clear();
+		// Zeroed, not removed: a Site keeps its counter, and must keep counting into the reported one.
+		COUNTERS.values().forEach(counter -> {
+			counter.nanos.reset();
+			counter.calls.reset();
+		});
 	}
 
 	/**
@@ -117,7 +150,11 @@ public final class HotPathProbe {
 	 */
 	public static Map<String, long[]> snapshot() {
 		Map<String, long[]> out = new ConcurrentHashMap<>();
-		COUNTERS.forEach((label, counter) -> out.put(label, new long[] { counter.calls.sum(), counter.nanos.sum() }));
+		COUNTERS.forEach((label, counter) -> {
+			if (counter.calls.sum() > 0) {
+				out.put(label, new long[] { counter.calls.sum(), counter.nanos.sum() });
+			}
+		});
 		return out;
 	}
 
@@ -130,6 +167,7 @@ public final class HotPathProbe {
 			return "HotPathProbe disabled (enable with -Dgarganttua.perf.probe=true)";
 		}
 		List<Map.Entry<String, Counter>> entries = new ArrayList<>(COUNTERS.entrySet());
+		entries.removeIf(e -> e.getValue().calls.sum() == 0);
 		entries.sort(Comparator.comparingLong((Map.Entry<String, Counter> e) -> e.getValue().nanos.sum()).reversed());
 
 		StringBuilder sb = new StringBuilder(256);

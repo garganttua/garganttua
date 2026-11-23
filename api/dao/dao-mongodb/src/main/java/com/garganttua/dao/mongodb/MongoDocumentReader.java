@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.bson.Document;
 import org.geojson.GeoJsonObject;
@@ -37,6 +38,12 @@ final class MongoDocumentReader {
 	private final MongoDatabase database;
 	private final MongoDaoConfig config;
 
+	/**
+	 * The fields a document fills, per class, opened for access — computed once per class instead of once per
+	 * document: the hierarchy walk, the static/transient filter and {@code setAccessible} do not depend on the row.
+	 */
+	private final Map<IClass<?>, List<IField>> fieldsByClass = new ConcurrentHashMap<>();
+
 	MongoDocumentReader(MongoDatabase database, MongoDaoConfig config) {
 		this.database = database;
 		this.config = config;
@@ -56,12 +63,8 @@ final class MongoDocumentReader {
 	private Object documentToDto(Document doc, IClass<?> clazz, Map<String, String> comps) throws ApiException {
 		try {
 			Object instance = clazz.getDeclaredConstructor().newInstance();
-			IClass<?> current = clazz;
-			while (current != null) {
-				for (IField field : current.getDeclaredFields()) {
-					applyField(instance, field, doc, comps);
-				}
-				current = current.getSuperclass();
+			for (IField field : this.fieldsByClass.computeIfAbsent(clazz, MongoDocumentReader::readableFields)) {
+				applyField(instance, field, doc, comps);
 			}
 			return instance;
 		} catch (ApiException e) {
@@ -71,19 +74,35 @@ final class MongoDocumentReader {
 		}
 	}
 
+	/** The instance fields of {@code clazz} and its superclasses, in that order, opened for access. */
+	// AvoidAccessibilityAlteration: the reader always opened each field before setting it; it now does it once.
+	@SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+	private static List<IField> readableFields(IClass<?> clazz) {
+		List<IField> fields = new ArrayList<>();
+		for (IClass<?> current = clazz; current != null; current = current.getSuperclass()) {
+			for (IField field : current.getDeclaredFields()) {
+				int mods = field.getModifiers();
+				if (!Modifier.isStatic(mods) && !Modifier.isTransient(mods)) {
+					field.setAccessible(true);
+					fields.add(field);
+				}
+			}
+		}
+		return List.copyOf(fields);
+	}
+
 	/** Maps a single document field onto {@code instance}, resolving DBRefs for composition fields. */
 	private void applyField(Object instance, IField field, Document doc, Map<String, String> comps)
 			throws ApiException, IllegalAccessException {
-		int mods = field.getModifiers();
-		if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) {
-			return;
-		}
 		String fieldName = field.getName();
-		Object value = readRawValue(doc, fieldName);
-		if (value == null && !carriesValue(doc, fieldName)) {
-			return;
+		// One lookup when the key is there — the common case; the absent / uuid-alias cases only on a null.
+		Object value = doc.get(fieldName);
+		if (value == null && !doc.containsKey(fieldName)) {
+			if (!fieldName.equals(config.uuidFieldName()) || !doc.containsKey(MongoDaoConfig.MONGO_ID)) {
+				return;
+			}
+			value = doc.get(MongoDaoConfig.MONGO_ID);
 		}
-		field.setAccessible(true);
 		if (comps.containsKey(fieldName)) {
 			field.set(instance, resolveReference(field, value));
 		} else if (!isReference(value)) {
@@ -91,27 +110,6 @@ final class MongoDocumentReader {
 			// (a composed DTO that itself composes): leave it null rather than mis-set it.
 			setScalarField(instance, field, value, fieldName);
 		}
-	}
-
-	/** Whether {@code doc} carries a value for {@code fieldName} (directly or via the {@code _id} uuid alias). */
-	private boolean carriesValue(Document doc, String fieldName) {
-		return doc.containsKey(fieldName)
-				|| (fieldName.equals(config.uuidFieldName()) && doc.containsKey(MongoDaoConfig.MONGO_ID));
-	}
-
-	/**
-	 * The stored value for {@code fieldName}: the field itself, or — for the uuid field of a document
-	 * carrying only {@code _id} (written by another tool, or an _id-only projection) — {@code _id}.
-	 * Returns {@code null} when neither is present (caller distinguishes "absent" via {@link #carriesValue}).
-	 */
-	private Object readRawValue(Document doc, String fieldName) {
-		if (doc.containsKey(fieldName)) {
-			return doc.get(fieldName);
-		}
-		if (fieldName.equals(config.uuidFieldName()) && doc.containsKey(MongoDaoConfig.MONGO_ID)) {
-			return doc.get(MongoDaoConfig.MONGO_ID);
-		}
-		return null;
 	}
 
 	/** Coerces {@code value} to the (non-composition) field's declared type and assigns it. */

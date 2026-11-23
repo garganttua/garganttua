@@ -57,6 +57,10 @@ import com.garganttua.core.utils.CopyException;
 // childContextFactories()) intentionally mirror their backing field names as the public DI API.
 @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public class InjectionContext extends AbstractLifecycle implements IInjectionContext, IBootstrapSummaryContributor {
+
+    /** Measuring points of the hot path, resolved once (see {@link HotPathProbe#site(String)}). */
+    private static final HotPathProbe.Site PROBE_INJECTION_COPY = HotPathProbe.site("injection.copy");
+    private static final HotPathProbe.Site PROBE_INJECTION_NEW_CHILD_CONTEXT = HotPathProbe.site("injection.newChildContext");
     private static final Logger log = Logger.getLogger(InjectionContext.class);
 
     private static final String BEAN_QUERY_NULL_MSG = "Bean query cannot be null";
@@ -270,7 +274,7 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
             return ctx;
         }
         } finally {
-            HotPathProbe.end("injection.newChildContext", probe);
+            PROBE_INJECTION_NEW_CHILD_CONTEXT.end(probe);
         }
     }
 
@@ -595,7 +599,7 @@ public class InjectionContext extends AbstractLifecycle implements IInjectionCon
             return copy;
         }
         } finally {
-            HotPathProbe.end("injection.copy", probe);
+            PROBE_INJECTION_COPY.end(probe);
         }
     }
 

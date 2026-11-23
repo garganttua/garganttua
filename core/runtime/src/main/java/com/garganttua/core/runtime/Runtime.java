@@ -34,6 +34,12 @@ import com.github.f4b6a3.uuid.UuidCreator;
  */
 public class Runtime<InputType, OutputType>
 		implements IRuntime<InputType, OutputType>, IObservable {
+
+    /** Measuring points of the hot path, resolved once (see {@link HotPathProbe#site(String)}). */
+    private static final HotPathProbe.Site PROBE_RUNTIME_CHAIN_BUILD = HotPathProbe.site("runtime.chainBuild");
+    private static final HotPathProbe.Site PROBE_RUNTIME_CHAIN_EXECUTE = HotPathProbe.site("runtime.chainExecute");
+    private static final HotPathProbe.Site PROBE_RUNTIME_CLOSE_CONTEXT = HotPathProbe.site("runtime.closeContext");
+    private static final HotPathProbe.Site PROBE_RUNTIME_OPEN_CONTEXT = HotPathProbe.site("runtime.openContext");
     private static final Logger log = Logger.getLogger(Runtime.class);
 
 	private final String name;
@@ -141,7 +147,7 @@ public class Runtime<InputType, OutputType>
 				.newChildContext(IClass.getClass(IRuntimeContext.class), input, this.outputType,
 						this.presetVariables, uuid);
 		runtimeContext.onInit().onStart();
-		HotPathProbe.end("runtime.openContext", probe);
+		PROBE_RUNTIME_OPEN_CONTEXT.end(probe);
 		return runtimeContext;
 	}
 
@@ -153,11 +159,11 @@ public class Runtime<InputType, OutputType>
 			log.trace("Registering step");
 			step.defineExecutionStep(chain);
 		});
-		HotPathProbe.end("runtime.chainBuild", buildProbe);
+		PROBE_RUNTIME_CHAIN_BUILD.end(buildProbe);
 		log.debug("Executing runtime chain");
 		long execProbe = HotPathProbe.start();
 		chain.execute(runtimeContext);
-		HotPathProbe.end("runtime.chainExecute", execProbe);
+		PROBE_RUNTIME_CHAIN_EXECUTE.end(execProbe);
 	}
 
 	private IRuntimeResult<InputType, OutputType> closeContext(IRuntimeContext<InputType, OutputType> runtimeContext) {
@@ -167,7 +173,7 @@ public class Runtime<InputType, OutputType>
 		IRuntimeResult<InputType, OutputType> result = runtimeContext.getResult();
 		log.trace("Runtime result collected");
 		runtimeContext.onFlush();
-		HotPathProbe.end("runtime.closeContext", probe);
+		PROBE_RUNTIME_CLOSE_CONTEXT.end(probe);
 		return result;
 	}
 }

@@ -56,7 +56,6 @@ public class SimpleFieldMappingExecutor implements IMappingRuleExecutor {
 	 */
 	@Override
 	public <destination> destination doMapping(IClass<destination> destinationClass, destination destinationObject, Object sourceObject) throws MapperException {
-		log.debug("SimpleField: {} -> {}", this.sourceField.getName(), this.destinationField.getName());
 
 		destination target = destinationObject;
 		if( target == null ) {

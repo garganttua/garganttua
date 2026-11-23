@@ -49,6 +49,10 @@ import com.garganttua.core.script.SuppressFBWarnings;
  */
 final class CompiledScript implements ICompiledScript {
 
+    /** Measuring points of the hot path, resolved once (see {@link HotPathProbe#site(String)}). */
+    private static final HotPathProbe.Site PROBE_SCRIPT_CREATE_CHILD_FRAME = HotPathProbe.site("script.createChildFrame");
+    private static final HotPathProbe.Site PROBE_SCRIPT_RUNTIME_EXECUTE = HotPathProbe.site("script.runtimeExecute");
+
     private final IRuntime<Object[], Object> runtime;
     private final String source;
     private final ScriptContext captured;
@@ -79,11 +83,11 @@ final class CompiledScript implements ICompiledScript {
                 long frameProbe = HotPathProbe.start();
                 ScriptContext frame = this.captured.createChildScript();
                 frame.bindCallVariables(variables);
-                HotPathProbe.end("script.createChildFrame", frameProbe);
+                PROBE_SCRIPT_CREATE_CHILD_FRAME.end(frameProbe);
                 IScriptExecutionResult result = ScriptExecutionContext.callIn(frame, () -> {
                     long runtimeProbe = HotPathProbe.start();
                     Optional<IRuntimeResult<Object[], Object>> raw = this.runtime.execute(args);
-                    HotPathProbe.end("script.runtimeExecute", runtimeProbe);
+                    PROBE_SCRIPT_RUNTIME_EXECUTE.end(runtimeProbe);
                     return wrap(raw);
                 });
                 scope.fireEnd("compiledscript:execute", result.code());

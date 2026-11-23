@@ -32,6 +32,10 @@ import com.garganttua.core.reflection.fields.Fields;
 @SuppressWarnings({"PMD.ReturnEmptyCollectionRatherThanNull", "PMD.AssignmentInOperand"})
 public class ObjectQuery<T> implements IObjectQuery<T> {
     private static final Logger log = Logger.getLogger(ObjectQuery.class);
+
+    /** Measuring points of the hot path, resolved once (see {@link HotPathProbe#site(String)}). */
+    private static final HotPathProbe.Site PROBE_REFLECTION_RESOLVE_ADDRESS = HotPathProbe.site("reflection.resolveAddress");
+    private static final HotPathProbe.Site PROBE_REFLECTION_RESOLVE_ADDRESSES = HotPathProbe.site("reflection.resolveAddresses");
     private static final String OBJECT_ELEMENT = "Object element ";
     private static final String NOT_FOUND_IN_CLASS = " not found in class ";
     private IClass<T> objectClass;
@@ -281,7 +285,7 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
         try {
             return address(this.objectClass, elementName, null);
         } finally {
-            HotPathProbe.end("reflection.resolveAddress", probe);
+            PROBE_REFLECTION_RESOLVE_ADDRESS.end(probe);
         }
     }
 
@@ -292,7 +296,7 @@ public class ObjectQuery<T> implements IObjectQuery<T> {
         try {
             return addresses(this.objectClass, elementName, null);
         } finally {
-            HotPathProbe.end("reflection.resolveAddresses", probe);
+            PROBE_REFLECTION_RESOLVE_ADDRESSES.end(probe);
         }
     }
 

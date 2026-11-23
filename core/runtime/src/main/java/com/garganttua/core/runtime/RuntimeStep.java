@@ -29,6 +29,11 @@ public class RuntimeStep<ExecutionReturn, InputType, OutputType>
     private IRuntimeStepMethodBinder<ExecutionReturn, IRuntimeContext<InputType, OutputType>, InputType, OutputType> operationBinder;
     private Optional<IRuntimeStepFallbackBinder<ExecutionReturn, IRuntimeContext<InputType, OutputType>, InputType, OutputType>> fallbackBinder;
     private String runtimeName;
+    /** {@code [Runtime r][Step s] }, built once: the step logs it on paths that run on every request. */
+    private final String header;
+    /** This step's measuring points, resolved once (no label built per execution). */
+    private final HotPathProbe.Site totalProbe;
+    private final HotPathProbe.Site binderProbe;
 
     /**
      * Creates a runtime step.
@@ -53,6 +58,9 @@ public class RuntimeStep<ExecutionReturn, InputType, OutputType>
         this.stepName = stepName;
         this.operationBinder = operationBinder;
         this.fallbackBinder = fallbackBinder;
+        this.header = "[Runtime " + runtimeName + "][Step " + stepName + "] ";
+        this.totalProbe = HotPathProbe.site("step.total:" + stepName);
+        this.binderProbe = HotPathProbe.site("step.binder:" + stepName);
 
         log.debug("{}Initialized RuntimeStep with executionReturn={}, fallbackPresent={}",
                 logLineHeader(), executionReturn, fallbackBinder.isPresent());
@@ -86,16 +94,16 @@ public class RuntimeStep<ExecutionReturn, InputType, OutputType>
             try (ObservabilityEmitter.Scope scope = ObservabilityEmitter.joinCurrent()) {
                 scope.fireStart(source);
                 try {
-                    long binderProbe = HotPathProbe.start();
+                    long binderStart = HotPathProbe.start();
                     operationBinder.execute(ctx, next);
-                    HotPathProbe.end("step.binder:" + stepName, binderProbe);
+                    this.binderProbe.end(binderStart);
                     scope.fireEnd(source);
                 } catch (RuntimeException | com.garganttua.core.execution.ExecutorException e) {
                     scope.fireError(source, e);
                     throw e;
                 }
             } finally {
-                HotPathProbe.end("step.total:" + stepName, stepProbe);
+                this.totalProbe.end(stepProbe);
             }
         };
     }
@@ -116,7 +124,7 @@ public class RuntimeStep<ExecutionReturn, InputType, OutputType>
     }
 
     private String logLineHeader() {
-        return "[Runtime " + runtimeName + "][Step " + stepName + "] ";
+        return this.header;
     }
 
 }

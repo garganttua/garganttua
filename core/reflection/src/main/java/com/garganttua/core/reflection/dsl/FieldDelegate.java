@@ -3,7 +3,9 @@ package com.garganttua.core.reflection.dsl;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
@@ -31,6 +33,21 @@ class FieldDelegate {
     private static final Logger log = Logger.getLogger(FieldDelegate.class);
 
     private final IReflectionProvider provider;
+
+    /** A field resolved once for a type: its accessor, and the declared type a written value is wrapped in. */
+    private record Resolved(FieldAccessor<Object> accessor, IClass<?> fieldType) {
+    }
+
+    /**
+     * The fields read or written by name, per type, resolved once. Resolution is a pure function of the type and
+     * the name, and types do not change; a by-name access in a hot path (the token verification, a repository)
+     * used to resolve the class, parse the address, query the members and build an accessor on every call. A
+     * failed resolution is not kept: it fails again, with the same exception, at the next call.
+     */
+    private final Map<IClass<?>, Map<String, Resolved>> resolvedByName = new ConcurrentHashMap<>();
+
+    /** Likewise for fields read or written by address. */
+    private final Map<IClass<?>, Map<ObjectAddress, Resolved>> resolvedByAddress = new ConcurrentHashMap<>();
 
     FieldDelegate(IReflectionProvider provider) {
         this.provider = provider;
@@ -111,8 +128,9 @@ class FieldDelegate {
 
     Object getFieldValue(Object object, String fieldName, boolean force) throws ReflectionException {
         IClass<?> objectClass = provider.getClass(object.getClass());
-        ResolvedField resolved = FieldResolver.fieldByFieldName(objectClass, provider, fieldName);
-        var accessor = new FieldAccessor<>(resolved, force);
+        FieldAccessor<?> accessor = force
+                ? new FieldAccessor<>(FieldResolver.fieldByFieldName(objectClass, provider, fieldName), true)
+                : byName(objectClass, fieldName).accessor();
         IFieldValue<?> result = accessor.getValue(object);
         if (result.hasException()) {
             throw new ReflectionException(
@@ -143,8 +161,9 @@ class FieldDelegate {
 
     Object getFieldValue(Object object, ObjectAddress address, boolean force) throws ReflectionException {
         IClass<?> objectClass = provider.getClass(object.getClass());
-        ResolvedField resolved = FieldResolver.fieldByAddress(objectClass, provider, address);
-        var accessor = new FieldAccessor<>(resolved, force);
+        FieldAccessor<?> accessor = force
+                ? new FieldAccessor<>(FieldResolver.fieldByAddress(objectClass, provider, address), true)
+                : byAddress(objectClass, address).accessor();
         IFieldValue<?> result = accessor.getValue(object);
         if (result.hasException()) {
             throw new ReflectionException(
@@ -159,9 +178,13 @@ class FieldDelegate {
 
     void setFieldValue(Object object, ObjectAddress address, Object value, boolean force) throws ReflectionException {
         IClass<?> objectClass = provider.getClass(object.getClass());
-        ResolvedField resolved = FieldResolver.fieldByAddress(objectClass, provider, address);
-        var accessor = new FieldAccessor<>(resolved, force);
-        accessor.setValue(object, singleValue(value, resolved));
+        if (force) {
+            ResolvedField resolved = FieldResolver.fieldByAddress(objectClass, provider, address);
+            new FieldAccessor<>(resolved, true).setValue(object, singleValue(value, resolved.fieldType()));
+            return;
+        }
+        Resolved resolved = byAddress(objectClass, address);
+        resolved.accessor().setValue(object, singleValue(value, resolved.fieldType()));
     }
 
     void setFieldValue(Object object, String fieldName, Object value) throws ReflectionException {
@@ -170,9 +193,13 @@ class FieldDelegate {
 
     void setFieldValue(Object object, String fieldName, Object value, boolean force) throws ReflectionException {
         IClass<?> objectClass = provider.getClass(object.getClass());
-        ResolvedField resolved = FieldResolver.fieldByFieldName(objectClass, provider, fieldName);
-        var accessor = new FieldAccessor<>(resolved, force);
-        accessor.setValue(object, singleValue(value, resolved));
+        if (force) {
+            ResolvedField resolved = FieldResolver.fieldByFieldName(objectClass, provider, fieldName);
+            new FieldAccessor<>(resolved, true).setValue(object, singleValue(value, resolved.fieldType()));
+            return;
+        }
+        Resolved resolved = byName(objectClass, fieldName);
+        resolved.accessor().setValue(object, singleValue(value, resolved.fieldType()));
     }
 
     void setFieldValue(Object object, IField field, Object value) throws ReflectionException {
@@ -186,12 +213,37 @@ class FieldDelegate {
         IClass<?> objectClass = provider.getClass(object.getClass());
         ResolvedField resolved = FieldResolver.fieldByField(objectClass, provider, field);
         var accessor = new FieldAccessor<>(resolved, force);
-        accessor.setValue(object, singleValue(value, resolved));
+        accessor.setValue(object, singleValue(value, resolved.fieldType()));
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> SingleFieldValue<T> singleValue(Object value, ResolvedField resolved) {
-        return SingleFieldValue.of((T) value, (IClass<T>) resolved.fieldType());
+    private static <T> SingleFieldValue<T> singleValue(Object value, IClass<?> fieldType) {
+        return SingleFieldValue.of((T) value, (IClass<T>) fieldType);
+    }
+
+    private Resolved byName(IClass<?> objectClass, String fieldName) throws ReflectionException {
+        Map<String, Resolved> fields = this.resolvedByName.computeIfAbsent(objectClass, c -> new ConcurrentHashMap<>());
+        Resolved known = fields.get(fieldName);
+        if (known == null) {
+            known = resolved(FieldResolver.fieldByFieldName(objectClass, provider, fieldName));
+            fields.put(fieldName, known);
+        }
+        return known;
+    }
+
+    private Resolved byAddress(IClass<?> objectClass, ObjectAddress address) throws ReflectionException {
+        Map<ObjectAddress, Resolved> fields = this.resolvedByAddress.computeIfAbsent(objectClass, c -> new ConcurrentHashMap<>());
+        Resolved known = fields.get(address);
+        if (known == null) {
+            known = resolved(FieldResolver.fieldByAddress(objectClass, provider, address));
+            fields.put(address, known);
+        }
+        return known;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Resolved resolved(ResolvedField field) throws ReflectionException {
+        return new Resolved((FieldAccessor<Object>) (FieldAccessor<?>) new FieldAccessor<>(field, false), field.fieldType());
     }
 
     Optional<ObjectAddress> resolveFieldAddress(String fieldName, IClass<?> entityClass) throws ReflectionException {
