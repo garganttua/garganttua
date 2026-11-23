@@ -19,6 +19,13 @@ import com.garganttua.core.reflection.annotations.Reflected;
  * Thread-safe: reads and writes go through one lock, short and never held while a loader runs. Two requests
  * missing the same key at once both load it; the second write wins, which is harmless for a cache.
  * </p>
+ *
+ * <p>
+ * <b>A load overtaken by an invalidation is not cached.</b> A request reads the old value from the source, a write
+ * then invalidates the key, and the request caches what it read: the cache would serve a value the write had
+ * replaced until its time to live. {@link #get(Object, Supplier)} therefore caches what it loaded only when no
+ * invalidation of this cache happened while it loaded.
+ * </p>
  */
 @Reflected
 public final class LocalCache<K, V> implements ICache<K, V> {
@@ -33,6 +40,8 @@ public final class LocalCache<K, V> implements ICache<K, V> {
     private final AtomicLong hits = new AtomicLong();
     private final AtomicLong misses = new AtomicLong();
     private final AtomicLong invalidations = new AtomicLong();
+    /** Moves on every removal — local or applied from another node — so that a load can tell it was overtaken. */
+    private final AtomicLong epoch = new AtomicLong();
 
     public LocalCache(String name, CacheSpec spec) {
         this(name, spec, System::nanoTime);
@@ -85,8 +94,9 @@ public final class LocalCache<K, V> implements ICache<K, V> {
         if (cached.isPresent()) {
             return cached.get();
         }
+        long before = this.epoch.get();
         V loaded = loader.get();
-        if (loaded != null) {
+        if (loaded != null && this.epoch.get() == before) {
             put(key, loaded);
         }
         return loaded;
@@ -106,6 +116,7 @@ public final class LocalCache<K, V> implements ICache<K, V> {
 
     @Override
     public void invalidate(K key) {
+        this.epoch.incrementAndGet();
         synchronized (this.entries) {
             this.entries.remove(String.valueOf(key));
         }
@@ -114,6 +125,7 @@ public final class LocalCache<K, V> implements ICache<K, V> {
 
     @Override
     public void invalidateAll() {
+        this.epoch.incrementAndGet();
         synchronized (this.entries) {
             this.entries.clear();
         }
@@ -131,6 +143,7 @@ public final class LocalCache<K, V> implements ICache<K, V> {
 
     /** Removes {@code id} without counting it — for an implementation applying an invalidation another node sent. */
     public void evict(String id) {
+        this.epoch.incrementAndGet();
         synchronized (this.entries) {
             this.entries.remove(id);
         }
@@ -138,6 +151,7 @@ public final class LocalCache<K, V> implements ICache<K, V> {
 
     /** Removes every entry without counting it — for an implementation that can no longer vouch for them. */
     public void evictAll() {
+        this.epoch.incrementAndGet();
         synchronized (this.entries) {
             this.entries.clear();
         }

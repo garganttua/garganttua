@@ -52,6 +52,8 @@
     <openpdf.version>1.3.40</openpdf.version>
     <antlr4.version>4.13.0</antlr4.version>
     <red.utils.version>1.0.4</red.utils.version>
+    <!-- The version red-utils is built against: cache-redis uses it directly, so both share one client. -->
+    <jedis.version>3.3.0</jedis.version>
     <jline.version>3.25.1</jline.version>
 
     <!-- Maven Plugin Versions -->
@@ -366,6 +368,11 @@
         <groupId>com.github.siahsang</groupId>
         <artifactId>red-utils</artifactId>
         <version>${red.utils.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>redis.clients</groupId>
+        <artifactId>jedis</artifactId>
+        <version>${jedis.version}</version>
       </dependency>
       <dependency>
         <groupId>org.springframework</groupId>

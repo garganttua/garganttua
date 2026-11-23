@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua.core</groupId>
+		<artifactId>garganttua-bindings</artifactId>
+		<version>3.0.0-ALPHA36</version>
+	</parent>
+
+	<groupId>com.garganttua.core</groupId>
+	<artifactId>garganttua-cache-redis</artifactId>
+
+	<description>Distributed caches over redis: values shared in redis, or a local copy with invalidation broadcast to every node.</description>
+
+	<dependencies>
+		<!-- The Jedis red-utils (garganttua-mutex-redis) already brings: one client, one version. -->
+		<dependency>
+			<groupId>redis.clients</groupId>
+			<artifactId>jedis</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-cache</artifactId>
+		</dependency>
+
+		<!-- Test dependencies -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+</project>

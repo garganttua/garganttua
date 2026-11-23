@@ -73,6 +73,20 @@ class LocalCacheTest {
     }
 
     @Test
+    @DisplayName("a load overtaken by an invalidation returns its value but does not cache it")
+    void overtakenLoadNotCached() {
+        LocalCache<String, String> cache = cache(10, Duration.ofSeconds(60));
+
+        String loaded = cache.get("a", () -> {
+            cache.invalidate("a");          // a write lands while the old value is being read
+            return "old";
+        });
+
+        assertEquals("old", loaded);
+        assertEquals(Optional.empty(), cache.get("a"), "the value the write replaced is not served afterwards");
+    }
+
+    @Test
     @DisplayName("invalidate removes a key, invalidateAll every key, both counted; put(null) invalidates")
     void invalidation() {
         LocalCache<String, String> cache = cache(10, Duration.ofSeconds(60));
