@@ -3,7 +3,7 @@
 <!-- AUTO-GENERATED-COVERAGE-START -->
 ![coverage](https://img.shields.io/badge/coverage-68.6%25%20instructions-yellowgreen)
 
-Coverage: **68.6%** instructions · **64.3%** branches · **70.0%** lines across 43 modules (JaCoCo; full per-module report in CI artifacts).
+Coverage: **68.6%** instructions · **64.4%** branches · **70.0%** lines across 45 modules (JaCoCo; full per-module report in CI artifacts).
 <!-- AUTO-GENERATED-COVERAGE-STOP -->
 
 Unified reactor aggregating the three Garganttua framework libraries that form a tight,
@@ -39,6 +39,7 @@ Requires JDK 25.
 |:--|:--|
 | [**garganttua**](././README.md) |  |
 | \|- [**api**](./api/README.md) | Declarative, annotation-driven REST API framework — multi-tenancy, pluggable security, AOT/native-ready — built on garganttua-core. |
+| \|    \|    \|- [**cache-benchmark**](./api/bench/cache-benchmark/README.md) | The cache benchmark: every cache level, with and without, against a real MongoDB, PostgreSQL and 		redis. Built only with -Pbench; run with -Dbench=true (see CacheBenchmarkTest). |
 | \|    \|- [**bindings**](./api/bindings/README.md) | Aggregator for third-party bindings — each submodule wraps one external library (Jackson, SLF4J, JsonPath, MongoDB driver, Javalin) so consumers depend on a binding artifact, keeping library swaps a pom-level edit. |
 | \|    \|    \|- [**binding-geojson**](./api/bindings/binding-geojson/README.md) | Binding wrapping the org.geojson geometry model (geojson-jackson) — pins it, and ships GeoJsonCodec, which turns a geometry into GeoJSON and back without any JSON library, for the DAOs that store geometries. |
 | \|    \|    \|- [**binding-jackson**](./api/bindings/binding-jackson/README.md) | Binding wrapping Jackson (annotations, core, databind, dataformat-xml + geojson-jackson) — pins the JSON/XML (de)serialization library used across the API and ships the framework's JSON and XML ISerializer implementations. |
@@ -83,6 +84,7 @@ Requires JDK 25.
 | \|    \|    \|- [**aot-native-feature**](./core/aot/aot-native-feature/README.md) | GraalVM native-image Feature that registers AOT descriptors with RuntimeReflection at analysis time, removing the need for a hand-written reflect-config.json on top of the consumer-side AOT pipeline. |
 | \|    \|    \|- [**aot-reflection**](./core/aot/aot-reflection/README.md) | AOT reflection descriptors and registry for Garganttua Core. |
 | \|    \|- [**bindings**](./core/bindings/README.md) | Modules providing bindings to external libs and frameworks. |
+| \|    \|    \|- [**cache-redis**](./core/bindings/cache-redis/README.md) | Distributed caches over redis: values shared in redis, or a local copy with invalidation broadcast to every node. |
 | \|    \|    \|- [**mutex-redis**](./core/bindings/mutex-redis/README.md) | Distributed mutex over redis. |
 | \|    \|    \|- [**native**](./core/bindings/native/README.md) | Garganttua Native support - parent module. |
 | \|    \|    \|    \|- [**native-commons**](./core/bindings/native/native-commons/README.md) | Low-level native integrations and system abstractions. |
@@ -90,6 +92,7 @@ Requires JDK 25.
 | \|    \|    \|- [**reflections**](./core/bindings/reflections/README.md) | Annotation scanner implementation based on org.reflections:reflections |
 | \|    \|    \|- [**spring**](./core/bindings/spring/README.md) | Spring framework integration for Garganttua Core modules. |
 | \|    \|- [**bootstrap**](./core/bootstrap/README.md) | Bootstrap and application initialization framework. |
+| \|    \|- [**cache**](./core/cache/README.md) | Caches behind one generic contract: in-memory implementations and the manager that resolves a cache by name. |
 | \|    \|- [**classloader**](./core/classloader/README.md) | Bootstrap-discoverable JAR hot-loader that adds JARs to the thread context classloader and notifies registered rebuild hooks. Decouples runtime JAR loading from the Bootstrap module itself. |
 | \|    \|- [**commons**](./core/commons/README.md) | Shared components, interfaces, annotations, and exceptions. |
 | \|    \|- [**condition**](./core/condition/README.md) | DSL to define, combine, and evaluate runtime conditions. |
