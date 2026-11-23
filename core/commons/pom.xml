@@ -6,7 +6,7 @@
       <parent>
             <groupId>com.garganttua</groupId>
             <artifactId>garganttua-core</artifactId>
-            <version>3.0.0-ALPHA36</version>
+            <version>3.0.0-ALPHA37</version>
       </parent>
 
       <groupId>com.garganttua.core</groupId>

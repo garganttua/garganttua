@@ -30,12 +30,12 @@ Beyond JSR-330, this module offers:
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-injection</artifactId>
-    <version>3.0.0-ALPHA36</version>
+    <version>3.0.0-ALPHA37</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA36
+3.0.0-ALPHA37
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`
