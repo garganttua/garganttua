@@ -28,6 +28,7 @@ import com.garganttua.core.reflection.annotations.Reflected;
  * </p>
  */
 @Reflected
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public final class LocalCache<K, V> implements ICache<K, V> {
 
     private record Slot<V>(V value, long expiresAtNanos) {
@@ -71,21 +72,25 @@ public final class LocalCache<K, V> implements ICache<K, V> {
 
     @Override
     public Optional<V> get(K key) {
-        String id = String.valueOf(key);
-        Slot<V> entry;
-        synchronized (this.entries) {
-            entry = this.entries.get(id);
-            if (entry != null && entry.expiresAtNanos() - this.clock.getAsLong() <= 0) {
-                this.entries.remove(id);
-                entry = null;
-            }
-        }
+        Slot<V> entry = live(String.valueOf(key));
         if (entry == null) {
             this.misses.incrementAndGet();
             return Optional.empty();
         }
         this.hits.incrementAndGet();
         return Optional.of(entry.value());
+    }
+
+    /** {@return the entry {@code id}, dropped and absent once expired} */
+    private Slot<V> live(String id) {
+        synchronized (this.entries) {
+            Slot<V> found = this.entries.get(id);
+            if (found != null && found.expiresAtNanos() - this.clock.getAsLong() <= 0) {
+                this.entries.remove(id);
+                return null;
+            }
+            return found;
+        }
     }
 
     @Override

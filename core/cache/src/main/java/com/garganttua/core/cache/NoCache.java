@@ -9,6 +9,7 @@ import com.garganttua.core.reflection.annotations.Reflected;
 
 /** A cache that keeps nothing: every read goes to the source. Turns a declared cache off without changing code. */
 @Reflected
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public final class NoCache<K, V> implements ICache<K, V> {
 
     private final String name;

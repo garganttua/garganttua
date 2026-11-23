@@ -34,6 +34,7 @@ import redis.clients.jedis.JedisPubSub;
  * </p>
  */
 @Reflected
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public final class RedisNearCache<K, V> implements ICache<K, V>, AutoCloseable {
 
     private static final Logger log = Logger.getLogger(RedisNearCache.class);

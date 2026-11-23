@@ -60,6 +60,7 @@ The module ships `ApiCoreInfrastructureSeed`, an `IAOTInfrastructureSeed` implem
  - `com.garganttua.core:garganttua-reflections:test`
  - `com.garganttua.core:garganttua-observability:test`
  - `com.garganttua.core:garganttua-configuration:test`
+ - `com.garganttua.core:garganttua-cache:test`
  - `org.junit.jupiter:junit-jupiter-engine:test`
  - `org.mockito:mockito-core:test`
  - `org.mockito:mockito-junit-jupiter:test`
@@ -386,6 +387,28 @@ the way the person logged in): `.withParam(i, new RefreshedAuthorizationSupplier
 What it needs from the store: the authorization must be **storable** (`.revokable(...)` makes it so) and its DTO
 must keep the revoked and refresh-revoked fields. Without the refresh-revoked field, nothing rotates; a warning says
 which of the two is missing.
+
+### Caching a domain's reads
+
+A domain declares a cache for its reads by uuid; nothing is cached without it.
+
+```java
+.domain(Authorization.class)
+    .cache(cacheManager, IClass.getClass(RedisNearCache.class), CacheSpec.ttl(30, TimeUnit.SECONDS))
+```
+
+- **Where it sits.** In the repository, between the domain and its DAO, under the access control: it holds the
+  DTOs a read by uuid returned, and every request still checks tenant, owner and rights on what it reads. Each hit
+  maps a fresh entity, so what a request does to its entity never reaches the cache.
+- **What reads through it.** `IRepository.getByUuid` — which the token verification and the refresh use for the
+  stored authorization and the principal. Declared on the authorization domain and the authenticator domain, it
+  takes those reads off every authenticated request (the "L2" of the cache fiche).
+- **What invalidates it.** Every write of the repository — the pipeline's create, update and delete, and the
+  framework's own writes outside it (a refresh's rotation, a lineage revocation) — invalidates the uuid before
+  answering, on every node for a distributed implementation. A write made outside the framework (a manual edit of
+  the database) is bounded by the spec's time to live.
+- **Which implementation.** Any `ICache` (see `garganttua-cache`): `LocalCache` on one node, `RedisNearCache` on a
+  cluster, `RedisCache` with a codec for the domain's DTOs, `NoCache` to turn it off.
 
 ### Fluent request builder
 

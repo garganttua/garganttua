@@ -32,6 +32,7 @@ import redis.clients.jedis.ScanResult;
  * </p>
  */
 @Reflected
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public final class RedisCache<K, V> implements ICache<K, V> {
 
     private static final Logger log = Logger.getLogger(RedisCache.class);
@@ -61,19 +62,23 @@ public final class RedisCache<K, V> implements ICache<K, V> {
 
     @Override
     public Optional<V> get(K key) {
-        byte[] bytes;
-        try (Jedis jedis = this.pool.getResource()) {
-            bytes = jedis.get(RedisKeys.entry(this.name, key));
-        } catch (RuntimeException e) {
-            log.warn("Cache '{}': redis unreachable, reading from the source ({})", this.name, e.getMessage());
-            bytes = null;
-        }
-        if (bytes == null) {
+        Optional<byte[]> bytes = read(key);
+        if (bytes.isEmpty()) {
             this.misses.incrementAndGet();
             return Optional.empty();
         }
         this.hits.incrementAndGet();
-        return Optional.of(this.codec.decode(bytes));
+        return Optional.of(this.codec.decode(bytes.get()));
+    }
+
+    /** {@return the stored bytes of {@code key}, empty when absent or when redis does not answer} */
+    private Optional<byte[]> read(K key) {
+        try (Jedis jedis = this.pool.getResource()) {
+            return Optional.ofNullable(jedis.get(RedisKeys.entry(this.name, key)));
+        } catch (RuntimeException e) {
+            log.warn("Cache '{}': redis unreachable, reading from the source ({})", this.name, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     @Override
