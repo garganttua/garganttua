@@ -359,6 +359,38 @@ class GarganttuaApplicationE2ETest {
 		}
 	}
 
+	/** A domain declaring an HTTP cache: validators, 304, directives — over a real server. */
+	@Nested
+	@DisplayName("the HTTP cache of a domain")
+	class HttpCache {
+
+		private HttpResponse<String> list(String ifNoneMatch) throws Exception {
+			HttpRequest.Builder request = HttpRequest.newBuilder().uri(URI.create(BASE))
+					.header("Accept", "application/json").GET();
+			if (ifNoneMatch != null) {
+				request.header("If-None-Match", ifNoneMatch);
+			}
+			return http.send(request.build(), BodyHandlers.ofString());
+		}
+
+		@Test
+		@DisplayName("a GET carries an ETag and the declared Cache-Control; its ETag back gets a 304 without body")
+		void validatorsAnd304() throws Exception {
+			HttpResponse<String> first = list(null);
+			String etag = first.headers().firstValue("ETag").orElse(null);
+
+			assertEquals(200, first.statusCode());
+			assertNotNull(etag, "a validator on the response");
+			assertEquals("public, max-age=300", first.headers().firstValue("Cache-Control").orElse(null));
+
+			HttpResponse<String> again = list(etag);
+			assertEquals(304, again.statusCode(), "the client's copy is current");
+			assertTrue(again.body().isEmpty(), "no body on a 304");
+
+			assertEquals(200, list("\"stale\"").statusCode(), "another tag gets the body");
+		}
+	}
+
 	/** A response read off the socket: status, headers (lower-cased), body. */
 	private record RawResponse(int status, String headers, String body) {
 	}

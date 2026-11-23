@@ -19,7 +19,7 @@ import com.garganttua.core.reflection.IClass;
  * spec's time to live.
  * </p>
  *
- * @param manager resolves the cache — one per domain, named {@code domain:<name>}
+ * @param manager resolves the cache — one per domain and use, named {@code domain:<name>:<use>}
  * @param type    the implementation: {@code LocalCache}, {@code RedisNearCache}, {@code RedisCache} (which needs a
  *                codec for the domain's DTOs), {@code NoCache}…
  * @param spec    the bound and time to live of its entries
@@ -34,6 +34,11 @@ public record CachePolicy(ICacheManager manager, IClass<?> type, CacheSpec spec)
 
     /** {@return the cache of {@code domainName}'s reads by uuid} */
     public <V> ICache<String, V> cacheFor(String domainName) {
-        return this.manager.cache(new CacheName(this.type, "domain:" + domainName), this.spec);
+        return cacheFor(domainName, "uuid");
+    }
+
+    /** {@return the cache named {@code domain:<domainName>:<purpose>} — one per domain and use} */
+    public <V> ICache<String, V> cacheFor(String domainName, String purpose) {
+        return this.manager.cache(new CacheName(this.type, "domain:" + domainName + ":" + purpose), this.spec);
     }
 }

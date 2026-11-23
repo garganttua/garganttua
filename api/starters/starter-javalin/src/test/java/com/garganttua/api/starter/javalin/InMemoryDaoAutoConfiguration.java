@@ -8,6 +8,7 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.dao.IDao;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.filter.IFilter;
+import com.garganttua.api.commons.context.HttpCachePolicy;
 import com.garganttua.api.commons.operation.Access;
 import com.garganttua.api.commons.operation.TechnicalOperation;
 import com.garganttua.api.commons.pageable.IPageable;
@@ -44,6 +45,7 @@ public final class InMemoryDaoAutoConfiguration implements IApiAutoConfiguration
 						.readAllAccess(Access.anonymous)
 						.readOneAccess(Access.anonymous)
 					.up()
+					.httpCache(HttpCachePolicy.publicFor(java.time.Duration.ofMinutes(5)))
 					.useCase("echo", IClass.getClass(GarganttuaApplicationE2ETest.Echo.class),
 							IClass.getClass(GarganttuaApplicationE2ETest.Echo.class))
 						.pathSuffix("echo")

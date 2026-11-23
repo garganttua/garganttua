@@ -378,6 +378,7 @@ public class JavalinInterface implements IInterface {
 				return;
 			}
 			JavalinResponses.applyOutcome(ctx, domain, response);
+			JavalinHttpCache.apply(ctx, domain);
 		} catch (RuntimeException e) {
 			// Defensive: the pipeline returns error codes rather than throwing, but a
 			// transport-level failure (e.g. no protocol resolved) must still answer.

@@ -35,6 +35,13 @@ class DomainCacheIntegrationTest extends AbstractCrudScriptTest {
     /** A DAO that counts the reads reaching it. */
     static final class CountingDao extends CapturingDao {
         final AtomicInteger reads = new AtomicInteger();
+        final AtomicInteger counts = new AtomicInteger();
+
+        @Override
+        public long count(IFilter filter) throws ApiException {
+            this.counts.incrementAndGet();
+            return super.count(filter);
+        }
 
         @Override
         public List<Object> find(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort)
@@ -150,4 +157,94 @@ class DomainCacheIntegrationTest extends AbstractCrudScriptTest {
 
         assertEquals(2, plain.reads.get());
     }
+
+    @org.junit.jupiter.api.Nested
+    @DisplayName("the cache of searches")
+    class Searches {
+
+        private final CountingDao searched = new CountingDao();
+        private IDomain<?> domain;
+
+        @BeforeEach
+        void start() throws ApiException {
+            ICacheManager caches = CacheManagerBuilder.builder().build();
+            IApiBuilder builder = newBuilder();
+            builder.domain(IClass.getClass(User.class))
+                    .tenant(true).superTenant("superTenant")
+                    .entity().id("id").uuid("uuid").tenantId("tenantId").up()
+                    .dto(IClass.getClass(UserDto.class)).id("id").uuid("uuid").tenantId("tenantId").db(this.searched).up()
+                    .queryCache(caches, IClass.getClass(LocalCache.class), CacheSpec.of())
+                    .security().disable(true).up().up();
+            this.domain = buildAndStart(builder).getDomain("users").orElseThrow();
+            this.searched.save(user("ana", "uuid-ana", "T1"));
+            this.searched.save(user("bob", "uuid-bob", "T2"));
+            this.searched.reads.set(0);
+        }
+
+        private UserDto user(String id, String uuid, String tenant) {
+            UserDto dto = new UserDto();
+            dto.setId(id);
+            dto.setUuid(uuid);
+            dto.setTenantId(tenant);
+            dto.setName(id);
+            return dto;
+        }
+
+        private List<Object> search(String name) throws ApiException {
+            return this.domain.getRepository().getEntities(Optional.empty(),
+                    Optional.of(com.garganttua.api.core.filter.Filter.eq("name", name)), Optional.empty());
+        }
+
+        @Test
+        @DisplayName("the same search is served by the cache; another one is not")
+        void sameSearchCached() throws ApiException {
+            assertEquals(1, search("ana").size());
+            assertEquals(1, search("ana").size());
+            assertEquals(1, this.searched.reads.get());
+
+            assertEquals(1, search("bob").size());
+            assertEquals(2, this.searched.reads.get(), "another filter, another entry");
+        }
+
+        @Test
+        @DisplayName("any write of the domain empties it")
+        void writeEmptiesIt() throws ApiException {
+            search("ana");
+            this.domain.getRepository().save(this.domain.getRepository().getByUuid("uuid-bob").orElseThrow());
+
+            search("ana");
+            assertEquals(3, this.searched.reads.get(), "search, read by uuid, search again");
+        }
+
+        @Test
+        @DisplayName("a list read through the pipeline by one tenant is never served to another")
+        void tenantsNeverShare() throws ApiException {
+            OperationDefinition readAll = OperationDefinition.readAllWithStandardSecurity("users",
+                    IClass.getClass(User.class));
+
+            List<?> t1 = (List<?>) executeScript(this.domain, tenantScriptRequest(readAll, "T1")).output();
+            List<?> t2 = (List<?>) executeScript(this.domain, tenantScriptRequest(readAll, "T2")).output();
+
+            assertEquals(List.of("ana"), t1.stream().map(u -> ((User) u).getId()).toList());
+            assertEquals(List.of("bob"), t2.stream().map(u -> ((User) u).getId()).toList(),
+                    "the access filter is part of the key");
+            int reads = this.searched.reads.get();
+            List<?> again = (List<?>) executeScript(this.domain, tenantScriptRequest(readAll, "T1")).output();
+            assertEquals(List.of("ana"), again.stream().map(u -> ((User) u).getId()).toList());
+            assertEquals(reads, this.searched.reads.get(), "T1's list came from the cache");
+        }
+
+        @Test
+        @DisplayName("counts are cached and emptied like lists")
+        void counts() throws ApiException {
+            com.garganttua.api.commons.filter.IFilter tenantT1 = com.garganttua.api.core.filter.Filter.eq("tenantId", "T1");
+            CountingDao counted = this.searched;
+            long first = this.domain.getRepository().getCount(tenantT1);
+            long second = this.domain.getRepository().getCount(tenantT1);
+
+            assertEquals(first, second);
+            assertEquals(1, counted.counts.get(), "the store counted once");
+        }
+    }
 }
+

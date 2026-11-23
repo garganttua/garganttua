@@ -9,6 +9,7 @@ import com.garganttua.api.commons.event.IEventPublisher;
 import com.garganttua.api.commons.endpoint.IInterface;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.CachePolicy;
+import com.garganttua.api.commons.context.HttpCachePolicy;
 import com.garganttua.api.commons.context.SynchronizationPolicy;
 import com.garganttua.core.cache.CacheSpec;
 import com.garganttua.core.cache.ICacheManager;
@@ -66,6 +67,33 @@ public interface IDomainBuilder<E> extends IAutomaticLinkedBuilder<IDomainBuilde
     default IDomainBuilder<E> cache(ICacheManager manager, IClass<?> cacheType, CacheSpec spec) throws ApiException {
         return cache(new CachePolicy(manager, cacheType, spec));
     }
+
+    /**
+     * Caches the results of THIS domain's searches (lists, pages, counts) under {@code policy}. The key is the
+     * whole query the repository receives — its access filter included, so a caller only ever gets back results
+     * computed for its own scope — and any write of the domain empties the cache, on every node for a distributed
+     * implementation. Keep its time to live short: it is the bound on writes made outside the framework.
+     *
+     * @param policy the manager, implementation and spec of the cache
+     * @return this builder
+     */
+    IDomainBuilder<E> queryCache(CachePolicy policy) throws ApiException;
+
+    /** @see #queryCache(CachePolicy) */
+    default IDomainBuilder<E> queryCache(ICacheManager manager, IClass<?> cacheType, CacheSpec spec)
+            throws ApiException {
+        return queryCache(new CachePolicy(manager, cacheType, spec));
+    }
+
+    /**
+     * Lets clients, proxies and CDNs keep THIS domain's GET responses — {@code ETag}, {@code 304},
+     * {@code Cache-Control} — under {@code policy}. A response to an authenticated request is always private.
+     *
+     * @param policy the directives
+     * @return this builder
+     * @see HttpCachePolicy
+     */
+    IDomainBuilder<E> httpCache(HttpCachePolicy policy) throws ApiException;
 
     /** @see #synchronization(SynchronizationPolicy) */
     default IDomainBuilder<E> synchronization(IMutexManager manager, IClass<? extends IMutex> mutexType)

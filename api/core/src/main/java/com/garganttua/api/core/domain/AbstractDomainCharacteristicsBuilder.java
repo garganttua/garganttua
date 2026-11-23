@@ -43,6 +43,12 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     /** How this domain caches its reads by uuid; null means nothing is cached. */
     protected volatile com.garganttua.api.commons.context.CachePolicy cachePolicy;
 
+    /** How this domain caches its searches; null means they are not cached. */
+    protected volatile com.garganttua.api.commons.context.CachePolicy queryCachePolicy;
+
+    /** How the HTTP transport lets clients keep this domain's GET responses; null means it does not. */
+    protected volatile com.garganttua.api.commons.context.HttpCachePolicy httpCachePolicy;
+
     protected AbstractDomainCharacteristicsBuilder(IApiBuilder builder) throws ApiException {
         super(builder);
     }
@@ -50,6 +56,18 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     /** Reflection provider — whatever the user installed via {@code IClass.setReflection()}. */
     private static IReflectionProvider provider() {
         return IClass.getReflection();
+    }
+
+    @Override
+    public IDomainBuilder<E> queryCache(com.garganttua.api.commons.context.CachePolicy policy) {
+        this.queryCachePolicy = java.util.Objects.requireNonNull(policy, "Query cache policy cannot be null");
+        return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> httpCache(com.garganttua.api.commons.context.HttpCachePolicy policy) {
+        this.httpCachePolicy = java.util.Objects.requireNonNull(policy, "HTTP cache policy cannot be null");
+        return this;
     }
 
     @Override

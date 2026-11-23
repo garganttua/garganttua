@@ -102,6 +102,8 @@ final class DomainBuilderBuildSupport {
         // domain context at request time, to key the lock and to know the acquisition strategy.
         domainContext.setSynchronization(builder.effectiveSynchronization());
         domainContext.setCache(builder.cachePolicy);
+        domainContext.setQueryCache(builder.queryCachePolicy);
+        domainContext.setHttpCache(builder.httpCachePolicy);
         domainContext.setEntityBeanDefinition(entityBeanDefinition);
         domainContext.setDoInjection(builder.doInjection);
         return domainContext;

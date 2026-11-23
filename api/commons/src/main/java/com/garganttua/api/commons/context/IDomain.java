@@ -81,6 +81,27 @@ public interface IDomain<E> extends ILifecycle, IObservable {
 		return Optional.empty();
 	}
 
+	/**
+	 * How this domain caches the results of its searches — keyed by the whole query the repository receives,
+	 * access filter included, and emptied by any write of the domain. Empty by default.
+	 *
+	 * @return the policy, or empty
+	 */
+	default Optional<CachePolicy> queryCache() {
+		return Optional.empty();
+	}
+
+	/**
+	 * How the HTTP transport lets clients and proxies keep this domain's GET responses. Empty by default: no
+	 * {@code ETag}, no {@code Cache-Control}.
+	 *
+	 * @return the policy, or empty
+	 * @see HttpCachePolicy
+	 */
+	default Optional<HttpCachePolicy> httpCache() {
+		return Optional.empty();
+	}
+
 	default String getDomainName(){
 		return getDomainDefinition().domainName();
 	}

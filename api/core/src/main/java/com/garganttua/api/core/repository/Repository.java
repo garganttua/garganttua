@@ -60,6 +60,21 @@ public class Repository implements IRepository {
         this.cache = Objects.requireNonNull(byUuid, "Cache cannot be null");
     }
 
+    /** The results of searches by query, when the domain caches them; null when it does not. */
+    private volatile ICache<String, Object> queryCache;
+
+    /**
+     * Caches search results from now on, keyed by the whole query — access filter included — and emptied by any
+     * write. It holds DTOs, mapped to fresh entities on each hit, like the cache by uuid.
+     */
+    public void useQueryCache(ICache<String, Object> byQuery) {
+        this.queryCache = Objects.requireNonNull(byQuery, "Query cache cannot be null");
+    }
+
+    /** The DTOs and total of a cached page. */
+    private record CachedPage(long total, Map<String, Object> dtos) {
+    }
+
     public Repository(List<IDtoContext<?>> dtoContexts, IClass<?> entityClass) {
         this.dtoContexts = Collections.unmodifiableList(new ArrayList<>(
                 Objects.requireNonNull(dtoContexts, "Dto contexts cannot be null")));
@@ -90,7 +105,11 @@ public class Repository implements IRepository {
     public List<Object> getEntities(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
             Optional<List<String>> projection) throws ApiException {
         log.debug("Fetching entities with filter={} projection={}", filter.orElse(null), projection.orElse(null));
-        List<Map<String, Object>> dtoMaps = queryAllDtos(pageable, filter, sort, projection);
+        ICache<String, Object> byQuery = this.queryCache;
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> dtoMaps = byQuery == null ? queryAllDtos(pageable, filter, sort, projection)
+                : (List<Map<String, Object>>) byQuery.get(QueryKeys.of("list", pageable, filter, sort, projection),
+                        () -> List.copyOf(queryAllDtos(pageable, filter, sort, projection)));
         return mergeAndMapToEntities(dtoMaps);
     }
 
@@ -106,6 +125,15 @@ public class Repository implements IRepository {
         if (pageable == null || pageable.isEmpty() || this.dtoContexts.size() != 1) {
             return IRepository.super.getEntitiesPage(pageable, filter, sort, projection);
         }
+        ICache<String, Object> byQuery = this.queryCache;
+        CachedPage page = byQuery == null ? findPage(pageable, filter, sort, projection)
+                : (CachedPage) byQuery.get(QueryKeys.of("page", pageable, filter, sort, projection),
+                        () -> findPage(pageable, filter, sort, projection));
+        return new Page(page.total(), mergeAndMapToEntities(List.of(page.dtos())));
+    }
+
+    private CachedPage findPage(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
+            Optional<List<String>> projection) {
         IDtoContext<?> dtoContext = this.dtoContexts.get(0);
         Optional<IFilter> mapped = mappedFilter(dtoContext, filter);
         Page page = dtoContext.findPage(pageable, mapped, sort, projection);
@@ -113,7 +141,7 @@ public class Repository implements IRepository {
         for (Object dto : page.entities()) {
             dtos.put(dtoContext.getUuid(dto), dto);
         }
-        return new Page(page.totalCount(), mergeAndMapToEntities(List.of(dtos)));
+        return new CachedPage(page.totalCount(), dtos);
     }
 
     /** The filter as the read of one DTO context receives it: mapped to its fields when the domain is known. */
@@ -164,6 +192,11 @@ public class Repository implements IRepository {
     }
 
     private void invalidateCached(Object entity) {
+        ICache<String, Object> byQuery = this.queryCache;
+        if (byQuery != null) {
+            // Any write may move any row in or out of any search: they are all forgotten.
+            byQuery.invalidateAll();
+        }
         ICache<String, List<Object>> byUuid = this.cache;
         if (byUuid == null) {
             return;
@@ -218,7 +251,12 @@ public class Repository implements IRepository {
         if (dtoContexts.isEmpty()) {
             return 0;
         }
-        return dtoContexts.get(0).count(filter);
+        ICache<String, Object> byQuery = this.queryCache;
+        if (byQuery == null) {
+            return dtoContexts.get(0).count(filter);
+        }
+        return (Long) byQuery.get(QueryKeys.of("count", Optional.empty(), Optional.ofNullable(filter), Optional.empty(),
+                Optional.empty()), () -> dtoContexts.get(0).count(filter));
     }
 
     // --- Internal: querying ---

@@ -160,6 +160,32 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         return java.util.Optional.ofNullable(this.cachePolicy);
     }
 
+    private volatile com.garganttua.api.commons.context.CachePolicy queryCachePolicy;
+    private volatile com.garganttua.api.commons.context.HttpCachePolicy httpCachePolicy;
+
+    /** Declares how this domain caches its searches, and hands the cache to its repository; null caches nothing. */
+    public void setQueryCache(com.garganttua.api.commons.context.CachePolicy policy) {
+        this.queryCachePolicy = policy;
+        if (policy != null && this.repository instanceof Repository repo) {
+            repo.useQueryCache(policy.cacheFor(this.domainDefinition.domainName(), "queries"));
+        }
+    }
+
+    @Override
+    public java.util.Optional<com.garganttua.api.commons.context.CachePolicy> queryCache() {
+        return java.util.Optional.ofNullable(this.queryCachePolicy);
+    }
+
+    /** Declares how the HTTP transport lets clients keep this domain's GET responses; null leaves them as they are. */
+    public void setHttpCache(com.garganttua.api.commons.context.HttpCachePolicy policy) {
+        this.httpCachePolicy = policy;
+    }
+
+    @Override
+    public java.util.Optional<com.garganttua.api.commons.context.HttpCachePolicy> httpCache() {
+        return java.util.Optional.ofNullable(this.httpCachePolicy);
+    }
+
     public void setWorkflow(IWorkflow workflow) {
         this.workflow = Objects.requireNonNull(workflow, "Workflow cannot be null");
     }
