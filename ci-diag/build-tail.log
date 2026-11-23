@@ -1,0 +1,600 @@
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ garganttua-expression ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ garganttua-expression ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 17 source files with javac [debug release 25] to target/test-classes
+[WARNING] Supported source version 'RELEASE_21' from annotation processor 'com.garganttua.core.aot.annotation.processor.IndexedAnnotationProcessor' less than -source '25'
+[INFO] [garganttua-aot] DirectBinderGenerator enabled
+[WARNING] Supported source version 'RELEASE_21' from annotation processor 'com.garganttua.core.aot.annotation.processor.DirectBinderGenerator' less than -source '25'
+[INFO] [garganttua-aot] Generated AOT descriptor: com.garganttua.core.expression.dsl.AOTClass_ExpressionContextBuilderTest
+[INFO] [garganttua-aot] Generated AOT descriptor: com.garganttua.core.expression.testapp.AOTClass_AppExpressions
+[INFO] [garganttua-aot] Generated index: META-INF/garganttua/index/com.garganttua.core.expression.annotations.Expression (11 entries)
+[INFO] [garganttua-aot] Wrote ServiceLoader descriptor with 2 AOT classes
+[INFO] /home/runner/work/garganttua/garganttua/core/expression/src/test/java/com/garganttua/core/expression/ContextualExpressionNodeBehaviourTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/runner/work/garganttua/garganttua/core/expression/src/test/java/com/garganttua/core/expression/ContextualExpressionNodeBehaviourTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ garganttua-expression ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.garganttua.core.expression.ContextualExpressionNodeBehaviourTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.100 s -- in com.garganttua.core.expression.ContextualExpressionNodeBehaviourTest
+[INFO] Running com.garganttua.core.expression.context.ExpressionVariableContextBehaviourTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.garganttua.core.expression.context.ExpressionVariableContextBehaviourTest
+[INFO] Running com.garganttua.core.expression.context.FactoryKeyResolverTest
+[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in com.garganttua.core.expression.context.FactoryKeyResolverTest
+[INFO] Running com.garganttua.core.expression.context.MethodCallExpressionNodeFactoryTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.066 s -- in com.garganttua.core.expression.context.MethodCallExpressionNodeFactoryTest
+[INFO] Running com.garganttua.core.expression.context.ExpressionVisitorBehaviourTest
+line 1:2 mismatched input ')' expecting {'@', '.', ':', '[', '{', 'boolean', 'byte', 'short', 'int', 'long', 'float', 'double', 'char', 'Class', BOOLEAN, 'null', STRING, CHAR, INT_LITERAL, FLOAT_LIT, IDENTIFIER}
+line 1:1 no viable alternative at input '@@'
+line 1:3 token recognition error at: '!'
+line 1:4 token recognition error at: '!'
+line 1:5 token recognition error at: '!'
+line 1:6 token recognition error at: '#'
+line 1:7 token recognition error at: '#'
+line 1:8 token recognition error at: '#'
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.152 s -- in com.garganttua.core.expression.context.ExpressionVisitorBehaviourTest
+[INFO] Running com.garganttua.core.expression.context.ExpressionContextTest
+
+=== Manual for add(int,int) ===
+NAME
+    add - 
+
+SYNOPSIS
+    int add(int a, int b)
+
+DESCRIPTION
+    Adds two integer suppliers
+
+PARAMETERS
+    a : int (required)
+    b : int (required)
+
+RETURN VALUE
+    int
+
+
+=== Manual for string(Object) ===
+NAME
+    string - 
+
+SYNOPSIS
+    String string(Object value)
+
+DESCRIPTION
+    Converts a value to a String supplier
+
+PARAMETERS
+    value : Object (required)
+
+RETURN VALUE
+    String
+
+
+=== List of Available Expression Factories ===
+AVAILABLE EXPRESSION FUNCTIONS
+==============================
+
+Total functions: 5
+
+  [1] add(int,int)                             - Adds two integer suppliers
+  [2] boolean(String)                          - Parses a string to a Boolean supplier
+  [3] class(String)                            - Parses a string to a Class supplier
+  [4] int(String)                              - Parses a string to an Integer supplier
+  [5] string(Object)                           - Converts a value to a String supplier
+
+Use man("key") or man(index) to get detailed documentation for a specific function.
+
+
+=== Manual for index 1 ===
+NAME
+    add - 
+
+SYNOPSIS
+    int add(int a, int b)
+
+DESCRIPTION
+    Adds two integer suppliers
+
+PARAMETERS
+    a : int (required)
+    b : int (required)
+
+RETURN VALUE
+    int
+
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+[WARNING] Tests run: 24, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.383 s -- in com.garganttua.core.expression.context.ExpressionContextTest
+[INFO] Running com.garganttua.core.expression.context.ConstructorCallExpressionNodeFactoryBehaviourTest
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.garganttua.core.expression.context.ConstructorCallExpressionNodeFactoryBehaviourTest
+[INFO] Running com.garganttua.core.expression.context.ExpressionNodeFactoryTest
+Registered factories:
+AVAILABLE EXPRESSION FUNCTIONS
+==============================
+
+Total functions: 3
+
+  [1] greet(String)                            - Greets a person
+  [2] string(String)                           - String literal
+  [3] time(ISupplier)                          - Measures execution time
+
+Use man("key") or man(index) to get detailed documentation for a specific function.
+
+Expression parsed successfully: time(greet("world"))
+Expression result supplier obtained
+Elapsed time: 0ms
+Factory found for key 'time(ISupplier)'
+Factory key in context: time(ISupplier)
+Factory man page:
+NAME
+    time - 
+
+SYNOPSIS
+    long time(ISupplier expression)
+
+DESCRIPTION
+    Measures execution time
+
+PARAMETERS
+    expression : ISupplier (nullable)
+
+RETURN VALUE
+    long
+
+Lazy parameter key: time(ISupplier)
+Lazy parameters: [true]
+
+Generated Manual Page with Nullable Parameter:
+==============================================
+NAME
+    string - 
+
+SYNOPSIS
+    String string(String string)
+
+DESCRIPTION
+    Converts any value to string representation
+
+PARAMETERS
+    string : String (nullable)
+
+RETURN VALUE
+    String
+
+Generated Manual Page:
+=====================
+NAME
+    greet - 
+
+SYNOPSIS
+    String greet(String name)
+
+DESCRIPTION
+    Greets a person by name
+
+PARAMETERS
+    name : String (required)
+
+RETURN VALUE
+    String
+
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in com.garganttua.core.expression.context.ExpressionNodeFactoryTest
+[INFO] Running com.garganttua.core.expression.context.ExpressionNodeContextBehaviourTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.garganttua.core.expression.context.ExpressionNodeContextBehaviourTest
+[INFO] Running com.garganttua.core.expression.NodeTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.garganttua.core.expression.NodeTest
+[INFO] Running com.garganttua.core.expression.dsl.FrameworkBuiltinRegistrarBehaviourTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.garganttua.core.expression.dsl.FrameworkBuiltinRegistrarBehaviourTest
+[INFO] Running com.garganttua.core.expression.dsl.ExpressionFunctionContributorTest
+[INFO] Running FrameworkBuiltinRegistrar events built-in registration
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in FrameworkBuiltinRegistrar events built-in registration
+[INFO] Running Application @Expression functions registered via the SPI
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.075 s -- in Application @Expression functions registered via the SPI
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.077 s -- in com.garganttua.core.expression.dsl.ExpressionFunctionContributorTest
+[INFO] Running An expression name carried by two methods
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in An expression name carried by two methods
+[INFO] Running com.garganttua.core.expression.dsl.ExpressionContextBuilderTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.194 s -- in com.garganttua.core.expression.dsl.ExpressionContextBuilderTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[WARNING] Tests run: 191, Failures: 0, Errors: 0, Skipped: 1
+[INFO] 
+[INFO] 
+[INFO] --- jacoco:0.8.14:report (report) @ garganttua-expression ---
+[INFO] Loading execution data file /home/runner/work/garganttua/garganttua/core/expression/target/jacoco.exec
+[INFO] Analyzed bundle 'garganttua-expression' with 85 classes
+[INFO] 
+[INFO] --- jar:3.5.0:jar (default-jar) @ garganttua-expression ---
+[INFO] Building jar: /home/runner/work/garganttua/garganttua/core/expression/target/garganttua-expression-3.0.0-ALPHA37.jar
+[INFO] 
+[INFO] >>> source:3.3.1:jar (attach-sources) > generate-sources @ garganttua-expression >>>
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (default) @ garganttua-expression ---
+[INFO] argLine set to -javaagent:/home/runner/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/home/runner/work/garganttua/garganttua/core/expression/target/jacoco.exec
+[INFO] 
+[INFO] --- antlr4:4.13.0:antlr4 (default) @ garganttua-expression ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/runner/work/garganttua/garganttua/core/expression/src/main/resources/antlr4
+[INFO] 
+[INFO] --- build-helper:3.4.0:add-source (add-source) @ garganttua-expression ---
+[INFO] Source directory: /home/runner/work/garganttua/garganttua/core/expression/target/generated-sources/antlr4 added.
+[INFO] 
+[INFO] <<< source:3.3.1:jar (attach-sources) < generate-sources @ garganttua-expression <<<
+[INFO] 
+[INFO] 
+[INFO] --- source:3.3.1:jar (attach-sources) @ garganttua-expression ---
+[INFO] Building jar: /home/runner/work/garganttua/garganttua/core/expression/target/garganttua-expression-3.0.0-ALPHA37-sources.jar
+[INFO] 
+[INFO] --- javadoc:3.6.3:jar (attach-javadocs) @ garganttua-expression ---
+[INFO] No previous run data found, generating javadoc.
+[INFO] Building jar: /home/runner/work/garganttua/garganttua/core/expression/target/garganttua-expression-3.0.0-ALPHA37-javadoc.jar
+[INFO] 
+[INFO] ------------< com.garganttua.core:garganttua-configuration >------------
+[INFO] Building garganttua-configuration 3.0.0-ALPHA37                  [28/87]
+[INFO]   from core/configuration/pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.2.0:clean (default-clean) @ garganttua-configuration ---
+[INFO] Deleting /home/runner/work/garganttua/garganttua/core/configuration/target
+[INFO] 
+[INFO] --- jacoco:0.8.14:prepare-agent (default) @ garganttua-configuration ---
+[INFO] argLine set to -javaagent:/home/runner/.m2/repository/org/jacoco/org.jacoco.agent/0.8.14/org.jacoco.agent-0.8.14-runtime.jar=destfile=/home/runner/work/garganttua/garganttua/core/configuration/target/jacoco.exec
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ garganttua-configuration ---
+[INFO] Copying 3 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ garganttua-configuration ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 41 source files with javac [debug release 25] to target/classes
+[WARNING] Supported source version 'RELEASE_21' from annotation processor 'com.garganttua.core.aot.annotation.processor.IndexedAnnotationProcessor' less than -source '25'
+[INFO] [garganttua-aot] DirectBinderGenerator enabled
+[WARNING] Supported source version 'RELEASE_21' from annotation processor 'com.garganttua.core.aot.annotation.processor.DirectBinderGenerator' less than -source '25'
+[INFO] [garganttua-aot] Generated AOT descriptor: com.garganttua.core.configuration.dsl.AOTClass_ConfigurationBuilder
+[INFO] [garganttua-aot] Generated AOT descriptor: com.garganttua.core.configuration.dsl.AOTClass_ConfigurationSourceBuilder
+[INFO] [garganttua-aot] Generated index: META-INF/garganttua/index/com.garganttua.core.reflection.annotations.Reflected (2 entries)
+[INFO] [garganttua-aot] Wrote ServiceLoader descriptor with 2 AOT classes
+[INFO] /home/runner/work/garganttua/garganttua/core/configuration/src/main/java/com/garganttua/core/configuration/populator/TypeConverter.java: /home/runner/work/garganttua/garganttua/core/configuration/src/main/java/com/garganttua/core/configuration/populator/TypeConverter.java uses unchecked or unsafe operations.
+[INFO] /home/runner/work/garganttua/garganttua/core/configuration/src/main/java/com/garganttua/core/configuration/populator/TypeConverter.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ garganttua-configuration ---
+[INFO] Copying 2 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ garganttua-configuration ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 22 source files with javac [debug release 25] to target/test-classes
+[WARNING] Supported source version 'RELEASE_21' from annotation processor 'com.garganttua.core.aot.annotation.processor.IndexedAnnotationProcessor' less than -source '25'
+[INFO] [garganttua-aot] DirectBinderGenerator enabled
+[WARNING] Supported source version 'RELEASE_21' from annotation processor 'com.garganttua.core.aot.annotation.processor.DirectBinderGenerator' less than -source '25'
+[INFO] [garganttua-aot] Generated AOT descriptor: com.garganttua.core.configuration.binding.AOTClass_DemoConfigurableBuilder
+[INFO] [garganttua-aot] Generated index: META-INF/garganttua/index/com.garganttua.core.dsl.annotations.ConfigurableBuilder (3 entries)
+[INFO] [garganttua-aot] Wrote ServiceLoader descriptor with 1 AOT classes
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ garganttua-configuration ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.garganttua.core.configuration.populator.MethodMappingTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.080 s -- in com.garganttua.core.configuration.populator.MethodMappingTest
+[INFO] Running com.garganttua.core.configuration.binding.ConfigurationApplierTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.382 s -- in com.garganttua.core.configuration.binding.ConfigurationApplierTest
+[INFO] Running com.garganttua.core.configuration.binding.BootstrapConfigurationContributorTest
+[ERROR] Tests run: 2, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.021 s <<< FAILURE! -- in com.garganttua.core.configuration.binding.BootstrapConfigurationContributorTest
+[ERROR] com.garganttua.core.configuration.binding.BootstrapConfigurationContributorTest.appliesDiscoveredConfigToTheMatchingConfigurableBuilder -- Time elapsed: 0.012 s <<< ERROR!
+java.lang.IllegalStateException: No IReflection available. Call IClass.setReflection()
+	at com.garganttua.core.reflection.IClass$ReflectionHolder.reflection(IClass.java:131)
+	at com.garganttua.core.reflection.IClass.forName(IClass.java:40)
+	at com.garganttua.core.configuration.format.AbstractConfigurationFormat.isClassAvailable(AbstractConfigurationFormat.java:60)
+	at com.garganttua.core.configuration.format.YamlConfigurationFormat.isAvailable(YamlConfigurationFormat.java:44)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributor.addIfAvailable(BootstrapConfigurationContributor.java:125)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributor.defaultPopulator(BootstrapConfigurationContributor.java:117)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributor.contribute(BootstrapConfigurationContributor.java:70)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributorTest.appliesDiscoveredConfigToTheMatchingConfigurableBuilder(BootstrapConfigurationContributorTest.java:24)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:727)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$7(TestMethodTestDescriptor.java:217)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:213)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:138)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:68)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:151)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:147)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:127)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:90)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:55)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:102)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:54)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:114)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:86)
+	at org.junit.platform.launcher.core.DefaultLauncherSession$DelegatingLauncher.execute(DefaultLauncherSession.java:86)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.executeWithoutCancellationToken(LauncherAdapter.java:60)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.execute(LauncherAdapter.java:52)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:203)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:168)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+[ERROR] com.garganttua.core.configuration.binding.BootstrapConfigurationContributorTest.noMatchingBuilderIsANoOp -- Time elapsed: 0.001 s <<< ERROR!
+java.lang.IllegalStateException: No IReflection available. Call IClass.setReflection()
+	at com.garganttua.core.reflection.IClass$ReflectionHolder.reflection(IClass.java:131)
+	at com.garganttua.core.reflection.IClass.forName(IClass.java:40)
+	at com.garganttua.core.configuration.format.AbstractConfigurationFormat.isClassAvailable(AbstractConfigurationFormat.java:60)
+	at com.garganttua.core.configuration.format.YamlConfigurationFormat.isAvailable(YamlConfigurationFormat.java:44)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributor.addIfAvailable(BootstrapConfigurationContributor.java:125)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributor.defaultPopulator(BootstrapConfigurationContributor.java:117)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributor.contribute(BootstrapConfigurationContributor.java:70)
+	at com.garganttua.core.configuration.binding.BootstrapConfigurationContributorTest.noMatchingBuilderIsANoOp(BootstrapConfigurationContributorTest.java:35)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.junit.platform.commons.util.ReflectionUtils.invokeMethod(ReflectionUtils.java:727)
+	at org.junit.jupiter.engine.execution.MethodInvocation.proceed(MethodInvocation.java:60)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$ValidatingInvocation.proceed(InvocationInterceptorChain.java:131)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.intercept(TimeoutExtension.java:156)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestableMethod(TimeoutExtension.java:147)
+	at org.junit.jupiter.engine.extension.TimeoutExtension.interceptTestMethod(TimeoutExtension.java:86)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker$ReflectiveInterceptorCall.lambda$ofVoidMethod$0(InterceptingExecutableInvoker.java:103)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.lambda$invoke$0(InterceptingExecutableInvoker.java:93)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain$InterceptedInvocation.proceed(InvocationInterceptorChain.java:106)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.proceed(InvocationInterceptorChain.java:64)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.chainAndInvoke(InvocationInterceptorChain.java:45)
+	at org.junit.jupiter.engine.execution.InvocationInterceptorChain.invoke(InvocationInterceptorChain.java:37)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:92)
+	at org.junit.jupiter.engine.execution.InterceptingExecutableInvoker.invoke(InterceptingExecutableInvoker.java:86)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.lambda$invokeTestMethod$7(TestMethodTestDescriptor.java:217)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.invokeTestMethod(TestMethodTestDescriptor.java:213)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:138)
+	at org.junit.jupiter.engine.descriptor.TestMethodTestDescriptor.execute(TestMethodTestDescriptor.java:68)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:151)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:41)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$6(NodeTestTask.java:155)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$8(NodeTestTask.java:141)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:137)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$9(NodeTestTask.java:139)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:73)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:138)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:95)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:35)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:57)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:54)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:147)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:127)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:90)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:55)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:102)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:54)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:114)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:86)
+	at org.junit.platform.launcher.core.DefaultLauncherSession$DelegatingLauncher.execute(DefaultLauncherSession.java:86)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.executeWithoutCancellationToken(LauncherAdapter.java:60)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.execute(LauncherAdapter.java:52)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:203)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:168)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+[INFO] Running Populator drives builders at arbitrary depth, all method shapes
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.031 s -- in Populator drives builders at arbitrary depth, all method shapes
+[INFO] Running com.garganttua.core.configuration.binding.KeyedChildBuilderTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in com.garganttua.core.configuration.binding.KeyedChildBuilderTest
+[INFO] Running com.garganttua.core.configuration.binding.ConfigurationShebangTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.garganttua.core.configuration.binding.ConfigurationShebangTest
+[INFO] Running com.garganttua.core.configuration.MethodMappingBehaviourTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.garganttua.core.configuration.MethodMappingBehaviourTest
+[INFO] Running com.garganttua.core.configuration.ConfigurationSourcesBehaviourTest
+[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.075 s -- in com.garganttua.core.configuration.ConfigurationSourcesBehaviourTest
+[INFO] Running com.garganttua.core.configuration.BuilderPopulatorBehaviourTest
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.027 s -- in com.garganttua.core.configuration.BuilderPopulatorBehaviourTest
+[INFO] Running com.garganttua.core.configuration.TypeConverterTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.029 s -- in com.garganttua.core.configuration.TypeConverterTest
+[INFO] Running com.garganttua.core.configuration.BuilderPopulatorTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.garganttua.core.configuration.BuilderPopulatorTest
+[INFO] Running com.garganttua.core.configuration.ConfigurationNodeTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.garganttua.core.configuration.ConfigurationNodeTest
+[INFO] Running com.garganttua.core.configuration.JsonConfigurationFormatTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.garganttua.core.configuration.JsonConfigurationFormatTest
+[INFO] Running com.garganttua.core.configuration.ConfigurationPropertyProviderTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.garganttua.core.configuration.ConfigurationPropertyProviderTest
+[INFO] Running com.garganttua.core.configuration.ConfigurationFormatBehaviourTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.049 s -- in com.garganttua.core.configuration.ConfigurationFormatBehaviourTest
+[INFO] Running com.garganttua.core.configuration.ConfigurationBuilderTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in com.garganttua.core.configuration.ConfigurationBuilderTest
+[INFO] Running com.garganttua.core.configuration.TypeConverterBehaviourTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.023 s -- in com.garganttua.core.configuration.TypeConverterBehaviourTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Errors: 
+[ERROR]   BootstrapConfigurationContributorTest.appliesDiscoveredConfigToTheMatchingConfigurableBuilder:24 » IllegalState No IReflection available. Call IClass.setReflection()
+[ERROR]   BootstrapConfigurationContributorTest.noMatchingBuilderIsANoOp:35 » IllegalState No IReflection available. Call IClass.setReflection()
+[INFO] 
+[ERROR] Tests run: 169, Failures: 0, Errors: 2, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for garganttua 3.0.0-ALPHA37:
+[INFO] 
+[INFO] garganttua-core .................................... SUCCESS [  1.339 s]
+[INFO] garganttua-commons ................................. SUCCESS [  9.960 s]
+[INFO] garganttua-aot ..................................... SUCCESS [  0.011 s]
+[INFO] garganttua-aot-commons ............................. SUCCESS [  1.251 s]
+[INFO] garganttua-bindings ................................ SUCCESS [  0.007 s]
+[INFO] garganttua-reflections ............................. SUCCESS [  1.103 s]
+[INFO] garganttua-runtime-reflection ...................... SUCCESS [  3.075 s]
+[INFO] garganttua-dsl ..................................... SUCCESS [  3.182 s]
+[INFO] garganttua-aot-reflection .......................... SUCCESS [  3.080 s]
+[INFO] garganttua-supply .................................. SUCCESS [  3.695 s]
+[INFO] garganttua-reflection .............................. SUCCESS [  5.122 s]
+[INFO] garganttua-mapper .................................. SUCCESS [  3.228 s]
+[INFO] garganttua-execution ............................... SUCCESS [  1.744 s]
+[INFO] garganttua-crypto .................................. SUCCESS [  8.080 s]
+[INFO] garganttua-spring .................................. SUCCESS [  1.002 s]
+[INFO] garganttua-lifecycle ............................... SUCCESS [  1.857 s]
+[INFO] garganttua-native .................................. SUCCESS [  0.006 s]
+[INFO] garganttua-native-commons .......................... SUCCESS [  3.259 s]
+[INFO] garganttua-injection ............................... SUCCESS [  7.668 s]
+[INFO] garganttua-mutex ................................... SUCCESS [  5.240 s]
+[INFO] garganttua-mutex-redis ............................. SUCCESS [  2.290 s]
+[INFO] garganttua-cache ................................... SUCCESS [  2.297 s]
+[INFO] garganttua-cache-redis ............................. SUCCESS [  2.129 s]
+[INFO] garganttua-native-image-maven-plugin ............... SUCCESS [  2.115 s]
+[INFO] garganttua-condition ............................... SUCCESS [  3.287 s]
+[INFO] garganttua-runtime ................................. SUCCESS [  5.107 s]
+[INFO] garganttua-expression .............................. SUCCESS [  5.916 s]
+[INFO] garganttua-configuration ........................... FAILURE [  2.328 s]
+[INFO] garganttua-bootstrap ............................... SKIPPED
+[INFO] garganttua-classloader ............................. SKIPPED
+[INFO] garganttua-script .................................. SKIPPED
+[INFO] garganttua-aot-annotation-scanner .................. SKIPPED
+[INFO] garganttua-console ................................. SKIPPED
+[INFO] garganttua-properties .............................. SKIPPED
+[INFO] garganttua-script-maven-plugin ..................... SKIPPED
+[INFO] garganttua-observability ........................... SKIPPED
+[INFO] garganttua-workflow ................................ SKIPPED
+[INFO] garganttua-aot-annotation-processor ................ SKIPPED
+[INFO] garganttua-aot-maven-plugin ........................ SKIPPED
+[INFO] garganttua-aot-native-feature ...................... SKIPPED
+[INFO] garganttua-starters ................................ SKIPPED
+[INFO] garganttua-starter-aot ............................. SKIPPED
+[INFO] garganttua-starter-runtime ......................... SKIPPED
+[INFO] garganttua-starter-hybrid .......................... SKIPPED
+[INFO] garganttua-starter-native .......................... SKIPPED
+[INFO] garganttua-starter-application ..................... SKIPPED
+[INFO] garganttua-api ..................................... SKIPPED
+[INFO] garganttua-api-bindings ............................ SKIPPED
+[INFO] garganttua-api-binding-geojson ..................... SKIPPED
+[INFO] garganttua-api-commons ............................. SKIPPED
+[INFO] garganttua-api-binding-jackson ..................... SKIPPED
+[INFO] garganttua-api-binding-slf4j ....................... SKIPPED
+[INFO] garganttua-api-binding-jsonpath .................... SKIPPED
+[INFO] garganttua-api-binding-mongodb ..................... SKIPPED
+[INFO] garganttua-api-binding-postgresql .................. SKIPPED
+[INFO] garganttua-api-core ................................ SKIPPED
+[INFO] garganttua-api-binding-javalin ..................... SKIPPED
+[INFO] garganttua-api-dao ................................. SKIPPED
+[INFO] garganttua-api-dao-mongodb ......................... SKIPPED
+[INFO] garganttua-api-dao-postgresql ...................... SKIPPED
+[INFO] garganttua-api-starters ............................ SKIPPED
+[INFO] garganttua-api-starter-bootstrap ................... SKIPPED
+[INFO] garganttua-api-starter-mongodb ..................... SKIPPED
+[INFO] garganttua-api-starter-postgresql .................. SKIPPED
+[INFO] garganttua-api-starter-javalin ..................... SKIPPED
+[INFO] garganttua-api-starter-quickstart .................. SKIPPED
+[INFO] garganttua-api-starter-jvm-mongo-javalin ........... SKIPPED
+[INFO] garganttua-api-starter-aot-mongo-javalin ........... SKIPPED
+[INFO] garganttua-api-starter-aot-postgres-javalin ........ SKIPPED
+[INFO] garganttua-events .................................. SKIPPED
+[INFO] garganttua-events-api .............................. SKIPPED
+[INFO] garganttua-events-expressions ...................... SKIPPED
+[INFO] garganttua-events-core ............................. SKIPPED
+[INFO] garganttua-events-connector-kafka .................. SKIPPED
+[INFO] garganttua-events-connector-bus .................... SKIPPED
+[INFO] garganttua-events-connector-mail ................... SKIPPED
+[INFO] garganttua-events-connector-websocket .............. SKIPPED
+[INFO] garganttua-events-connector-observability .......... SKIPPED
+[INFO] garganttua-events-connector-api .................... SKIPPED
+[INFO] garganttua-events-starters ......................... SKIPPED
+[INFO] garganttua-events-starter-bus ...................... SKIPPED
+[INFO] garganttua-events-starter-kafka .................... SKIPPED
+[INFO] garganttua-events-starter-mail ..................... SKIPPED
+[INFO] garganttua-events-starter-websocket ................ SKIPPED
+[INFO] garganttua-events-starter-observability ............ SKIPPED
+[INFO] garganttua-events-starter-api ...................... SKIPPED
+[INFO] garganttua ......................................... SKIPPED
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:29 min
+[INFO] Finished at: 2026-11-23T20:30:37Z
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project garganttua-configuration: 
+[ERROR] 
+[ERROR] See /home/runner/work/garganttua/garganttua/core/configuration/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+[ERROR] 
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :garganttua-configuration
