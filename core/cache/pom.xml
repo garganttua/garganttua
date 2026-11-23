@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.garganttua</groupId>
+        <artifactId>garganttua-core</artifactId>
+        <version>3.0.0-ALPHA36</version>
+    </parent>
+
+    <groupId>com.garganttua.core</groupId>
+    <artifactId>garganttua-cache</artifactId>
+    <description>Caches behind one generic contract: in-memory implementations and the manager that resolves a cache by name.</description>
+
+    <properties>
+        <!-- AOT descriptors ON: this module's @Reflected classes ship compile-time AOTClass_*
+             descriptors so native reflection works without live-reflection fallback
+             (see core/pom.xml garganttua.direct.binders note). Above the aot-commons/aot-reflection
+             layer, so no dependency cycle (only garganttua-commons/garganttua-dsl cannot enable this). -->
+        <garganttua.direct.binders>true</garganttua.direct.binders>
+    </properties>
+
+    <dependencies>
+
+        <!-- AOT — generated AOTClass_* sources reference com.garganttua.core.aot.commons /
+             com.garganttua.core.aot.reflection, needed on the compile + runtime classpath. -->
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-aot-reflection</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-aot-commons</artifactId>
+        </dependency>        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-commons</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-dsl</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-reflection</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-runtime-reflection</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.garganttua.core</groupId>
+            <artifactId>garganttua-reflections</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

@@ -179,6 +179,11 @@
         <artifactId>garganttua-mutex</artifactId>
         <version>${project.version}</version>
       </dependency>
+            <dependency>
+        <groupId>com.garganttua.core</groupId>
+        <artifactId>garganttua-cache</artifactId>
+        <version>${project.version}</version>
+      </dependency>
       <dependency>
         <groupId>com.garganttua.core</groupId>
         <artifactId>garganttua-script</artifactId>
@@ -531,6 +536,7 @@
     <module>condition</module>
     <module>expression</module>
     <module>mutex</module>
+    <module>cache</module>
     <module>bootstrap</module>
     <module>classloader</module>
     <module>script</module>

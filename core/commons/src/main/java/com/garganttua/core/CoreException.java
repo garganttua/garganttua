@@ -224,6 +224,15 @@ public class CoreException extends RuntimeException {
      */
     public static final int CRYPTO_ERROR = 15;
 
+    /**
+     * Error code for cache errors.
+     * <p>
+     * Used when a cache cannot be created or resolved — an unknown implementation, a missing codec, an
+     * unreachable store at creation time.
+     * </p>
+     */
+    public static final int CACHE_ERROR = 16;
+
     private static final long serialVersionUID = 7855765591949705798L;
 
     /**
