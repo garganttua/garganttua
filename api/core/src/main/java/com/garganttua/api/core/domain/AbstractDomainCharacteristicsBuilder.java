@@ -49,6 +49,9 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     /** How the HTTP transport lets clients keep this domain's GET responses; null means it does not. */
     protected volatile com.garganttua.api.commons.context.HttpCachePolicy httpCachePolicy;
 
+    /** How this domain caches its map searches by tiles; null means it does not. */
+    protected volatile com.garganttua.api.commons.context.TileCachePolicy tileCachePolicy;
+
     protected AbstractDomainCharacteristicsBuilder(IApiBuilder builder) throws ApiException {
         super(builder);
     }
@@ -61,6 +64,12 @@ abstract class AbstractDomainCharacteristicsBuilder<E>
     @Override
     public IDomainBuilder<E> queryCache(com.garganttua.api.commons.context.CachePolicy policy) {
         this.queryCachePolicy = java.util.Objects.requireNonNull(policy, "Query cache policy cannot be null");
+        return this;
+    }
+
+    @Override
+    public IDomainBuilder<E> tileCache(com.garganttua.api.commons.context.TileCachePolicy policy) {
+        this.tileCachePolicy = java.util.Objects.requireNonNull(policy, "Tile cache policy cannot be null");
         return this;
     }
 

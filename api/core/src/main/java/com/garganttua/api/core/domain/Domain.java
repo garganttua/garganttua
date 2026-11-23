@@ -176,6 +176,22 @@ public class Domain<E> extends AbstractLifecycle implements IDomain<E> {
         return java.util.Optional.ofNullable(this.queryCachePolicy);
     }
 
+    private volatile com.garganttua.api.commons.context.TileCachePolicy tileCachePolicy;
+
+    /** Declares how this domain caches its map searches by tiles, and hands the cache to its repository. */
+    public void setTileCache(com.garganttua.api.commons.context.TileCachePolicy policy) {
+        this.tileCachePolicy = policy;
+        if (policy != null && this.repository instanceof Repository repo) {
+            repo.useTileCache(policy.cache().cacheFor(this.domainDefinition.domainName(), "tiles"), policy.latitude(),
+                    policy.longitude());
+        }
+    }
+
+    @Override
+    public java.util.Optional<com.garganttua.api.commons.context.TileCachePolicy> tileCache() {
+        return java.util.Optional.ofNullable(this.tileCachePolicy);
+    }
+
     /** Declares how the HTTP transport lets clients keep this domain's GET responses; null leaves them as they are. */
     public void setHttpCache(com.garganttua.api.commons.context.HttpCachePolicy policy) {
         this.httpCachePolicy = policy;

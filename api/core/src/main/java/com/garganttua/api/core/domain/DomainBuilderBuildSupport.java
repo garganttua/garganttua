@@ -104,6 +104,7 @@ final class DomainBuilderBuildSupport {
         domainContext.setCache(builder.cachePolicy);
         domainContext.setQueryCache(builder.queryCachePolicy);
         domainContext.setHttpCache(builder.httpCachePolicy);
+        domainContext.setTileCache(builder.tileCachePolicy);
         domainContext.setEntityBeanDefinition(entityBeanDefinition);
         domainContext.setDoInjection(builder.doInjection);
         return domainContext;

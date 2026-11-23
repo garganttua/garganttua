@@ -71,6 +71,22 @@ public class Repository implements IRepository {
         this.queryCache = Objects.requireNonNull(byQuery, "Query cache cannot be null");
     }
 
+    /** The tiles of map searches, and the two fields they are cut on; null when the domain does not cache them. */
+    private volatile TileCaching tiles;
+
+    private record TileCaching(ICache<String, Object> cache, String latitude, String longitude) {
+    }
+
+    /**
+     * Reads map searches by tiles from now on: those bounding {@code latitude} and {@code longitude} on both sides,
+     * without page or sort.
+     */
+    public void useTileCache(ICache<String, Object> byTile, String latitude, String longitude) {
+        this.tiles = new TileCaching(Objects.requireNonNull(byTile, "Tile cache cannot be null"),
+                Objects.requireNonNull(latitude, "Latitude field cannot be null"),
+                Objects.requireNonNull(longitude, "Longitude field cannot be null"));
+    }
+
     /** The DTOs and total of a cached page. */
     private record CachedPage(long total, Map<String, Object> dtos) {
     }
@@ -105,6 +121,10 @@ public class Repository implements IRepository {
     public List<Object> getEntities(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
             Optional<List<String>> projection) throws ApiException {
         log.debug("Fetching entities with filter={} projection={}", filter.orElse(null), projection.orElse(null));
+        Optional<List<Object>> byTiles = readByTiles(pageable, filter, sort, projection);
+        if (byTiles.isPresent()) {
+            return byTiles.get();
+        }
         ICache<String, Object> byQuery = this.queryCache;
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> dtoMaps = byQuery == null ? queryAllDtos(pageable, filter, sort, projection)
@@ -130,6 +150,48 @@ public class Repository implements IRepository {
                 : (CachedPage) byQuery.get(QueryKeys.of("page", pageable, filter, sort, projection),
                         () -> findPage(pageable, filter, sort, projection));
         return new Page(page.total(), mergeAndMapToEntities(List.of(page.dtos())));
+    }
+
+    /**
+     * A map search read through the tiles, when the domain caches them and the query is one: each tile from the
+     * cache or the store, their union trimmed to the bounds asked. Empty for any other read.
+     */
+    @SuppressWarnings("unchecked")
+    private Optional<List<Object>> readByTiles(Optional<IPageable> pageable, Optional<IFilter> filter,
+            Optional<ISort> sort, Optional<List<String>> projection) {
+        TileCaching caching = this.tiles;
+        if (caching == null || pageable.isPresent() || sort.isPresent()
+                || projection.isPresent() && !(projection.get().contains(caching.latitude())
+                        && projection.get().contains(caching.longitude()))) {
+            return Optional.empty();
+        }
+        Optional<TileQuery> query = TileQuery.parse(filter.orElse(null), caching.latitude(), caching.longitude());
+        if (query.isEmpty()) {
+            return Optional.empty();
+        }
+        List<Map<String, Object>> union = new ArrayList<>();
+        for (TileQuery.Tile tile : query.get().cover()) {
+            Optional<IFilter> read = Optional.of(query.get().read(tile, caching.latitude(), caching.longitude()));
+            List<Map<String, Object>> cell = (List<Map<String, Object>>) caching.cache().get(
+                    QueryKeys.of("tile:" + tile.id(), Optional.empty(), query.get().rest(), Optional.empty(), projection),
+                    () -> List.copyOf(queryAllDtos(Optional.empty(), read, Optional.empty(), projection)));
+            for (int k = 0; k < cell.size(); k++) {
+                if (union.size() <= k) {
+                    union.add(new LinkedHashMap<>());
+                }
+                union.get(k).putAll(cell.get(k));
+            }
+        }
+        List<Object> inside = new ArrayList<>();
+        for (Object entity : mergeAndMapToEntities(union)) {
+            Object lat = REFLECTION.getFieldValue(entity, caching.latitude());
+            Object lon = REFLECTION.getFieldValue(entity, caching.longitude());
+            if (lat instanceof Number latitude && lon instanceof Number longitude
+                    && query.get().contains(latitude.doubleValue(), longitude.doubleValue())) {
+                inside.add(entity);
+            }
+        }
+        return Optional.of(inside);
     }
 
     private CachedPage findPage(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
@@ -196,6 +258,10 @@ public class Repository implements IRepository {
         if (byQuery != null) {
             // Any write may move any row in or out of any search: they are all forgotten.
             byQuery.invalidateAll();
+        }
+        TileCaching caching = this.tiles;
+        if (caching != null) {
+            caching.cache().invalidateAll();
         }
         ICache<String, List<Object>> byUuid = this.cache;
         if (byUuid == null) {

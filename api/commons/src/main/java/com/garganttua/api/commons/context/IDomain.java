@@ -102,6 +102,16 @@ public interface IDomain<E> extends ILifecycle, IObservable {
 		return Optional.empty();
 	}
 
+	/**
+	 * How this domain caches its map searches by tiles. Empty by default.
+	 *
+	 * @return the policy, or empty
+	 * @see TileCachePolicy
+	 */
+	default Optional<TileCachePolicy> tileCache() {
+		return Optional.empty();
+	}
+
 	default String getDomainName(){
 		return getDomainDefinition().domainName();
 	}

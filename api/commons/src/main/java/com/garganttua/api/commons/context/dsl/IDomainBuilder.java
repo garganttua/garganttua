@@ -10,6 +10,7 @@ import com.garganttua.api.commons.endpoint.IInterface;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.context.CachePolicy;
 import com.garganttua.api.commons.context.HttpCachePolicy;
+import com.garganttua.api.commons.context.TileCachePolicy;
 import com.garganttua.api.commons.context.SynchronizationPolicy;
 import com.garganttua.core.cache.CacheSpec;
 import com.garganttua.core.cache.ICacheManager;
@@ -94,6 +95,23 @@ public interface IDomainBuilder<E> extends IAutomaticLinkedBuilder<IDomainBuilde
      * @see HttpCachePolicy
      */
     IDomainBuilder<E> httpCache(HttpCachePolicy policy) throws ApiException;
+
+    /**
+     * Caches THIS domain's map searches by tiles: those bounding {@code latitude} and {@code longitude} on both sides,
+     * without page or sort. Panning and zooming reuse the tiles already read; the result is trimmed to the bounds
+     * asked, exactly as the store would. Any write of the domain empties the tiles.
+     *
+     * @param policy the tile cache — its manager, implementation and spec — and the two fields
+     * @return this builder
+     * @see TileCachePolicy
+     */
+    IDomainBuilder<E> tileCache(TileCachePolicy policy) throws ApiException;
+
+    /** @see #tileCache(TileCachePolicy) */
+    default IDomainBuilder<E> tileCache(ICacheManager manager, IClass<?> cacheType, CacheSpec spec, String latitude,
+            String longitude) throws ApiException {
+        return tileCache(new TileCachePolicy(new CachePolicy(manager, cacheType, spec), latitude, longitude));
+    }
 
     /** @see #synchronization(SynchronizationPolicy) */
     default IDomainBuilder<E> synchronization(IMutexManager manager, IClass<? extends IMutex> mutexType)
