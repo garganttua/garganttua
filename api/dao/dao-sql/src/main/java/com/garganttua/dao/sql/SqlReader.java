@@ -298,7 +298,7 @@ public final class SqlReader {
             boolean always = column.kind() == SqlColumnKind.ID || column.kind() == SqlColumnKind.COMPOSITION
                     || isReferenceCollectionPresence(column);
             if (always || projects(projection, column.dottedPath())) {
-                selected.add(SqlSelected.of(SqlQuery.ALIAS, column));
+                selected.add(SqlSelected.of(table.dialect(), SqlQuery.ALIAS, column));
             }
         }
         return selected;

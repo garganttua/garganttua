@@ -3,7 +3,10 @@ package com.garganttua.dao.postgresql;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
@@ -212,6 +215,50 @@ public final class PgDialect implements ISqlDialect {
     @Override
     public Optional<String> snapshotStatement() {
         return Optional.of("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY");
+    }
+
+    @Override
+    public String nanExclusion() {
+        return " <> 'NaN'::float8";
+    }
+
+    @Override
+    public SqlFragment jsonText(String column, List<String> path) {
+        return new SqlFragment("jsonb_extract_path_text(" + column + ", " + marks(path) + ")", new ArrayList<>(path));
+    }
+
+    @Override
+    public SqlFragment jsonValue(String column, List<String> path) {
+        return new SqlFragment("jsonb_extract_path(" + column + ", " + marks(path) + ")", new ArrayList<>(path));
+    }
+
+    private static String marks(List<String> path) {
+        return String.join(", ", Collections.nCopies(path.size(), "?"));
+    }
+
+    @Override
+    public SqlFragment jsonRead(SqlFragment json, SqlOperand.JsonType type) {
+        String typeName = switch (type) {
+            case STRING -> "string";
+            case NUMBER -> "number";
+            case BOOLEAN -> "boolean";
+        };
+        SqlFragment read = switch (type) {
+            case STRING -> json.wrap("(", " #>> '{}')");
+            case NUMBER -> json.wrap("(", ")::numeric");
+            case BOOLEAN -> json.wrap("(", ")::boolean");
+        };
+        return json.wrap("(CASE WHEN jsonb_typeof(", ") = '" + typeName + "' THEN ").then(read).then(" END)");
+    }
+
+    @Override
+    public String geometryAsGeoJson(String ref) {
+        return "ST_AsGeoJSON(" + ref + ")";
+    }
+
+    @Override
+    public String jsonElementColumn() {
+        return "v";
     }
 
     @Override

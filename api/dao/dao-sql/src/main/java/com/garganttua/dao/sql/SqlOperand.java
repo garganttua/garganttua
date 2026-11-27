@@ -32,27 +32,18 @@ import com.garganttua.dao.sql.schema.SqlTypes;
  * @param alias    the table alias the column belongs to ({@code t} or {@code c})
  * @param column   the column
  * @param jsonPath the path inside the column when it is {@code JSONB}; empty for the column itself
+ * @param dialect  the database the column lives on — it spells the reads into JSON
  */
-public record SqlOperand(String alias, SqlColumn column, List<String> jsonPath) {
+public record SqlOperand(String alias, SqlColumn column, List<String> jsonPath, ISqlDialect dialect) {
 
     /** The JSON types {@link #jsonRead} can read, with the SQL that reads each. */
     public enum JsonType {
         /** A JSON string, read as text. */
-        STRING("string", "(", " #>> '{}')"),
-        /** A JSON number, read as {@code numeric}. */
-        NUMBER("number", "(", ")::numeric"),
+        STRING,
+        /** A JSON number, read as an exact number. */
+        NUMBER,
         /** A JSON boolean. */
-        BOOLEAN("boolean", "(", ")::boolean");
-
-        private final String typeName;
-        private final String readPrefix;
-        private final String readSuffix;
-
-        JsonType(String typeName, String readPrefix, String readSuffix) {
-            this.typeName = typeName;
-            this.readPrefix = readPrefix;
-            this.readSuffix = readSuffix;
-        }
+        BOOLEAN
     }
 
     public SqlOperand {
@@ -60,16 +51,16 @@ public record SqlOperand(String alias, SqlColumn column, List<String> jsonPath) 
     }
 
     /** {@return an operand on a whole column} */
-    public static SqlOperand of(String alias, SqlColumn column) {
-        return new SqlOperand(alias, column, List.of());
+    public static SqlOperand of(ISqlDialect dialect, String alias, SqlColumn column) {
+        return new SqlOperand(alias, column, List.of(), dialect);
     }
 
     /**
      * {@return an operand on one element of a JSON array, as {@code jsonb_array_elements} yields it:
      * {@code <alias>."v"}}
      */
-    public static SqlOperand jsonElement(String alias) {
-        return of(alias, new SqlColumn("v", SqlTypes.JSONB, SqlColumnKind.JSONB, List.of(),
+    public static SqlOperand jsonElement(ISqlDialect dialect, String alias) {
+        return of(dialect, alias, new SqlColumn(dialect.jsonElementColumn(), SqlTypes.JSONB, SqlColumnKind.JSONB, List.of(),
                 IClass.getClass(Object.class)));
     }
 
@@ -101,9 +92,7 @@ public record SqlOperand(String alias, SqlColumn column, List<String> jsonPath) 
         if (numeric) {
             return jsonRead(JsonType.NUMBER);
         }
-        String marks = String.join(", ", Collections.nCopies(jsonPath.size(), "?"));
-        return new SqlFragment("jsonb_extract_path_text(" + qualifiedColumn() + ", " + marks + ")",
-                new ArrayList<>(jsonPath));
+        return dialect.jsonText(qualifiedColumn(), jsonPath);
     }
 
     /** {@return the raw {@code jsonb} value: the column itself, or {@code jsonb_extract_path} into it} */
@@ -111,8 +100,7 @@ public record SqlOperand(String alias, SqlColumn column, List<String> jsonPath) 
         if (!isJsonPath()) {
             return SqlFragment.of(qualifiedColumn());
         }
-        String marks = String.join(", ", Collections.nCopies(jsonPath.size(), "?"));
-        return new SqlFragment("jsonb_extract_path(" + qualifiedColumn() + ", " + marks + ")", new ArrayList<>(jsonPath));
+        return dialect.jsonValue(qualifiedColumn(), jsonPath);
     }
 
     /**
@@ -122,9 +110,7 @@ public record SqlOperand(String alias, SqlColumn column, List<String> jsonPath) 
      * @return {@code (CASE WHEN jsonb_typeof(j) = 'type' THEN <read> END)}
      */
     public SqlFragment jsonRead(JsonType type) {
-        SqlFragment json = json();
-        return json.wrap("(CASE WHEN jsonb_typeof(", ") = '" + type.typeName + "' THEN ")
-                .then(json.wrap(type.readPrefix, type.readSuffix)).then(" END)");
+        return dialect.jsonRead(json(), type);
     }
 
     /**

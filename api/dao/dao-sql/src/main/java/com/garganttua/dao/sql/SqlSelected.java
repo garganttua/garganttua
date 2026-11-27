@@ -21,15 +21,16 @@ public record SqlSelected(SqlColumn column, String expression) {
     /**
      * The select expression of a column.
      *
+     * @param dialect   the database the column lives on — it reads a geometry back as GeoJSON
      * @param qualifier the table alias to qualify with, or null for none
      * @param column    the column
      * @return the selected column
      */
-    public static SqlSelected of(String qualifier, SqlColumn column) {
+    public static SqlSelected of(ISqlDialect dialect, String qualifier, SqlColumn column) {
         String quoted = SqlNaming.quote(column.name());
         String ref = qualifier == null ? quoted : qualifier + "." + quoted;
         String expression = column.kind() == SqlColumnKind.GEOMETRY
-                ? "ST_AsGeoJSON(" + ref + ") AS " + quoted
+                ? dialect.geometryAsGeoJson(ref) + " AS " + quoted
                 : ref;
         return new SqlSelected(column, expression);
     }

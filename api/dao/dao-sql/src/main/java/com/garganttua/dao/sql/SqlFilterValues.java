@@ -109,7 +109,7 @@ public final class SqlFilterValues {
      */
     public static SqlFragment compare(ISqlDialect dialect, SqlOperand o, String op, Object value) {
         if (!o.isJson() && of(o.column()) == Bracket.NUMBER && value instanceof Number n) {
-            return SqlFilterNumbers.compare(o.expr(false), isFloat(o.column()), op, n);
+            return SqlFilterNumbers.compare(dialect, o.expr(false), isFloat(o.column()), op, n);
         }
         Optional<Bound> bound = bound(dialect, o, value);
         if (bound.isEmpty()) {
@@ -141,7 +141,7 @@ public final class SqlFilterValues {
         }
         SqlFragment expr = o.expr(false);
         return switch (bracket) {
-            case NUMBER -> SqlFilterNumbers.equality(isFloat(o.column()), (Number) value)
+            case NUMBER -> SqlFilterNumbers.equality(dialect, isFloat(o.column()), (Number) value)
                     .map(v -> new Bound(expr, v, bracket));
             case STRING -> Optional.of(new Bound(expr, SqlFragment.of("?", text(value)), bracket));
             case DATE -> date(dialect, o.column(), value).map(v -> new Bound(expr, SqlFragment.of("?", v), bracket));

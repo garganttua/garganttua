@@ -30,7 +30,6 @@ public final class SqlFilterNumbers {
 
     private static final String EQUALS = "=";
     private static final String DOUBLE_PLACEHOLDER = "?";
-    private static final String NUMERIC_PLACEHOLDER = "?::numeric";
 
     private SqlFilterNumbers() {
         // Static helpers
@@ -63,7 +62,7 @@ public final class SqlFilterNumbers {
      * @param n           the number
      * @return the placeholder and value, or empty when no value of the column can equal it
      */
-    public static Optional<SqlFragment> equality(boolean floatColumn, Number n) {
+    public static Optional<SqlFragment> equality(ISqlDialect dialect, boolean floatColumn, Number n) {
         if (isNonFinite(n)) {
             return floatColumn ? Optional.of(SqlFragment.of(DOUBLE_PLACEHOLDER, n.doubleValue())) : Optional.empty();
         }
@@ -72,7 +71,7 @@ public final class SqlFilterNumbers {
             return Optional.empty();
         }
         if (!floatColumn) {
-            return Optional.of(SqlFragment.of(NUMERIC_PLACEHOLDER, exact.get()));
+            return Optional.of(SqlFragment.of(dialect.exactNumberPlaceholder(), exact.get()));
         }
         double nearest = exact.get().doubleValue();
         return side(nearest, exact.get()) == 0 ? Optional.of(SqlFragment.of(DOUBLE_PLACEHOLDER, nearest)) : Optional.empty();
@@ -87,30 +86,30 @@ public final class SqlFilterNumbers {
      * @param n           the number
      * @return the predicate, {@link SqlFragment#FALSE} when no value of the column satisfies it
      */
-    public static SqlFragment compare(SqlFragment expr, boolean floatColumn, String op, Number n) {
+    public static SqlFragment compare(ISqlDialect dialect, SqlFragment expr, boolean floatColumn, String op, Number n) {
         if (EQUALS.equals(op)) {
-            return equality(floatColumn, n).map(v -> expr.then(" = ").then(v)).orElse(SqlFragment.FALSE);
+            return equality(dialect, floatColumn, n).map(v -> expr.then(" = ").then(v)).orElse(SqlFragment.FALSE);
         }
         if (isNaN(n)) {
             return floatColumn && op.length() == 2
                     ? expr.then(" = ").then(SqlFragment.of(DOUBLE_PLACEHOLDER, Double.NaN))
                     : SqlFragment.FALSE;
         }
-        SqlFragment predicate = bounded(expr, floatColumn, op, n);
+        SqlFragment predicate = bounded(dialect, expr, floatColumn, op, n);
         if (floatColumn && op.startsWith(">")) {
-            return SqlFragment.all(List.of(predicate, expr.then(" <> 'NaN'::float8")));
+            return SqlFragment.all(List.of(predicate, expr.then(dialect.nanExclusion())));
         }
         return predicate;
     }
 
     /** {@code expr <op> n} for a non-NaN number and an ordering operator. */
-    private static SqlFragment bounded(SqlFragment expr, boolean floatColumn, String op, Number n) {
+    private static SqlFragment bounded(ISqlDialect dialect, SqlFragment expr, boolean floatColumn, String op, Number n) {
         if (isNonFinite(n)) {
             return expr.then(" " + op + " ").then(SqlFragment.of(DOUBLE_PLACEHOLDER, n.doubleValue()));
         }
         BigDecimal exact = exact(n).orElseThrow();
         if (!floatColumn) {
-            return expr.then(" " + op + " ").then(SqlFragment.of(NUMERIC_PLACEHOLDER, exact));
+            return expr.then(" " + op + " ").then(SqlFragment.of(dialect.exactNumberPlaceholder(), exact));
         }
         double nearest = exact.doubleValue();
         int side = side(nearest, exact);

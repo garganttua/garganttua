@@ -87,12 +87,12 @@ public final class SqlChildLoader {
         this.dialect = table.dialect();
         Map<SqlChildTable, Shape> byTable = new IdentityHashMap<>();
         for (SqlChildTable child : table.allChildren()) {
-            byTable.put(child, shapeOf(child));
+            byTable.put(child, shapeOf(this.dialect, child));
         }
         this.shapes = Collections.unmodifiableMap(byTable);
     }
 
-    private static Shape shapeOf(SqlChildTable child) {
+    private static Shape shapeOf(ISqlDialect dialect, SqlChildTable child) {
         List<String> sqlTypes = SqlChildAggregate.sqlTypes(child).stream().map(t -> t.toUpperCase(Locale.ROOT)).toList();
         List<SqlColumn> columns = child.valueColumns();
         SqlColumn keyColumn = child.kind() == SqlChildKind.MAP
@@ -102,7 +102,7 @@ public final class SqlChildLoader {
             single = child.kind() == SqlChildKind.COMPOSITION_COLLECTION ? IClass.getClass(String.class) : child.elementType();
         }
         return new Shape(SqlChildAggregate.cellCount(child), sqlTypes,
-                columns.stream().map(c -> SqlSelected.of(null, c)).toList(), keyColumn, single,
+                columns.stream().map(c -> SqlSelected.of(dialect, null, c)).toList(), keyColumn, single,
                 child.elementTable().isPresent(), new AtomicReference<>());
     }
 
@@ -217,7 +217,7 @@ public final class SqlChildLoader {
         String position = SqlNaming.quote(child.ordered() ? SqlChildTable.ORD : SqlChildTable.KEY);
         list.add(position);
         for (SqlColumn column : child.valueColumns()) {
-            list.add(SqlSelected.of(null, column).expression());
+            list.add(SqlSelected.of(dialect, null, column).expression());
         }
         return "SELECT " + list + " FROM " + SqlNaming.quote(child.name()) + " WHERE "
                 + dialect.anyOf(SqlNaming.quote(SqlChildTable.OWNER)) + " ORDER BY " + scope + ", " + position;

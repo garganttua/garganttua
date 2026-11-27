@@ -84,7 +84,7 @@ public final class SqlFieldResolver {
                 return Optional.of(SqlField.Opaque.of(isNull(SqlQuery.ALIAS, column)));
             }
             if (field.equals(column.dottedPath() + "." + DBREF_ID)) {
-                return Optional.of(new SqlField.Scalar(SqlOperand.of(SqlQuery.ALIAS, column)));
+                return Optional.of(new SqlField.Scalar(SqlOperand.of(table.dialect(), SqlQuery.ALIAS, column)));
             }
         }
         return Optional.empty();
@@ -137,7 +137,7 @@ public final class SqlFieldResolver {
      * A path inside the elements of a collection ({@code lines.sku}, {@code orders.lines.sku}) or inside
      * the value of a map entry ({@code stock.apple.qty}).
      */
-    private static SqlField inElement(SqlPathLocator.Located at) {
+    private SqlField inElement(SqlPathLocator.Located at) {
         SqlHop last = at.last();
         SqlChildTable child = last.child();
         Optional<SqlOperand> operand = switch (child.kind()) {
@@ -150,8 +150,8 @@ public final class SqlFieldResolver {
     }
 
     /** {@return the single value column of a scalar collection, under the hop's alias} */
-    private static SqlOperand value(SqlHop hop) {
-        return SqlOperand.of(hop.alias(), hop.child().valueColumns().get(0));
+    private SqlOperand value(SqlHop hop) {
+        return SqlOperand.of(table.dialect(), hop.alias(), hop.child().valueColumns().get(0));
     }
 
     /** {@return whether a map's values are scalars: one value column, the value itself} */
@@ -173,12 +173,12 @@ public final class SqlFieldResolver {
      * @param field   the path, relative to the columns' owner
      * @return the operand, or empty when no column matches
      */
-    static Optional<SqlOperand> inColumns(List<SqlColumn> columns, String alias, String field) {
+    Optional<SqlOperand> inColumns(List<SqlColumn> columns, String alias, String field) {
         List<SqlColumn> values = columns.stream()
                 .filter(c -> c.kind() != SqlColumnKind.PRESENCE && c.kind() != SqlColumnKind.COMPOSITION).toList();
         for (SqlColumn column : values) {
             if (column.dottedPath().equals(field)) {
-                return Optional.of(SqlOperand.of(alias, column));
+                return Optional.of(SqlOperand.of(table.dialect(), alias, column));
             }
         }
         for (SqlColumn column : values) {
@@ -186,7 +186,7 @@ public final class SqlFieldResolver {
             if (column.kind() == SqlColumnKind.JSONB && !column.dottedPath().isEmpty()
                     && field.startsWith(prefix) && field.length() > prefix.length()) {
                 List<String> path = Arrays.asList(field.substring(prefix.length()).split("\\.", -1));
-                return Optional.of(new SqlOperand(alias, column, path));
+                return Optional.of(new SqlOperand(alias, column, path, table.dialect()));
             }
         }
         return Optional.empty();

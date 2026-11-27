@@ -87,7 +87,7 @@ public final class SqlScalarPredicates {
         if (!o.isJson()) {
             return direct;
         }
-        SqlFragment inElement = SqlFilterValues.compare(dialect, SqlOperand.jsonElement(JSON_ELEMENT_ALIAS), op, value);
+        SqlFragment inElement = SqlFilterValues.compare(dialect, SqlOperand.jsonElement(dialect, JSON_ELEMENT_ALIAS), op, value);
         if (SqlFragment.FALSE.equals(inElement)) {
             return direct;
         }

@@ -3,6 +3,7 @@ package com.garganttua.dao.sql;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import com.garganttua.api.commons.ApiException;
@@ -76,6 +77,31 @@ public interface ISqlDialect {
 
     /** {@return the length in bytes of a binary value} — binary values sort by length first, as BSON's do. */
     String byteLength(String ref);
+
+    /**
+     * {@return the condition suffix that is false for NaN} — appended to a floating-point expression under a lower
+     * bound: BSON puts NaN below every number, so {@code > x} never holds for it.
+     */
+    String nanExclusion();
+
+    // ------------------------------------------------------------------
+    // JSON values
+    // ------------------------------------------------------------------
+
+    /** {@return the value at {@code path} inside the JSON column {@code column}, as text} — strings unquoted. */
+    SqlFragment jsonText(String column, List<String> path);
+
+    /** {@return the value at {@code path} inside the JSON column {@code column}, as JSON} */
+    SqlFragment jsonValue(String column, List<String> path);
+
+    /** {@return the JSON value {@code json} read as {@code type}, NULL where it is of another JSON type} */
+    SqlFragment jsonRead(SqlFragment json, SqlOperand.JsonType type);
+
+    /** {@return the name of the element column of {@link #jsonArrayAny}'s array traversal} */
+    String jsonElementColumn();
+
+    /** {@return a geometry column read back as its GeoJSON text} */
+    String geometryAsGeoJson(String ref);
 
     // ------------------------------------------------------------------
     // Predicates the core cannot spell: JSON arrays, regex, geography, text
