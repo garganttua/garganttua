@@ -1,7 +1,9 @@
 package com.garganttua.dao.sql;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import com.garganttua.dao.sql.schema.SqlChildTable;
 import com.garganttua.dao.sql.schema.SqlNaming;
 
 /**
@@ -20,7 +22,7 @@ import com.garganttua.dao.sql.schema.SqlNaming;
  *
  * <p>
  * Every fragment here must be free of bind values: an {@code ORDER BY} carries none, so the hops come
- * from a locator that inlines map keys ({@link PgPathLocator}).
+ * from a locator that inlines map keys ({@link SqlPathLocator}).
  * </p>
  */
 public final class SqlPathSortKey {
@@ -45,6 +47,9 @@ public final class SqlPathSortKey {
 
     /** {@code SELECT e FROM <level> …}: the values reachable from the rows of hop {@code i}. */
     private static String values(SqlBsonOrder bson, List<SqlHop> hops, int i, SqlBsonOrder.Encoded element) {
+        if (!bson.dialect().lateral()) {
+            return joined(hops, element);
+        }
         SqlHop hop = hops.get(i);
         String from = " FROM " + SqlNaming.quote(hop.child().name()) + " " + hop.alias();
         String where = " WHERE " + text(hop.scope());
@@ -54,6 +59,25 @@ public final class SqlPathSortKey {
         String v = bson.alias("v");
         return "SELECT " + v + ".e" + from + " CROSS JOIN LATERAL (" + values(bson, hops, i + 1, element)
                 + " UNION ALL SELECT NULL WHERE " + text(hops.get(i + 1).absent()) + ") AS " + v + where;
+    }
+
+    /**
+     * The same values, for a database without {@code LATERAL}: the levels LEFT JOINed outermost first. A level keeps
+     * the rows it has, or — when its collection is absent — the one NULL branch the join leaves; a present but empty
+     * collection leaves nothing, exactly as the {@code LATERAL} form.
+     */
+    private static String joined(List<SqlHop> hops, SqlBsonOrder.Encoded element) {
+        SqlHop first = hops.get(0);
+        StringBuilder from = new StringBuilder(" FROM " + SqlNaming.quote(first.child().name()) + " " + first.alias());
+        List<String> where = new ArrayList<>(List.of(text(first.scope())));
+        for (int k = 1; k < hops.size(); k++) {
+            SqlHop hop = hops.get(k);
+            from.append(" LEFT JOIN ").append(SqlNaming.quote(hop.child().name())).append(' ').append(hop.alias())
+                    .append(" ON ").append(text(hop.scope()));
+            where.add("(" + hop.alias() + "." + SqlNaming.quote(SqlChildTable.OWNER) + " IS NOT NULL OR "
+                    + text(hop.absent()) + ")");
+        }
+        return "SELECT " + element.orNull() + " AS e" + from + " WHERE " + String.join(" AND ", where);
     }
 
     private static String text(SqlFragment sql) {

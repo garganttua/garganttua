@@ -85,6 +85,40 @@ public interface ISqlDialect {
     String nanExclusion();
 
     // ------------------------------------------------------------------
+    // BSON order of whole structures — documents, arrays, maps
+    // ------------------------------------------------------------------
+
+    /**
+     * {@return {@code ref} as a value that orders as BSON orders its column} — text by code point, binary by length
+     * then bytes, NaN below every number — and that composes into {@link #orderRow}.
+     */
+    String orderValue(String ref, SqlColumn column);
+
+    /** {@return a record of {@code parts}, ordered component by component, a NULL component above any value} */
+    String orderRow(List<String> parts);
+
+    /**
+     * {@return the sequence of {@code row}s read from {@code from} where {@code where}, in {@code orderBy} order} —
+     * ordered element by element, a sequence that is a prefix of another before it.
+     */
+    String orderRows(String row, String from, String where, String orderBy);
+
+    /** {@return the empty sequence} — before every other. */
+    String orderNoRows();
+
+    /** {@return a map key, as text ordered by code point, composable into {@link #orderRow}} */
+    String orderMapKey(String keyRef);
+
+    /** {@return a table of literal {@code rows}, its columns named {@code columns}, under {@code alias}} */
+    String valuesTable(List<List<String>> rows, List<String> columns, String alias);
+
+    /**
+     * {@return whether a subquery in FROM may read the columns of the tables before it} ({@code LATERAL}) — when
+     * not, a path through nested collections is followed by joins.
+     */
+    boolean lateral();
+
+    // ------------------------------------------------------------------
     // JSON values
     // ------------------------------------------------------------------
 

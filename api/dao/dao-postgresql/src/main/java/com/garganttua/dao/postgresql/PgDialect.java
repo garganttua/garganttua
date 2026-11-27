@@ -11,6 +11,7 @@ import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.StringJoiner;
 
 import org.postgresql.util.PGobject;
 import org.postgresql.util.PSQLException;
@@ -20,6 +21,7 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.dao.sql.ISqlDialect;
 import com.garganttua.dao.sql.ISqlListDigests;
+import com.garganttua.dao.sql.SqlBsonOrder;
 import com.garganttua.dao.sql.SqlCondition;
 import com.garganttua.dao.sql.SqlFragment;
 import com.garganttua.dao.sql.SqlOperand;
@@ -249,6 +251,52 @@ public final class PgDialect implements ISqlDialect {
             case BOOLEAN -> json.wrap("(", ")::boolean");
         };
         return json.wrap("(CASE WHEN jsonb_typeof(", ") = '" + typeName + "' THEN ").then(read).then(" END)");
+    }
+
+    @Override
+    public String orderValue(String ref, SqlColumn column) {
+        if (SqlBsonOrder.floating(column)) {
+            return "ROW(" + ref + " <> 'NaN', " + ref + ")";
+        }
+        if (SqlTypes.TEXT.equals(column.sqlType())) {
+            return "convert_to(" + ref + ", 'UTF8')";
+        }
+        if (SqlTypes.BYTEA.equals(column.sqlType())) {
+            return "ROW(octet_length(" + ref + "), " + ref + ")";
+        }
+        return ref;
+    }
+
+    @Override
+    public String orderRow(List<String> parts) {
+        return "ROW(" + String.join(", ", parts) + ")";
+    }
+
+    @Override
+    public String orderRows(String row, String from, String where, String orderBy) {
+        return "ARRAY(SELECT " + row + " FROM " + from + " WHERE " + where + " ORDER BY " + orderBy + ")";
+    }
+
+    @Override
+    public String orderNoRows() {
+        return "ARRAY(SELECT ROW(0, 0) WHERE FALSE)";
+    }
+
+    @Override
+    public String orderMapKey(String keyRef) {
+        return "convert_to(CAST(" + keyRef + " AS TEXT), 'UTF8')";
+    }
+
+    @Override
+    public String valuesTable(List<List<String>> rows, List<String> columns, String alias) {
+        StringJoiner values = new StringJoiner(", ");
+        rows.forEach(r -> values.add("(" + String.join(", ", r) + ")"));
+        return "(VALUES " + values + ") AS " + alias + "(" + String.join(", ", columns) + ")";
+    }
+
+    @Override
+    public boolean lateral() {
+        return true;
     }
 
     @Override

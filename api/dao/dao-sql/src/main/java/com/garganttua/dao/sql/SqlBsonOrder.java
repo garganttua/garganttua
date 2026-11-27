@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.StringJoiner;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.dao.sql.schema.SqlChildKind;
@@ -13,7 +12,6 @@ import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.schema.SqlTypes;
 
 /**
  * SQL expressions whose PostgreSQL order IS MongoDB's BSON order — what a sort on a whole embedded
@@ -82,6 +80,11 @@ public final class SqlBsonOrder {
     }
 
     /** {@return a fresh subquery alias} */
+    /** {@return the database this order is spelled for} */
+    public ISqlDialect dialect() {
+        return table.dialect();
+    }
+
     public String alias(String prefix) {
         aliases++;
         return prefix + aliases;
@@ -137,17 +140,7 @@ public final class SqlBsonOrder {
     public Encoded scalar(String alias, SqlColumn column) throws ApiException {
         int rank = rank(column).orElseThrow(() -> unsortable(column));
         String ref = ref(alias, column);
-        String value;
-        if (floating(column)) {
-            value = "ROW(" + ref + " <> 'NaN', " + ref + ")";
-        } else if (SqlTypes.TEXT.equals(column.sqlType())) {
-            value = "convert_to(" + ref + ", 'UTF8')";
-        } else if (SqlTypes.BYTEA.equals(column.sqlType())) {
-            value = "ROW(octet_length(" + ref + "), " + ref + ")";
-        } else {
-            value = ref;
-        }
-        return new Encoded(value, ref + IS_NOT_NULL, rank);
+        return new Encoded(table.dialect().orderValue(ref, column), ref + IS_NOT_NULL, rank);
     }
 
     /**
@@ -191,22 +184,23 @@ public final class SqlBsonOrder {
     /** The {@code ARRAY(SELECT ROW(rank, name, slot…) FROM (VALUES …))} of a document's present fields. */
     private String fields(List<Encoded> members, List<String> names) {
         if (members.isEmpty()) {
-            return "ARRAY(SELECT ROW(0, 0) WHERE FALSE)";
+            return table.dialect().orderNoRows();
         }
         List<String> sorted = new ArrayList<>(names);
         sorted.sort(SqlBsonOrder::compareCodePoints);
         String v = alias("v");
-        StringJoiner row = new StringJoiner(", ", "ROW(" + v + ".r, " + v + ".n, ", ")");
-        StringJoiner values = new StringJoiner(", ");
+        List<String> row = new ArrayList<>(List.of(v + ".r", v + ".n"));
+        List<List<String>> values = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
             Encoded m = members.get(i);
             int position = i + 1;
             row.add("CASE WHEN " + v + ".p = " + position + THEN + m.value() + " END");
-            values.add("(" + position + ", " + m.rank() + ", " + sorted.indexOf(names.get(i)) + ", " + m.present()
-                    + ")");
+            values.add(List.of(String.valueOf(position), String.valueOf(m.rank()),
+                    String.valueOf(sorted.indexOf(names.get(i))), m.present()));
         }
-        return "ARRAY(SELECT " + row + " FROM (VALUES " + values + ") AS " + v + "(p, r, n, present) WHERE " + v
-                + ".present ORDER BY " + v + ".p)";
+        ISqlDialect dialect = table.dialect();
+        return dialect.orderRows(dialect.orderRow(row),
+                dialect.valuesTable(values, List.of("p", "r", "n", "present"), v), v + ".present", v + ".p");
     }
 
     /**
@@ -220,9 +214,10 @@ public final class SqlBsonOrder {
     Encoded array(SqlChildTable child, String presenceRef) throws ApiException {
         String c = alias("c");
         Encoded element = element(child, c);
-        String value = "ARRAY(SELECT ROW(CASE WHEN " + element.present() + THEN + element.rank() + " ELSE "
-                + NULL + " END, " + element.orNull() + ") FROM " + SqlNaming.quote(child.name()) + " " + c
-                + " WHERE " + owner(c) + " ORDER BY " + c + "." + SqlNaming.quote(SqlChildTable.ORD) + ")";
+        ISqlDialect dialect = table.dialect();
+        String value = dialect.orderRows(dialect.orderRow(List.of("CASE WHEN " + element.present() + THEN
+                + element.rank() + " ELSE " + NULL + " END", element.orNull())), SqlNaming.quote(child.name()) + " " + c,
+                owner(c), c + "." + SqlNaming.quote(SqlChildTable.ORD));
         return new Encoded(value, presenceRef + IS_NOT_NULL, ARRAY);
     }
 
@@ -240,10 +235,11 @@ public final class SqlBsonOrder {
     public Encoded map(SqlChildTable child, String presenceRef) throws ApiException {
         String c = alias("c");
         Encoded element = element(child, c);
-        String key = "convert_to(CAST(" + c + "." + SqlNaming.quote(SqlChildTable.KEY) + " AS TEXT), 'UTF8')";
-        String value = "ARRAY(SELECT ROW(CASE WHEN " + element.present() + THEN + element.rank() + " ELSE "
-                + NULL + " END, " + key + ", " + element.orNull() + ") FROM " + SqlNaming.quote(child.name()) + " "
-                + c + " WHERE " + owner(c) + " ORDER BY " + key + ")";
+        ISqlDialect dialect = table.dialect();
+        String key = dialect.orderMapKey(c + "." + SqlNaming.quote(SqlChildTable.KEY));
+        String value = dialect.orderRows(dialect.orderRow(List.of("CASE WHEN " + element.present() + THEN
+                + element.rank() + " ELSE " + NULL + " END", key, element.orNull())),
+                SqlNaming.quote(child.name()) + " " + c, owner(c), key);
         return new Encoded(value, presenceRef + IS_NOT_NULL, OBJECT);
     }
 
