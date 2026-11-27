@@ -110,6 +110,25 @@
 		</dependency>
 	</dependencies>
 
+	<build>
+		<plugins>
+			<!-- The parity scenarios (and their fixtures) are published as a test-jar, so that every
+			     SQL DAO of the shared core runs them against MongoDB: dao-sqlite scans them with its
+			     own ParityEngine. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>test-jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
 	<profiles>
 		<!-- The shared config/checkstyle/checkstyle.xml references the suppressions filter
 		     property ${checkstyle.suppressions.file}, but the parent quality profile never

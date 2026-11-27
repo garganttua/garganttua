@@ -101,7 +101,7 @@ public final class SqlChildAggregate {
         StringBuilder joins = new StringBuilder();
         for (int i = 0; i < below.size(); i++) {
             String join = "j" + i;
-            cells.add(join + ".agg");
+            cells.add(dialect.nestedAggregate(join + ".agg"));
             joins.append(" LEFT JOIN ").append(below.get(i)).append(' ').append(join).append(" ON ").append(join)
                     .append(".k = ").append(ALIAS).append('.').append(SqlNaming.quote(SqlChildTable.ID));
         }

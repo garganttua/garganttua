@@ -211,6 +211,8 @@ class ParitySortPageProjectionTest {
         @Test
         @DisplayName("String ascending when the database collation is linguistic (any non-C production locale)")
         void stringAscendingLinguisticCollation() throws Exception {
+            org.junit.jupiter.api.Assumptions.assumeTrue(ParityHarness.ENGINE.isPostgres(),
+                    "a PostgreSQL column collation");
             ParityHarness h = strings();
             // The DAO declares TEXT columns without COLLATE: they inherit the database default, which on
             // a real server is rarely "C". Simulate an en_US-like default on the column itself.

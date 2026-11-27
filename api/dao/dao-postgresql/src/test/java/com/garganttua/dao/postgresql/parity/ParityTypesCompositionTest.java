@@ -470,6 +470,12 @@ class ParityTypesCompositionTest {
             ParityHarness h = ParityHarness.of(Domain.of("texts", Text.class));
             Outcome saved = h.saveEach("texts", text("t1", "before\u0000after"));
             org.junit.jupiter.api.Assertions.assertNull(saved.mongoError(), "MongoDB stores U+0000");
+            if (ParityHarness.ENGINE.storesNul()) {
+                // Not a residual on an engine whose TEXT holds U+0000 (SQLite): plain parity.
+                org.junit.jupiter.api.Assertions.assertNull(saved.pgError(), "a TEXT holding U+0000 stores it");
+                ParityHarness.assertSame("U+0000 round trip", h.find("texts", null), false);
+                return;
+            }
             org.junit.jupiter.api.Assertions.assertNotNull(saved.pgError(), "PostgreSQL cannot");
             org.junit.jupiter.api.Assertions.assertTrue(saved.pgError().getMessage().contains("NUL"),
                     () -> "the refusal must say why: " + saved.pgError().getMessage());

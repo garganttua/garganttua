@@ -6,17 +6,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-import org.geojson.LngLatAlt;
 import org.geojson.Point;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.GeoNear;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.dao.sql.schema.SqlColumn;
-import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.sql.SqlCondition;
+import com.garganttua.dao.sql.SqlGeoFilters;
 import com.garganttua.dao.sql.SqlFragment;
 import com.garganttua.dao.sql.SqlOperand;
 import com.garganttua.dao.sql.SqlQuery;
@@ -46,12 +45,6 @@ import com.garganttua.dao.sql.SqlQuery;
 final class PgGeoPredicates {
 
     private static final String GEOGRAPHY = ")::geography";
-    private static final String OP_NEAR = "$near";
-    private static final String OP_NEAR_SPHERE = "$nearSphere";
-    private static final String FIELD_OPERATOR = "$field";
-    private static final String ON_FIELD = " filter on field '";
-    /** MongoDB allows one $near per filter. */
-    private static final int MAX_NEARS = 1;
 
     private final String domain;
 
@@ -59,19 +52,16 @@ final class PgGeoPredicates {
         this.domain = domain;
     }
 
-    /** {@code $geoWithin} / {@code $geoWithinSphere}: the field lies entirely in the shape, on the sphere. */
     SqlFragment within(SqlOperand o, SqlCondition c) throws ApiException {
         return SqlFragment.of("ST_CoveredBy(").then(field(o, c)).then(", ").then(shape(o, c.value(), c)).then(")");
     }
 
-    /** {@code $geoIntersects}: the field and the shape share a point, on the sphere. */
     SqlFragment intersects(SqlOperand o, SqlCondition c) throws ApiException {
         return SqlFragment.of("ST_Intersects(").then(field(o, c)).then(", ").then(shape(o, c.value(), c)).then(")");
     }
 
-    /** {@code $near} / {@code $nearSphere}: the field set, inside the ring of distances. */
     SqlFragment near(SqlOperand o, SqlCondition c) throws ApiException {
-        GeoNear near = nearValue(c);
+        GeoNear near = SqlGeoFilters.nearValue(c);
         SqlFragment field = field(o, c);
         List<SqlFragment> parts = new ArrayList<>();
         parts.add(o.expr(false).then(" IS NOT NULL"));
@@ -86,115 +76,32 @@ final class PgGeoPredicates {
         return SqlFragment.join(" AND ", parts).wrap("(", ")");
     }
 
-    /**
-     * The sort key of a {@code $near}: nearest first, by the KNN distance operator, which a geo index
-     * on the field can serve in order.
-     *
-     * <p>
-     * MongoDB refuses a {@code $near} under {@code $or} or {@code $nor}, and a second one: so does this,
-     * with MongoDB's reasons. It also refuses a {@code $near} on a field held in a collection — the
-     * nearest ELEMENT of an entity is not an order PostgreSQL can be asked for by an index.
-     * </p>
-     *
-     * @param table  the domain's model
-     * @param filter the whole filter
-     * @return the {@code ORDER BY} key, or empty when the filter holds no {@code $near}
-     * @throws ApiException when the filter breaks one of MongoDB's {@code $near} rules
-     */
     static Optional<String> nearOrder(SqlTable table, IFilter filter) throws ApiException {
-        List<IFilter> nears = new ArrayList<>();
-        collect(filter, null, nears);
-        if (nears.isEmpty()) {
+        Optional<IFilter> clause = SqlGeoFilters.nearClause(filter);
+        if (clause.isEmpty()) {
             return Optional.empty();
         }
-        if (nears.size() > MAX_NEARS) {
-            throw new ApiException("A filter may hold only one $near: MongoDB refuses a second one "
-                    + "('Too many geoNear expressions')");
-        }
-        IFilter clause = nears.get(0);
-        String field = String.valueOf(clause.getValue());
-        SqlColumn column = table.column(field).filter(c -> c.kind() == SqlColumnKind.GEOMETRY)
-                .orElseThrow(() -> new ApiException("$near on field '" + field + "' of domain '" + table.name()
-                        + "': the field is not a geometry of the entity itself; only a GeoJSON field, stored as a "
-                        + "PostGIS geometry, can be searched by distance"));
-        Point point = point(clause.getFilters().get(0).getValue(), field);
+        SqlColumn column = SqlGeoFilters.nearColumn(table, clause.get());
+        Point point = SqlGeoFilters.nearPoint(clause.get());
         String target = "'SRID=4326;POINT(" + coordinate(point.getCoordinates().getLongitude()) + " "
                 + coordinate(point.getCoordinates().getLatitude()) + ")'::geography";
         return Optional.of("(" + SqlQuery.ALIAS + "." + SqlNaming.quote(column.name()) + GEOGRAPHY + " <-> " + target
                 + " ASC");
     }
 
-    private static void collect(IFilter filter, String under, List<IFilter> nears) throws ApiException {
-        if (filter == null || filter.getName() == null) {
-            return;
-        }
-        if (FIELD_OPERATOR.equals(filter.getName())) {
-            List<IFilter> subs = filter.getFilters();
-            String op = subs == null || subs.size() != 1 || subs.get(0) == null ? null : subs.get(0).getName();
-            if (OP_NEAR.equals(op) || OP_NEAR_SPHERE.equals(op)) {
-                if (under != null) {
-                    throw new ApiException("$near cannot be placed under " + under
-                            + ": MongoDB refuses it ('geoNear must be top-level expr'); search with $near at the top "
-                            + "level, or inside $and");
-                }
-                nears.add(filter);
-            }
-            return;
-        }
-        String next = "$or".equals(filter.getName()) || "$nor".equals(filter.getName()) ? filter.getName() : under;
-        for (IFilter sub : filter.getFilters() == null ? List.<IFilter>of() : filter.getFilters()) {
-            collect(sub, next, nears);
-        }
-    }
-
-    /** A double as SQL: finite, so its text is a plain number — never anything else in the statement. */
     private static String coordinate(double value) {
-        if (!Double.isFinite(value)) {
-            throw new ApiException("$near point has a non-finite coordinate: " + value);
-        }
-        return String.format(Locale.ROOT, "%.15g", value);
+        return String.format(Locale.ROOT, "%.15g", SqlGeoFilters.coordinate(value));
     }
 
-    private GeoNear nearValue(SqlCondition c) {
-        if (!(c.value() instanceof GeoNear near)) {
-            throw new ApiException(c.op() + ON_FIELD + c.field() + "' requires a point and distances "
-                    + "({$geometry: <Point>, $maxDistance: <metres>})");
-        }
-        point(near.geometry(), c.field());
-        return near;
-    }
-
-    private static Point point(Object value, String field) {
-        Object geometry = value instanceof GeoNear near ? near.geometry() : value;
-        if (!(geometry instanceof Point point) || point.getCoordinates() == null) {
-            throw new ApiException("$near filter on field '" + field + "' requires a GeoJSON Point, got "
-                    + (geometry == null ? "nothing" : geometry.getClass().getSimpleName()));
-        }
-        LngLatAlt coordinates = point.getCoordinates();
-        coordinate(coordinates.getLongitude());
-        coordinate(coordinates.getLatitude());
-        return point;
-    }
-
-    /** The field as a geography — after checking that it IS a geometry. */
     private SqlFragment field(SqlOperand o, SqlCondition c) throws ApiException {
-        if (c.value() == null) {
-            throw new ApiException(c.op() + ON_FIELD + c.field() + "' requires a GeoJSON geometry value");
-        }
-        if (o.isJsonPath() || o.column().kind() != SqlColumnKind.GEOMETRY) {
-            throw new ApiException(c.op() + ON_FIELD + c.field() + "' of domain '" + this.domain
-                    + "': the field is not a geometry (it is " + o.column().sqlType()
-                    + "); only a GeoJSON field, stored as a PostGIS geometry, can be tested geographically");
-        }
+        SqlGeoFilters.requireGeometry(o, c, this.domain);
         return o.expr(false).wrap("(", GEOGRAPHY);
     }
 
-    /** A bound GeoJSON shape, as a geography. */
     private static SqlFragment shape(SqlOperand o, Object geometry, SqlCondition c) throws ApiException {
+        SqlGeoFilters.requireShape(geometry, c);
         SqlColumn column = o.bindColumn(false);
-        if (geometry == null) {
-            throw new ApiException(c.op() + ON_FIELD + c.field() + "' requires a GeoJSON geometry value");
-        }
-        return SqlFragment.of("(" + SqlValues.placeholder(PgDialect.INSTANCE, column) + GEOGRAPHY, SqlValues.toJdbc(PgDialect.INSTANCE, column, geometry));
+        return SqlFragment.of("(" + SqlValues.placeholder(PgDialect.INSTANCE, column) + GEOGRAPHY,
+                SqlValues.toJdbc(PgDialect.INSTANCE, column, geometry));
     }
 }

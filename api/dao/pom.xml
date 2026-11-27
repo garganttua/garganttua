@@ -15,5 +15,6 @@
 		<module>dao-sql</module>
 		<module>dao-mongodb</module>
 		<module>dao-postgresql</module>
+		<module>dao-sqlite</module>
 	</modules>
 </project>

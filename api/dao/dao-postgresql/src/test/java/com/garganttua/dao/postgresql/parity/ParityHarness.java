@@ -19,12 +19,10 @@ import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.dao.mongodb.MongoDao;
-import com.garganttua.dao.postgresql.PgDao;
+import com.garganttua.dao.sql.AbstractSqlDao;
 import com.garganttua.dao.sql.SqlJson;
 import com.garganttua.dao.postgresql.PgSchemaRegistry;
-import com.garganttua.dao.postgresql.PgTestDatabase;
 import com.garganttua.dao.postgresql.TestDomains;
-import com.garganttua.dao.postgresql.schema.SchemaMode;
 import com.mongodb.client.MongoDatabase;
 
 /**
@@ -70,7 +68,10 @@ public final class ParityHarness {
             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
 
     private final Map<String, MongoDao> mongo = new LinkedHashMap<>();
-    private final Map<String, PgDao> pg = new LinkedHashMap<>();
+    /** The SQL engine of this run — PostgreSQL unless {@link ParityEngine#PROPERTY} names another. */
+    public static final ParityEngine ENGINE = ParityEngine.current();
+
+    private final Map<String, AbstractSqlDao> pg = new LinkedHashMap<>();
     private MongoDatabase mongoDatabase;
     private DataSource pgDatabase;
 
@@ -98,7 +99,7 @@ public final class ParityHarness {
      */
     public static ParityHarness of(Domain... domains) {
         MongoDatabase mongoDb = MongoTestServer.freshDatabase();
-        DataSource pgDb = PgTestDatabase.freshDatabase();
+        DataSource pgDb = ENGINE.freshDatabase();
         PgSchemaRegistry registry = new PgSchemaRegistry();
         ParityHarness harness = new ParityHarness();
         harness.mongoDatabase = mongoDb;
@@ -106,7 +107,7 @@ public final class ParityHarness {
         for (Domain d : domains) {
             MongoDao m = new MongoDao(mongoDb, d.name());
             m.registerDomain(TestDomains.definition(d.dto(), d.compositions()));
-            PgDao p = new PgDao(pgDb, d.name(), registry, SchemaMode.CREATE);
+            AbstractSqlDao p = ENGINE.dao(pgDb, d.name(), registry);
             p.registerDomain(TestDomains.definition(d.dto(), d.compositions()));
             harness.mongo.put(d.name(), m);
             harness.pg.put(d.name(), p);
@@ -120,7 +121,7 @@ public final class ParityHarness {
             Outcome o = run(() -> mongo.get(domain).save(entity), () -> pg.get(domain).save(entity));
             if ((o.mongoError() == null) != (o.pgError() == null)) {
                 fail("save diverges on " + domain + ": MongoDB " + describe(o.mongo(), o.mongoError())
-                        + " / PostgreSQL " + describe(o.pg(), o.pgError()));
+                        + " / " + ENGINE.name() + " " + describe(o.pg(), o.pgError()));
             }
         }
     }
@@ -172,7 +173,7 @@ public final class ParityHarness {
         if (outcome.mongoError() != null || outcome.pgError() != null) {
             if (outcome.mongoError() == null || outcome.pgError() == null) {
                 fail(what + " — one engine failed, the other did not: MongoDB "
-                        + describe(outcome.mongo(), outcome.mongoError()) + " / PostgreSQL "
+                        + describe(outcome.mongo(), outcome.mongoError()) + " / " + ENGINE.name() + " "
                         + describe(outcome.pg(), outcome.pgError()));
             }
             return;
@@ -180,7 +181,7 @@ public final class ParityHarness {
         JsonNode m = canonical(outcome.mongo(), ordered);
         JsonNode p = canonical(outcome.pg(), ordered);
         if (!m.equals(p)) {
-            fail(what + " — engines disagree.\n  MongoDB:    " + m + "\n  PostgreSQL: " + p);
+            fail(what + " — engines disagree.\n  MongoDB:    " + m + "\n  " + ENGINE.name() + ": " + p);
         }
     }
 

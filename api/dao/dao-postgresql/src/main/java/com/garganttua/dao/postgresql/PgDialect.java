@@ -158,6 +158,11 @@ public final class PgDialect implements ISqlDialect {
     }
 
     @Override
+    public String nestedAggregate(String ref) {
+        return ref;
+    }
+
+    @Override
     public String anyOf(String column) {
         return column + " = ANY(?)";
     }

@@ -239,6 +239,12 @@ public interface ISqlDialect {
     /** {@return the aggregate of the rows of one group}: each row a JSON array of {@code cells}, ordered by {@code orderBy}. */
     String aggregate(String cells, String orderBy);
 
+    /**
+     * {@return the aggregate of the tables below, read from a common table expression, as a cell of the row above}
+     * — still JSON, not the text of it.
+     */
+    String nestedAggregate(String ref);
+
     // ------------------------------------------------------------------
     // Lists of values, bound as one parameter
     // ------------------------------------------------------------------

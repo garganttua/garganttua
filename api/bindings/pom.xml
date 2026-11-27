@@ -19,6 +19,7 @@
 		<module>binding-jsonpath</module>
 		<module>binding-mongodb</module>
 		<module>binding-postgresql</module>
+		<module>binding-sqlite</module>
 		<module>binding-javalin</module>
 	</modules>
 </project>

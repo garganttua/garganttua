@@ -1,0 +1,164 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api-dao</artifactId>
+		<version>3.0.0-ALPHA37</version>
+	</parent>
+	<artifactId>garganttua-api-dao-sqlite</artifactId>
+	<description>SQLite DAO implementation — the relational mapping of the shared SQL core, on an embedded SQLite database file.</description>
+
+	<dependencies>
+		<!-- Garganttua API -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-commons</artifactId>
+		</dependency>
+
+		<!-- The relational core shared by the SQL DAOs: this module is its SQLite dialect. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-dao-sql</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-sqlite</artifactId>
+		</dependency>
+
+		<!-- Geometries are bound and decoded as GeoJSON by GeoJsonCodec, like the MongoDB DAO's. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-geojson</artifactId>
+		</dependency>
+		<!-- JSONB columns (untyped / recursive shapes, IKey descriptors) are (de)serialised through
+		     Jackson, which the binding wrapper pins. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-binding-jackson</artifactId>
+		</dependency>
+
+		<!-- IKey persistence bridge: serialise/reconstruct crypto key material at the
+		     DAO boundary (KeySerializer + KeyAlgorithm live here; IKey + enums are in
+		     garganttua-commons, already on the classpath). -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-crypto</artifactId>
+		</dependency>
+
+		<!-- AOT support. The @Reflected annotation processor emits AOTClass_*
+		     descriptors into target/generated-sources/annotations referencing
+		     com.garganttua.core.aot.reflection, so that artefact is needed on the
+		     compile + runtime classpath. aot-commons carries the
+		     IAOTInfrastructureSeed SPI implemented by SqliteDaoInfrastructureSeed. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-reflection</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-aot-commons</artifactId>
+		</dependency>
+
+		<!-- Test -->
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- A reflection stack for IClass.getClass(...) in tests (ServiceLoader cold-start via Bootstrap.builder()). -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-bootstrap</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-runtime-reflection</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-reflections</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Parity tests run the SAME operations on the MongoDB DAO against a real mongod, and demand
+		     the same answers: "iso-functional with MongoDB" is checked, not asserted. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-dao-mongodb</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- The parity scenarios of the shared SQL core live with the PostgreSQL DAO; they run here
+		     against SQLite through SqliteParityEngine (see the surefire configuration). -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-dao-postgresql</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-dao-postgresql</artifactId>
+			<version>${project.version}</version>
+			<type>test-jar</type>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<dependenciesToScan>
+						<dependency>com.garganttua:garganttua-api-dao-postgresql:test-jar:tests</dependency>
+					</dependenciesToScan>
+					<includes>
+						<include>**/Sqlite*Test.java</include>
+						<include>**/parity/Parity*Test.java</include>
+					</includes>
+					<systemPropertyVariables>
+						<garganttua.parity.engine>com.garganttua.dao.sqlite.parity.SqliteParityEngine</garganttua.parity.engine>
+					</systemPropertyVariables>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<profiles>
+		<!-- The shared config/checkstyle/checkstyle.xml references the suppressions filter
+		     property ${checkstyle.suppressions.file}, but the parent quality profile never
+		     binds the plugin's suppressionsLocation, so the expression is unset and the
+		     check goal aborts. Bind it here (module-local) to the existing, unmodified
+		     shared suppressions file so checkstyle:check resolves the property. -->
+		<profile>
+			<id>quality</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-checkstyle-plugin</artifactId>
+						<configuration>
+							<suppressionsLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/suppressions.xml</suppressionsLocation>
+							<suppressionsFileExpression>checkstyle.suppressions.file</suppressionsFileExpression>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+</project>

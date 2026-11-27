@@ -1,0 +1,26 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api-bindings</artifactId>
+		<version>3.0.0-ALPHA37</version>
+	</parent>
+	<artifactId>garganttua-api-binding-sqlite</artifactId>
+
+	<description>Binding wrapping the SQLite JDBC driver (xerial sqlite-jdbc, which embeds the SQLite library and its GraalVM native-image feature) and the HikariCP connection pool — consumed by garganttua-api-dao-sqlite.</description>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.xerial</groupId>
+			<artifactId>sqlite-jdbc</artifactId>
+			<version>${sqlite-driver.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.zaxxer</groupId>
+			<artifactId>HikariCP</artifactId>
+			<version>${hikaricp.version}</version>
+		</dependency>
+	</dependencies>
+</project>
