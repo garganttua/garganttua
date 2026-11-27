@@ -14,6 +14,8 @@ import java.util.Set;
  * leaves alone what its alphabet does not cover.
  * </p>
  */
+// The Snowball tables and character tests are the algorithm itself, spelled as published.
+@SuppressWarnings({ "PMD.AvoidLiteralsInIfCondition", "PMD.AvoidDuplicateLiterals" })
 final class SqliteEnglishStemmer {
 
     private static final int SHORTEST_STEMMED = 3;

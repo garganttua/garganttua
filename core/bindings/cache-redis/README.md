@@ -12,12 +12,12 @@ The distributed implementations of `ICache` (see `garganttua-cache`) over redis,
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-cache-redis</artifactId>
-    <version>3.0.0-ALPHA37</version>
+    <version>3.0.0-ALPHA38</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA37
+3.0.0-ALPHA38
 
 ### Dependencies
  - `redis.clients:jedis`

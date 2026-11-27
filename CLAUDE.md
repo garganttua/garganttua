@@ -271,7 +271,10 @@ not Spring DI** — the starters adapt between the two. `-parameters` is on (par
 - **garganttua-api-commons** — pure contract layer (interfaces, `@Entity*`/`@Authentication*`/
   `@Authorization*` annotations, enums, definitions). Everything depends on this.
 - **garganttua-api-core** — core engine (legacy `old/`/`legacy/` excluded from compilation).
-- **garganttua-api-dao** — DAO abstractions (incl. `garganttua-api-dao-mongodb`).
+- **garganttua-api-dao** — DAO abstractions (incl. `garganttua-api-dao-mongodb`). The SQL DAOs share one
+  relational core, `garganttua-api-dao-sql` (mapping, MongoDB semantics, read/write, `AbstractSqlDao`);
+  `dao-postgresql` and `dao-sqlite` are its dialects (`ISqlDialect`). The parity scenarios live in
+  dao-postgresql's tests jar and run on SQLite through `ParityEngine` (`garganttua.parity.engine`).
 - **garganttua-api-starters** — Spring Boot / Javalin starters.
 
 Inactive (commented out, Lombok may linger pending migration): `garganttua-api-security/`,

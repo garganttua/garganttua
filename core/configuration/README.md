@@ -25,12 +25,12 @@ The `garganttua-configuration` module provides a unified API for loading configu
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-configuration</artifactId>
-    <version>3.0.0-ALPHA37</version>
+    <version>3.0.0-ALPHA38</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA37
+3.0.0-ALPHA38
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

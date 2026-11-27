@@ -1,7 +1,6 @@
 package com.garganttua.dao.sqlite;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 
 /**
  * The sort key of a value, as text that SQLite's binary comparison orders the way BSON orders the value.
@@ -40,11 +39,11 @@ public final class SqliteOrderKey {
     /** The start of an element of a sequence. */
     public static final String ELEMENT = "01";
 
-    private static final String NUMBER = "10";
-    private static final String TEXT = "20";
-    private static final String BLOB = "30";
-    private static final String INTEGER = "40";
-    private static final char[] HEX = "0123456789ABCDEF".toCharArray();
+    private static final String NUMBER_TAG = "10";
+    private static final String TEXT_TAG = "20";
+    private static final String BLOB_TAG = "30";
+    private static final String INTEGER_TAG = "40";
+    private static final char[] HEX_DIGITS = "0123456789ABCDEF".toCharArray();
     private static final int BYTE_MASK = 0xFF;
     private static final int NIBBLE = 4;
     private static final int LOW_NIBBLE = 0x0F;
@@ -65,13 +64,13 @@ public final class SqliteOrderKey {
             long exact = value.longValue();
             double nearest = exact;
             long remainder = Double.isInfinite(nearest) || nearest >= 0x1p63 ? 0 : exact - (long) nearest;
-            return NUMBER + sortable(nearest) + signed(remainder);
+            return NUMBER_TAG + sortable(nearest) + signed(remainder);
         }
         double d = value.doubleValue();
         if (Double.isNaN(d)) {
             return NAN;
         }
-        return NUMBER + sortable(d) + signed(0);
+        return NUMBER_TAG + sortable(d) + signed(0);
     }
 
     /**
@@ -82,8 +81,8 @@ public final class SqliteOrderKey {
      */
     public static String text(String text) {
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-        StringBuilder out = new StringBuilder(TEXT.length() + bytes.length * 2 + NIBBLE);
-        out.append(TEXT);
+        StringBuilder out = new StringBuilder(TEXT_TAG.length() + bytes.length * 2 + NIBBLE);
+        out.append(TEXT_TAG);
         for (byte b : bytes) {
             hex(out, b & BYTE_MASK);
             if (b == 0) {
@@ -100,8 +99,8 @@ public final class SqliteOrderKey {
      * @return its key
      */
     public static String blob(byte[] bytes) {
-        StringBuilder out = new StringBuilder(BLOB.length() + (INT_BYTES + bytes.length) * 2);
-        out.append(BLOB);
+        StringBuilder out = new StringBuilder(BLOB_TAG.length() + (INT_BYTES + bytes.length) * 2);
+        out.append(BLOB_TAG);
         for (int shift = (INT_BYTES - 1) * Byte.SIZE; shift >= 0; shift -= Byte.SIZE) {
             hex(out, (bytes.length >>> shift) & BYTE_MASK);
         }
@@ -118,7 +117,7 @@ public final class SqliteOrderKey {
      * @return its key
      */
     public static String integer(long value) {
-        return INTEGER + signed(value);
+        return INTEGER_TAG + signed(value);
     }
 
     /** The 8 bytes of a double, ordered as the doubles are: −0 and 0 are one value, as in BSON. */
@@ -141,14 +140,6 @@ public final class SqliteOrderKey {
     }
 
     private static void hex(StringBuilder out, int b) {
-        out.append(HEX[b >>> NIBBLE]).append(HEX[b & LOW_NIBBLE]);
-    }
-
-    /** {@return whether {@code text} is a key this class produced} — upper-case hexadecimal, of even length. */
-    static boolean isKey(String text) {
-        if (text.length() % 2 != 0) {
-            return false;
-        }
-        return text.equals(text.toUpperCase(Locale.ROOT)) && text.chars().allMatch(c -> Character.digit(c, 16) >= 0);
+        out.append(HEX_DIGITS[b >>> NIBBLE]).append(HEX_DIGITS[b & LOW_NIBBLE]);
     }
 }

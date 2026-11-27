@@ -1,0 +1,62 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.garganttua</groupId>
+		<artifactId>garganttua-api-starters</artifactId>
+		<version>3.0.0-ALPHA38</version>
+	</parent>
+	<artifactId>garganttua-api-starter-sqlite</artifactId>
+	<packaging>jar</packaging>
+	<description>SQLite starter — auto-configures a pooled DataSource on an embedded SQLite database file and a relational DAO per domain from application config.</description>
+
+	<!--
+	  garganttua-api-starter-sqlite — drop this on the classpath alongside the
+	  bootstrap starter and every domain becomes persistable with no DSL:
+	  SqliteAutoConfiguration reads sqlite.path (or sqlite.url), opens a pool on
+	  the database file, and registers a default DAO factory producing a
+	  SqliteDao per domain (table = domain name). Discovered via ServiceLoader
+	  (META-INF/services/...IApiAutoConfiguration).
+	-->
+
+	<dependencies>
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-starter-bootstrap</artifactId>
+		</dependency>
+
+		<!-- SQLite DAO (brings sqlite-jdbc and HikariCP through binding-sqlite). -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-dao-sqlite</artifactId>
+		</dependency>
+
+		<!-- The boot test (GarganttuaApplication.run) scans @Entity/@Dto, so it
+		     needs a reflection provider. The bootstrap socle is now
+		     provider-agnostic; in production the aggregator supplies the stack,
+		     but this module's own test must bring one itself. -->
+		<dependency>
+			<groupId>com.garganttua.core</groupId>
+			<artifactId>garganttua-starter-runtime</artifactId>
+			<type>pom</type>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+</project>

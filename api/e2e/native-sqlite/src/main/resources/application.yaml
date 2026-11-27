@@ -1,0 +1,13 @@
+# Native proof of the SQLite stack. The database file is given at run time by run-e2e.sh through
+# GARGANTTUA_SQLITE_PATH; this default only documents the shape.
+api:
+  multiTenant: false
+  packages: com.garganttua.api.e2e.nativesqlite
+sqlite:
+  path: ./e2e.db
+  pool:
+    size: 4
+  index:
+    auto: strict
+server:
+  port: 7171

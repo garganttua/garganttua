@@ -34,6 +34,7 @@ public final class SqlRowMapper {
 
     private final SqlBeans beans;
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "the reader's shared bean cache, by design")
     public SqlRowMapper(SqlBeans beans) {
         this.beans = beans;
     }

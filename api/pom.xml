@@ -6,7 +6,7 @@
 	<artifactId>garganttua-api</artifactId>
 	<packaging>pom</packaging>
 	<description>Declarative, annotation-driven REST API framework — multi-tenancy, pluggable security, AOT/native-ready — built on garganttua-core.</description>
-	<version>3.0.0-ALPHA37</version>
+	<version>3.0.0-ALPHA38</version>
 
 	<licenses>
 		<license>
@@ -49,7 +49,7 @@
 		<java.version>25</java.version>
 
 		<!-- Garganttua Core -->
-		<garganttua.core.version>3.0.0-ALPHA37</garganttua.core.version>
+		<garganttua.core.version>3.0.0-ALPHA38</garganttua.core.version>
 
 		<!-- Binding library versions — each binding sub-module wraps
 		     ONE external library, and these properties pin its version
@@ -146,6 +146,11 @@
 			<dependency>
 				<groupId>com.garganttua</groupId>
 				<artifactId>garganttua-api-starter-postgresql</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.garganttua</groupId>
+				<artifactId>garganttua-api-starter-sqlite</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>
@@ -573,6 +578,7 @@
 			<id>native-e2e</id>
 			<modules>
 				<module>e2e/native-postgres</module>
+				<module>e2e/native-sqlite</module>
 				<module>e2e/native-mongo</module>
 			</modules>
 		</profile>

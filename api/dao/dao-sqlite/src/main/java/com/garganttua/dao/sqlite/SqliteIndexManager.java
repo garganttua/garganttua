@@ -94,6 +94,8 @@ final class SqliteIndexManager {
         return indexes;
     }
 
+    @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+            justification = SuppressFBWarnings.GENERATED_SQL)
     private void ensureOne(DataSource dataSource, SqlTable table, String domainName, SqlIndex index,
             Map<String, String> stored) throws ApiException {
         String create = createSql(table, index);

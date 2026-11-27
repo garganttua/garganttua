@@ -47,6 +47,7 @@ import com.garganttua.dao.sql.schema.SqlTable;
  * dialect's {@link ISqlDialect#snapshotStatement()}.
  * </p>
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: dialect(), dataSource(), domainName() for subclasses
 public abstract class AbstractSqlDao implements IDao {
 
     private static final Logger log = Logger.getLogger(AbstractSqlDao.class);
@@ -244,6 +245,8 @@ public abstract class AbstractSqlDao implements IDao {
         }
     }
 
+    @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+            justification = "the dialect's own constant snapshot statement")
     private <T> T transactional(Work<T> work, boolean snapshot) throws ApiException {
         try (Connection connection = this.dataSource.getConnection()) {
             this.dialect.prepareConnection(connection);

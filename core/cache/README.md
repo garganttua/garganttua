@@ -12,12 +12,12 @@ The Garganttua Cache module puts every cache of the framework and of its applica
 <dependency>
     <groupId>com.garganttua.core</groupId>
     <artifactId>garganttua-cache</artifactId>
-    <version>3.0.0-ALPHA37</version>
+    <version>3.0.0-ALPHA38</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA37
+3.0.0-ALPHA38
 
 ### Dependencies
  - `com.garganttua.core:garganttua-aot-reflection`

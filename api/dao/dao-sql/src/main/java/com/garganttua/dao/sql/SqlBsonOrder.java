@@ -44,7 +44,9 @@ import com.garganttua.dao.sql.schema.SqlTable;
 @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
 public final class SqlBsonOrder {
 
+    private static final String CASE_WHEN = "CASE WHEN ";
     private static final String THEN = " THEN ";
+    private static final String END = " END";
     private static final String IS_NOT_NULL = " IS NOT NULL";
 
     /** BSON canonical type ranks, in MongoDB's cross-type sort order. */
@@ -68,7 +70,7 @@ public final class SqlBsonOrder {
 
         /** {@return the value, SQL NULL when absent} */
         public String orNull() {
-            return "CASE WHEN " + present + THEN + value + " END";
+            return CASE_WHEN + present + THEN + value + END;
         }
     }
 
@@ -194,7 +196,7 @@ public final class SqlBsonOrder {
         for (int i = 0; i < members.size(); i++) {
             Encoded m = members.get(i);
             int position = i + 1;
-            row.add("CASE WHEN " + v + ".p = " + position + THEN + m.value() + " END");
+            row.add(CASE_WHEN + v + ".p = " + position + THEN + m.value() + END);
             values.add(List.of(String.valueOf(position), String.valueOf(m.rank()),
                     String.valueOf(sorted.indexOf(names.get(i))), m.present()));
         }
@@ -215,8 +217,8 @@ public final class SqlBsonOrder {
         String c = alias("c");
         Encoded element = element(child, c);
         ISqlDialect dialect = table.dialect();
-        String value = dialect.orderRows(dialect.orderRow(List.of("CASE WHEN " + element.present() + THEN
-                + element.rank() + " ELSE " + NULL + " END", element.orNull())), SqlNaming.quote(child.name()) + " " + c,
+        String value = dialect.orderRows(dialect.orderRow(List.of(CASE_WHEN + element.present() + THEN
+                + element.rank() + " ELSE " + NULL + END, element.orNull())), SqlNaming.quote(child.name()) + " " + c,
                 owner(c), c + "." + SqlNaming.quote(SqlChildTable.ORD));
         return new Encoded(value, presenceRef + IS_NOT_NULL, ARRAY);
     }
@@ -237,8 +239,8 @@ public final class SqlBsonOrder {
         Encoded element = element(child, c);
         ISqlDialect dialect = table.dialect();
         String key = dialect.orderMapKey(c + "." + SqlNaming.quote(SqlChildTable.KEY));
-        String value = dialect.orderRows(dialect.orderRow(List.of("CASE WHEN " + element.present() + THEN
-                + element.rank() + " ELSE " + NULL + " END", key, element.orNull())),
+        String value = dialect.orderRows(dialect.orderRow(List.of(CASE_WHEN + element.present() + THEN
+                + element.rank() + " ELSE " + NULL + END, key, element.orNull())),
                 SqlNaming.quote(child.name()) + " " + c, owner(c), key);
         return new Encoded(value, presenceRef + IS_NOT_NULL, OBJECT);
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The native proofs' HTTP scenario: what the application must answer, whatever runs it and whatever
-store it runs on — the PostgreSQL and the MongoDB proof play the same checks.
+store it runs on — the PostgreSQL, SQLite and MongoDB proofs play the same checks.
 
 Run against the JVM or the native binary alike — the answers must be the same:
 
@@ -72,15 +72,15 @@ check("read all -> 200, two sites", status == 200 and len(listed) == 2, (status,
 paris = next((s for s in listed if s.get("code") == "PAR"), {})
 check("flattened POJO round-trips", paris.get("address", {}).get("city") == "Paris", paris)
 check("list (child table) round-trips", paris.get("tags") == ["capital", "north"], paris)
-check("untyped value (JSONB) round-trips",
+check("untyped value (JSON) round-trips",
       paris.get("extra") == {"level": 3, "labels": ["a", "b"], "nested": {"ok": True}}, paris)
 location = paris.get("location") or {}
-check("geometry (PostGIS) round-trips as GeoJSON",
+check("geometry round-trips as GeoJSON",
       location.get("type") == "Point" and [round(c, 4) for c in location.get("coordinates", [])] == [2.3522, 48.8566],
       paris)
 
 status, found = find({"name": {"$regex": "^Lyon\\s+g"}})
-check("$regex (PCRE translated)", status == 200 and [s["code"] for s in rows(found)] == ["LYS"], found)
+check("$regex (PCRE semantics)", status == 200 and [s["code"] for s in rows(found)] == ["LYS"], found)
 
 square = {"type": "Polygon", "coordinates": [[[2, 48.5], [2.7, 48.5], [2.7, 49.1], [2, 49.1], [2, 48.5]]]}
 status, found = find({"location": {"$geoWithin": square}})

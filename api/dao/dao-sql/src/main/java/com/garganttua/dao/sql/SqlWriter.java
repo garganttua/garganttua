@@ -160,6 +160,8 @@ public final class SqlWriter {
      * writes the digest those rows match. Raised whenever the table has collections, digests installed or
      * not: a trigger left by an earlier installation must not erase anything the DAO writes either.
      */
+    @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
+            justification = "the digest capability's own constant flag expression")
     private void raiseFlag(Connection connection) throws SQLException {
         if (this.digests.isEmpty()) {
             return;

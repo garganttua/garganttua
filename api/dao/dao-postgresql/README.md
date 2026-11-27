@@ -2,9 +2,9 @@
 
 ## Description
 
-`garganttua-api-dao-postgresql` provides the **PostgreSQL-backed `IDao` implementation** for the Garganttua API framework: a relational mapping — **one column per field** — that behaves exactly like the MongoDB DAO.
+`garganttua-api-dao-postgresql` provides the **PostgreSQL-backed `IDao` implementation** for the Garganttua API framework: a relational mapping — **one column per field** — that behaves exactly like the MongoDB DAO. The mapping and MongoDB's semantics live in the shared SQL core ([`garganttua-api-dao-sql`](../dao-sql)), which the [SQLite DAO](../dao-sqlite) uses too; this module is the PostgreSQL dialect of it.
 
-"Exactly" is measured, not claimed: a differential parity suite runs **403 scenarios** against a real `mongod` and a real PostgreSQL 17 — the same DTOs, the same data, the same filter, sort, page and projection — and demands identical answers from both. Two divergences remain, both impossible to remove, both pinned by tests (see *Known differences*).
+"Exactly" is measured, not claimed: a differential parity suite runs **403 scenarios** against a real `mongod` and a real PostgreSQL 17 (and, from the `tests` jar this module publishes, against SQLite) — the same DTOs, the same data, the same filter, sort, page and projection — and demands identical answers from both. Two divergences remain, both impossible to remove, both pinned by tests (see *Known differences*).
 
 **Key Features:**
 - **`IDao` implementation** — `PgDao`: `find` (filter, sort, page, projection), `save` (upsert), `delete`, `count`, `registerDomain`
@@ -25,15 +25,16 @@
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua-api-dao-postgresql</artifactId>
-    <version>3.0.0-ALPHA37</version>
+    <version>3.0.0-ALPHA38</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA37
+3.0.0-ALPHA38
 
 ### Dependencies
  - `com.garganttua:garganttua-api-commons`
+ - `com.garganttua:garganttua-api-dao-sql`
  - `com.garganttua:garganttua-api-binding-postgresql`
  - `com.garganttua:garganttua-api-binding-geojson`
  - `com.garganttua:garganttua-api-binding-jackson`
@@ -55,7 +56,7 @@
 
 ### How a DTO becomes tables
 
-The shape of a domain's tables is derived once from its DTO by `PgSchemaModel`, and every part of the DAO — DDL, writer, reader, query translation — reads that single model.
+The shape of a domain's tables is derived once from its DTO by `SqlSchemaModel` (in the shared core, [`garganttua-api-dao-sql`](../dao-sql)), and every part of the DAO — DDL, writer, reader, query translation — reads that single model.
 
 | DTO field | PostgreSQL |
 |---|---|
@@ -86,7 +87,7 @@ Identifiers are always double-quoted (reserved words such as `order` are valid f
 
 ### `PgDao`
 
-Wires four collaborators around the model: `PgSchemaManager` (DDL), `PgWriter` (upsert, delete), `PgReader` (select, rebuild) and `PgQueryBuilder` (filters, sort, pagination, projection). A read is normally ONE statement: every collection — at any depth — is aggregated into JSON over the page by common table expressions (`PgChildAggregate`), each table read once for the whole page through its owner index, and rebuilt by the same assembly as before. The aggregates are read by `PgAggregateText`, which knows their one shape (arrays of texts, nulls and arrays), not by a general JSON parser; and every row — main or child — is rebuilt with a `PgRowPlan` resolved once per table and select list: each cell's field chain, target type and guarding presence bits, so that a row is two arrays decoded in order, with no lookup by name. One statement is one snapshot, so the read runs in autocommit. Only a read that still needs several statements — references to other domains, or a collection too wide for `json_build_array` (more than 100 cells) — runs in a `REPEATABLE READ` transaction; without it, a write committed between two of its statements would return an entity stitched from two moments.
+Extends the shared core's `AbstractSqlDao` with `PgDialect`, the PostgreSQL spelling of the core's SQL, and prepares its schema: `PgSchemaManager` (DDL), `PgIndexManager` (indexes), `PgListDigests` (digests). The core's collaborators do the rest: `SqlWriter` (upsert, delete), `SqlReader` (select, rebuild) and `SqlQueryBuilder` (filters, sort, pagination, projection). A read is normally ONE statement: every collection — at any depth — is aggregated into JSON over the page by common table expressions (`SqlChildAggregate`), each table read once for the whole page through its owner index, and rebuilt by the same assembly as before. The aggregates are read by `SqlAggregateText`, which knows their one shape (arrays of texts, nulls and arrays), not by a general JSON parser; and every row — main or child — is rebuilt with a `SqlRowPlan` resolved once per table and select list: each cell's field chain, target type and guarding presence bits, so that a row is two arrays decoded in order, with no lookup by name. One statement is one snapshot, so the read runs in autocommit. Only a read that still needs several statements — references to other domains, or a collection too wide for `json_build_array` (more than 100 cells) — runs in a `REPEATABLE READ` transaction; without it, a write committed between two of its statements would return an entity stitched from two moments.
 
 Round trips per operation, pinned by `PgRoundTripTest` (they used to be 4 for any read, 13 for an entity with nested lists, 17 for a page and its total):
 

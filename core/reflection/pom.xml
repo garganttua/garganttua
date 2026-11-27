@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.garganttua</groupId>
 		<artifactId>garganttua-core</artifactId>
-		<version>3.0.0-ALPHA37</version>
+		<version>3.0.0-ALPHA38</version>
 	</parent>
 	<groupId>com.garganttua.core</groupId>
 	<artifactId>garganttua-reflection</artifactId>

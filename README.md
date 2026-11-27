@@ -48,13 +48,17 @@ Requires JDK 25.
 | \|    \|    \|- [**binding-mongodb**](./api/bindings/binding-mongodb/README.md) | Binding wrapping the MongoDB sync driver — consumed by garganttua-api-dao-mongodb. |
 | \|    \|    \|- [**binding-postgresql**](./api/bindings/binding-postgresql/README.md) | Binding wrapping the PostgreSQL JDBC driver and the HikariCP connection pool — consumed by garganttua-api-dao-postgresql. |
 | \|    \|    \|- [**binding-slf4j**](./api/bindings/binding-slf4j/README.md) | Binding wrapping SLF4J (façade + simple impl) — opt-in classic SLF4J logging for downstream apps and bridging into the framework's observability logger. |
+| \|    \|    \|- [**binding-sqlite**](./api/bindings/binding-sqlite/README.md) | Binding wrapping the SQLite JDBC driver (xerial sqlite-jdbc, which embeds the SQLite library and its GraalVM native-image feature) and the HikariCP connection pool — consumed by garganttua-api-dao-sqlite. |
 | \|    \|- [**commons**](./api/commons/README.md) | Pure contract layer: interfaces, annotations, enums and definition records shared by every API module. Zero business logic. |
 | \|    \|- [**core**](./api/core/README.md) | Core engine: DSL builders, definition/context model, request pipeline and workflow assembly, repository filters and security expressions. |
 | \|    \|- [**dao**](./api/dao/README.md) | Data-access abstractions for entity persistence (parent module). |
 | \|    \|    \|- [**dao-mongodb**](./api/dao/dao-mongodb/README.md) | MongoDB DAO implementation — native-ready repository backed by the MongoDB driver. |
 | \|    \|    \|- [**dao-postgresql**](./api/dao/dao-postgresql/README.md) | PostgreSQL DAO implementation — relational mapping, one column per field, backed by JDBC. |
+| \|    \|    \|- [**dao-sql**](./api/dao/dao-sql/README.md) | The relational core shared by the SQL DAOs (PostgreSQL, SQLite): how a DTO becomes tables, and the 		MongoDB semantics of filters, sorts, pages and projections over them. Each database supplies a dialect. |
+| \|    \|    \|- [**dao-sqlite**](./api/dao/dao-sqlite/README.md) | SQLite DAO implementation — the relational mapping of the shared SQL core, on an embedded SQLite database file. |
 | \|    \|    \|- [**native-mongo**](./api/e2e/native-mongo/README.md) | Native proof of the MongoDB stack: the PostgreSQL proof's application on 		starter-aot-mongo-javalin, compiled by GraalVM native-image and driven over HTTP against 		MongoDB 4.4 and 7.0. Built only with -Pnative-e2e. |
 | \|    \|    \|- [**native-postgres**](./api/e2e/native-postgres/README.md) | Native proof of the PostgreSQL stack: a pure-AOT application on 		starter-aot-postgres-javalin, compiled by GraalVM native-image and driven over HTTP 		against PostgreSQL 17 + PostGIS, through TLS. Built only with -Pnative-e2e. |
+| \|    \|    \|- [**native-sqlite**](./api/e2e/native-sqlite/README.md) | Native proof of the SQLite stack: a pure-AOT application on 		starter-aot-sqlite-javalin, compiled by GraalVM native-image and driven over HTTP against an 		embedded SQLite database file. Built only with -Pnative-e2e. |
 | \|    \|- [**interface**](./api/interface/README.md) | Interface-layer abstractions for exposing domains over transport protocols (parent module). |
 | \|    \|    \|- [**interface-rest**](./api/interface/interface-rest/README.md) | REST interface binding — maps domain CRUD operations to HTTP/REST endpoints. |
 | \|    \|- [**javalin**](./api/javalin/README.md) | Javalin HTTP integration — serves API domains over a lightweight Javalin web layer. |
@@ -69,12 +73,14 @@ Requires JDK 25.
 | \|    \|- [**starters**](./api/starters/README.md) | Opinionated Spring Boot / Javalin starters bundling a ready-to-run API stack (parent module). |
 | \|    \|    \|- [**starter-aot-mongo-javalin**](./api/starters/starter-aot-mongo-javalin/README.md) | AOT/native starter: same stack as jvm-mongo-javalin but with AOT reflection 		providers ahead of the runtime ones (GraalVM-ready). |
 | \|    \|    \|- [**starter-aot-postgres-javalin**](./api/starters/starter-aot-postgres-javalin/README.md) | AOT/native starter: PostgreSQL + Javalin with the AOT reflection 		providers only (GraalVM-ready). |
+| \|    \|    \|- [**starter-aot-sqlite-javalin**](./api/starters/starter-aot-sqlite-javalin/README.md) | AOT/native starter: SQLite + Javalin with the AOT reflection 		providers only (GraalVM-ready). |
 | \|    \|    \|- [**starter-bootstrap**](./api/starters/starter-bootstrap/README.md) | Bootstrap starter: a Spring-Boot-style runner (GarganttuaApplication.run) that 		assembles the framework, scans @Entity/@Dto, runs ServiceLoader auto-configs and reads 		application.yaml — transport- and persistence-agnostic (no Mongo, no Javalin). |
 | \|    \|    \|- [**starter-javalin**](./api/starters/starter-javalin/README.md) | Javalin add-on starter: exposes every annotation-scanned domain over HTTP on a 		shared Javalin server (server.port), with JSON serialization out of the box. |
 | \|    \|    \|- [**starter-jvm-mongo-javalin**](./api/starters/starter-jvm-mongo-javalin/README.md) | JVM starter: bootstrap runner + MongoDB persistence + Javalin HTTP, runtime reflection. |
 | \|    \|    \|- [**starter-mongodb**](./api/starters/starter-mongodb/README.md) | MongoDB add-on starter: auto-wires a default MongoDB DAO from application.yaml 		(mongodb.uri / mongodb.database) onto every annotation-scanned domain. |
 | \|    \|    \|- [**starter-postgresql**](./api/starters/starter-postgresql/README.md) | PostgreSQL starter — auto-configures a pooled DataSource and a relational DAO per domain from application config. |
 | \|    \|    \|- [**starter-quickstart**](./api/starters/starter-quickstart/README.md) | Quickstart starter: the bootstrap runner with the runtime reflection stack — 		no persistence, no transport. Supply your own in-memory IDao for tutorials and tests. |
+| \|    \|    \|- [**starter-sqlite**](./api/starters/starter-sqlite/README.md) | SQLite starter — auto-configures a pooled DataSource on an embedded SQLite database file and a relational DAO per domain from application config. |
 | \|- [**core**](./core/README.md) | Garganttua Core - Foundational Java framework for dependency injection, workflow orchestration, reflection utilities, and more. |
 | \|    \|- [**aot**](./core/aot/README.md) | Garganttua AOT (Ahead-of-Time) compilation support - parent module. |
 | \|    \|    \|- [**aot-annotation-processor**](./core/aot/aot-annotation-processor/README.md) | Compile-time annotation processor for generating AOT class descriptors. |
@@ -159,12 +165,12 @@ graph TD
 <dependency>
     <groupId>com.garganttua</groupId>
     <artifactId>garganttua</artifactId>
-    <version>3.0.0-ALPHA37</version>
+    <version>3.0.0-ALPHA38</version>
 </dependency>
 ```
 
 ### Actual version
-3.0.0-ALPHA37
+3.0.0-ALPHA38
 
 ### Dependencies
 

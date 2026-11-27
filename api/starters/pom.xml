@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>com.garganttua</groupId>
 		<artifactId>garganttua-api</artifactId>
-		<version>3.0.0-ALPHA37</version>
+		<version>3.0.0-ALPHA38</version>
 	</parent>
 	<artifactId>garganttua-api-starters</artifactId>
 	<packaging>pom</packaging>
@@ -23,7 +23,7 @@
 	      <dependency>
 	          <groupId>com.garganttua</groupId>
 	          <artifactId>garganttua-api-starter-jvm-mongo-javalin</artifactId>
-	          <version>3.0.0-ALPHA37</version>
+	          <version>3.0.0-ALPHA38</version>
 	      </dependency>
 	-->
 
@@ -32,11 +32,13 @@
 		<module>starter-bootstrap</module>
 		<module>starter-mongodb</module>
 		<module>starter-postgresql</module>
+		<module>starter-sqlite</module>
 		<module>starter-javalin</module>
 		<!-- Aggregators: compose the above into ready-to-use stacks. -->
 		<module>starter-quickstart</module>
 		<module>starter-jvm-mongo-javalin</module>
 		<module>starter-aot-mongo-javalin</module>
 		<module>starter-aot-postgres-javalin</module>
+		<module>starter-aot-sqlite-javalin</module>
 	</modules>
 </project>

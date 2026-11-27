@@ -47,7 +47,7 @@ final class SqliteFunctions {
     private static final String NAN = "NaN";
     private static final int DETERMINISTIC = Function.FLAG_DETERMINISTIC;
 
-    private static final Map<SQLiteConnection, Boolean> READY = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<SQLiteConnection, Boolean> READIED = Collections.synchronizedMap(new WeakHashMap<>());
 
     private SqliteFunctions() {
     }
@@ -60,18 +60,18 @@ final class SqliteFunctions {
      */
     static void ready(Connection connection) throws SQLException {
         SQLiteConnection sqlite = connection.unwrap(SQLiteConnection.class);
-        if (READY.containsKey(sqlite)) {
+        if (READIED.containsKey(sqlite)) {
             return;
         }
         synchronized (sqlite) {
-            if (READY.containsKey(sqlite)) {
+            if (READIED.containsKey(sqlite)) {
                 return;
             }
             try (Statement statement = connection.createStatement()) {
                 statement.execute("PRAGMA foreign_keys = ON");
             }
             register(connection);
-            READY.put(sqlite, Boolean.TRUE);
+            READIED.put(sqlite, Boolean.TRUE);
         }
     }
 
@@ -98,6 +98,12 @@ final class SqliteFunctions {
                 });
             }
         }, 1, DETERMINISTIC);
+        registerReals(c);
+        registerSearch(c);
+        registerGeo(c);
+    }
+
+    private static void registerReals(Connection c) throws SQLException {
         Function.create(c, REAL_TEXT, new Fn() {
             @Override
             protected void xFunc() throws SQLException {
@@ -108,6 +114,9 @@ final class SqliteFunctions {
                 }
             }
         }, 1, DETERMINISTIC);
+    }
+
+    private static void registerSearch(Connection c) throws SQLException {
         Function.create(c, SqliteRegex.FUNCTION, new Fn() {
             @Override
             protected void xFunc() throws SQLException {
@@ -124,7 +133,6 @@ final class SqliteFunctions {
                 result(SqliteTextSearch.matches(value_text(0), value_text(1)) ? 1 : 0);
             }
         }, 2, DETERMINISTIC);
-        registerGeo(c);
     }
 
     private static void registerGeo(Connection c) throws SQLException {

@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HexFormat;
@@ -75,13 +74,13 @@ public final class SqliteDialect implements ISqlDialect {
     /** The one instance: the dialect holds no state. */
     public static final SqliteDialect INSTANCE = new SqliteDialect();
 
-    private static final String TEXT = "TEXT";
+    private static final String TEXT_TYPE = "TEXT";
     private static final String INTEGER = "INTEGER";
     private static final String NAN = "NaN";
     private static final String CASE_WHEN_JSON_TYPE = "(CASE WHEN json_type(";
     private static final String THEN = " THEN ";
     private static final String END = " END)";
-    private static final long MICROS = 1_000_000L;
+    private static final long MICROS_PER_SECOND = 1_000_000L;
     private static final long NANOS_PER_MICRO = 1_000L;
     private static final int MAX_CELLS = 100;
 
@@ -118,7 +117,7 @@ public final class SqliteDialect implements ISqlDialect {
         String literal = "CAST(x'" + HexFormat.of().withUpperCase().formatHex(text.getBytes(
                 java.nio.charset.StandardCharsets.UTF_8)) + "' AS TEXT)";
         String type = ddlType(logicalType);
-        return TEXT.equals(type) ? literal : "CAST(" + literal + " AS " + type + ")";
+        return TEXT_TYPE.equals(type) ? literal : "CAST(" + literal + " AS " + type + ")";
     }
 
     @Override
@@ -256,7 +255,7 @@ public final class SqliteDialect implements ISqlDialect {
     }
 
     private static long micros(Instant instant) {
-        return Math.addExact(Math.multiplyExact(instant.getEpochSecond(), MICROS), instant.getNano() / NANOS_PER_MICRO);
+        return Math.addExact(Math.multiplyExact(instant.getEpochSecond(), MICROS_PER_SECOND), instant.getNano() / NANOS_PER_MICRO);
     }
 
     @Override
@@ -281,7 +280,7 @@ public final class SqliteDialect implements ISqlDialect {
             // No affinity: a REAL column stores an integral value as an integer, and -0.0 would come back 0.0.
             case "DOUBLE PRECISION", "REAL" -> "";
             case "BYTEA" -> "BLOB";
-            default -> TEXT;
+            default -> TEXT_TYPE;
         };
     }
 
@@ -462,69 +461,6 @@ public final class SqliteDialect implements ISqlDialect {
     @Override
     public Optional<String> snapshotStatement() {
         return Optional.empty();
-    }
-
-    /** The cells of a row, read back from SQLite's storage classes. */
-    private static final class SqliteCells implements SqlCells {
-
-        private final ResultSet rs;
-
-        SqliteCells(ResultSet rs) {
-            this.rs = rs;
-        }
-
-        @Override
-        public String text(int index) throws SQLException {
-            return rs.getString(index);
-        }
-
-        @Override
-        public Boolean bool(int index) throws SQLException {
-            Object value = rs.getObject(index);
-            return switch (value) {
-                case null -> null;
-                case Number n -> n.longValue() != 0;
-                default -> "1".equals(value.toString()) || "true".equalsIgnoreCase(value.toString());
-            };
-        }
-
-        @Override
-        public <T> T temporal(int index, Class<T> type) throws SQLException {
-            long value = rs.getLong(index);
-            if (rs.wasNull()) {
-                return null;
-            }
-            Object temporal;
-            if (type == LocalDate.class) {
-                temporal = LocalDate.ofEpochDay(value);
-            } else if (type == LocalTime.class) {
-                temporal = LocalTime.ofNanoOfDay(value * NANOS_PER_MICRO);
-            } else {
-                Instant instant = Instant.ofEpochSecond(Math.floorDiv(value, MICROS),
-                        Math.floorMod(value, MICROS) * NANOS_PER_MICRO);
-                temporal = type == LocalDateTime.class ? LocalDateTime.ofInstant(instant, ZoneOffset.UTC)
-                        : instant.atOffset(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
-            }
-            if (!type.isInstance(temporal)) {
-                throw new SQLException("a stored temporal cannot be read as a " + type.getName());
-            }
-            return type.cast(temporal);
-        }
-
-        @Override
-        public byte[] bytes(int index) throws SQLException {
-            return rs.getBytes(index);
-        }
-
-        @Override
-        public Object raw(int index) throws SQLException {
-            return rs.getObject(index);
-        }
-
-        @Override
-        public long integer(int index) throws SQLException {
-            return rs.getLong(index);
-        }
     }
 
     /** {@return the SQL type the DDL declares for the column} — for the schema checks. */
