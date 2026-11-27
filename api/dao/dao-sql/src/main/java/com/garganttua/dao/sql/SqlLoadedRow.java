@@ -22,12 +22,10 @@ import java.util.Map;
  *                   — the child-table pass needs the difference to know whether a collection with no
  *                   rows was empty or absent
  */
-@SuppressFBWarnings(value = { "EI_EXPOSE_REP", "EI_EXPOSE_REP2" },
-        justification = "a working row: the read passes fill its maps in place, by design")
-public record SqlLoadedRow(String id, Object instance, Map<String, String> references,
+record SqlLoadedRow(String id, Object instance, Map<String, String> references,
         Map<String, List<String>> referenceLists, Map<String, Boolean> presence) {
 
-    public SqlLoadedRow(String id, Object instance) {
+    SqlLoadedRow(String id, Object instance) {
         this(id, instance, new LinkedHashMap<>(), new LinkedHashMap<>(), new LinkedHashMap<>());
     }
 
