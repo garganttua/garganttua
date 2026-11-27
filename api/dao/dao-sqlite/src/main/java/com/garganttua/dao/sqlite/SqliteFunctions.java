@@ -70,7 +70,8 @@ final class SqliteFunctions {
             try (Statement statement = connection.createStatement()) {
                 statement.execute("PRAGMA foreign_keys = ON");
             }
-            register(connection);
+            // sqlite-jdbc registers a function only on its own connection class, never on a pool's proxy.
+            register(sqlite);
             READIED.put(sqlite, Boolean.TRUE);
         }
     }

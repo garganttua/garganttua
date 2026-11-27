@@ -301,6 +301,39 @@ class SqliteDaoTest {
     }
 
     @Nested
+    @DisplayName("behind a connection pool")
+    class Pooled {
+
+        @Test
+        @DisplayName("readies the pool's proxied connections: functions, sort on a structure, $regex")
+        void hikari() throws Exception {
+            com.zaxxer.hikari.HikariConfig config = new com.zaxxer.hikari.HikariConfig();
+            java.nio.file.Path file = java.nio.file.Files.createTempFile("pooled", ".db");
+            config.setJdbcUrl("jdbc:sqlite:" + file);
+            config.setMaximumPoolSize(2);
+            config.addDataSourceProperty("journal_mode", "WAL");
+            config.addDataSourceProperty("busy_timeout", "10000");
+            try (com.zaxxer.hikari.HikariDataSource pool = new com.zaxxer.hikari.HikariDataSource(config)) {
+                SqliteDao dao = dao(pool, List.of(rule("code", true, IndexKind.standard)), SqliteSchemaMode.CREATE,
+                        SqliteIndexMode.STRICT);
+                Article a = article("a1", "alpha", "x");
+                a.tags = List.of("b", "c");
+                Article b = article("a2", "beta", "x");
+                b.tags = List.of("a");
+                dao.save(a);
+                dao.save(b);
+                assertEquals(List.of("a2"), uuids(dao, ParityFilter.field("title", "$regex", "^be")));
+                List<String> byTags = dao.find(Optional.empty(), Optional.empty(),
+                        Optional.of(ParityFilter.sort("tags", com.garganttua.api.commons.sort.SortDirection.asc)))
+                        .stream().map(r -> ((Article) r).uuid).toList();
+                assertEquals(List.of("a2", "a1"), byTags);
+            } finally {
+                java.nio.file.Files.deleteIfExists(file);
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("concurrency")
     class Concurrency {
 
