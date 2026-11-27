@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -18,10 +18,6 @@ import com.garganttua.core.reflection.IField;
 import com.garganttua.dao.sql.schema.SqlChildTable;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.SqlBeans;
-import com.garganttua.dao.sql.SqlCollections;
-import com.garganttua.dao.sql.SqlLoadedRow;
-import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Turns the uuids stored for {@code @Composed} fields into the referenced DTOs, one level deep.
@@ -50,24 +46,24 @@ import com.garganttua.dao.sql.SqlQuery;
  * </p>
  *
  * <p>
- * A target domain that is not in the {@link PgSchemaRegistry} (stored elsewhere, or not yet
+ * A target domain that is not in the {@link SqlSchemaRegistry} (stored elsewhere, or not yet
  * registered) cannot be resolved: its fields stay null and ONE warning per domain says why, rather
  * than one per row flooding the log.
  * </p>
  */
 @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
-final class PgCompositions {
+public final class SqlCompositions {
 
-    private static final Logger LOG = Logger.getLogger(PgCompositions.class);
+    private static final Logger LOG = Logger.getLogger(SqlCompositions.class);
 
     private final SqlTable table;
     private final IClass<?> dtoClass;
-    private final PgSchemaRegistry registry;
+    private final SqlSchemaRegistry registry;
     private final SqlBeans beans;
     private final boolean resolve;
     private final Set<String> warned = ConcurrentHashMap.newKeySet();
 
-    PgCompositions(SqlTable table, IClass<?> dtoClass, PgSchemaRegistry registry, SqlBeans beans, boolean resolve) {
+    SqlCompositions(SqlTable table, IClass<?> dtoClass, SqlSchemaRegistry registry, SqlBeans beans, boolean resolve) {
         this.table = table;
         this.dtoClass = dtoClass;
         this.registry = registry;
@@ -154,7 +150,7 @@ final class PgCompositions {
             return resolved;
         }
         for (Map.Entry<String, Set<String>> wanted : wanted(rows).entrySet()) {
-            Optional<PgSchemaRegistry.Entry> target = registry.lookup(wanted.getKey());
+            Optional<SqlSchemaRegistry.Entry> target = registry.lookup(wanted.getKey());
             if (target.isEmpty()) {
                 warnUnregistered(wanted.getKey());
                 continue;
@@ -187,18 +183,18 @@ final class PgCompositions {
         return wanted;
     }
 
-    private Map<String, Object> read(Connection connection, PgSchemaRegistry.Entry target, Set<String> uuids)
+    private Map<String, Object> read(Connection connection, SqlSchemaRegistry.Entry target, Set<String> uuids)
             throws ApiException {
         SqlTable targetTable = target.table();
-        String where = SqlQuery.ALIAS + "." + SqlNaming.quote(targetTable.id().name()) + " = ANY(?)";
+        String where = targetTable.dialect().anyOf(SqlQuery.ALIAS + "." + SqlNaming.quote(targetTable.id().name()));
         Object ids;
         try {
-            ids = connection.createArrayOf("text", uuids.toArray());
+            ids = targetTable.dialect().anyOfValues(connection, uuids);
         } catch (SQLException e) {
             throw new ApiException("Cannot bind the referenced uuids of table '" + targetTable.name() + "': "
                     + e.getMessage(), e);
         }
-        PgReader reader = new PgReader(targetTable, target.dtoClass(), registry, false);
+        SqlReader reader = new SqlReader(targetTable, target.dtoClass(), registry, false);
         Map<String, Object> byUuid = new HashMap<>();
         for (Object dto : reader.find(connection, new SqlQuery(where, List.of(ids), "", null, null, null))) {
             Optional<Object> uuid = beans.get(dto, targetTable.id().fieldPath());
@@ -211,7 +207,7 @@ final class PgCompositions {
         if (warned.add(domain)) {
             LOG.warn("Table '{}' references domain '{}', which no PostgreSQL DAO of this database registered: "
                     + "its @Composed fields are left null. Register the target domain in the same "
-                    + "PgSchemaRegistry to resolve them.", table.name(), domain);
+                    + "SqlSchemaRegistry to resolve them.", table.name(), domain);
         }
     }
 }

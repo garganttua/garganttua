@@ -1,6 +1,5 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
-import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -24,15 +23,6 @@ import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.SqlAggregateText;
-import com.garganttua.dao.sql.SqlBeans;
-import com.garganttua.dao.sql.SqlCells;
-import com.garganttua.dao.sql.SqlCollections;
-import com.garganttua.dao.sql.SqlJdbcDecoder;
-import com.garganttua.dao.sql.SqlLoadedRow;
-import com.garganttua.dao.sql.SqlRowMapper;
-import com.garganttua.dao.sql.SqlRowPlan;
-import com.garganttua.dao.sql.SqlSelected;
 
 /**
  * Reads the child tables of a page of rows — a top-level table and every table below it — and puts
@@ -40,7 +30,7 @@ import com.garganttua.dao.sql.SqlSelected;
  *
  * <p>
  * Normally NO query at all: the main query returns each collection as a JSON aggregate
- * ({@link PgChildAggregate}), and {@link #loadAggregated} rebuilds it. A child table too wide for an
+ * ({@link SqlChildAggregate}), and {@link #loadAggregated} rebuilds it. A child table too wide for an
  * aggregate row is read the older way, ONE query per child table for the whole page
  * ({@code _owner = ANY(?)}), never one per row nor one per element: a page of 50 shops whose orders hold lines costs one statement for the orders and one
  * for the lines, whatever the number of orders. Every row carries the ROOT's id in {@code _owner}, so
@@ -57,10 +47,12 @@ import com.garganttua.dao.sql.SqlSelected;
  * constructor left it, exactly as the MongoDB reader leaves a field whose key is absent.
  * </p>
  */
-final class PgChildLoader {
+public final class SqlChildLoader {
 
     private final SqlBeans beans;
     private final SqlRowMapper mapper;
+    /** The database the child tables live on. */
+    private final ISqlDialect dialect;
 
     /**
      * What decoding a row of one child table needs, computed once per table — not once per row. Its
@@ -89,9 +81,10 @@ final class PgChildLoader {
     /** By child table, identity-keyed, built once and never written again: read without a lock. */
     private final Map<SqlChildTable, Shape> shapes;
 
-    PgChildLoader(SqlBeans beans, SqlRowMapper mapper, SqlTable table) {
+    SqlChildLoader(SqlBeans beans, SqlRowMapper mapper, SqlTable table) {
         this.beans = beans;
         this.mapper = mapper;
+        this.dialect = table.dialect();
         Map<SqlChildTable, Shape> byTable = new IdentityHashMap<>();
         for (SqlChildTable child : table.allChildren()) {
             byTable.put(child, shapeOf(child));
@@ -100,7 +93,7 @@ final class PgChildLoader {
     }
 
     private static Shape shapeOf(SqlChildTable child) {
-        List<String> sqlTypes = PgChildAggregate.sqlTypes(child).stream().map(t -> t.toUpperCase(Locale.ROOT)).toList();
+        List<String> sqlTypes = SqlChildAggregate.sqlTypes(child).stream().map(t -> t.toUpperCase(Locale.ROOT)).toList();
         List<SqlColumn> columns = child.valueColumns();
         SqlColumn keyColumn = child.kind() == SqlChildKind.MAP
                 ? new SqlColumn(SqlChildTable.KEY, "", SqlColumnKind.SCALAR, List.of(), child.keyType()) : null;
@@ -108,7 +101,7 @@ final class PgChildLoader {
         if (columns.size() == 1 && columns.get(0).kind() != SqlColumnKind.PRESENCE && columns.get(0).fieldPath().isEmpty()) {
             single = child.kind() == SqlChildKind.COMPOSITION_COLLECTION ? IClass.getClass(String.class) : child.elementType();
         }
-        return new Shape(PgChildAggregate.cellCount(child), sqlTypes,
+        return new Shape(SqlChildAggregate.cellCount(child), sqlTypes,
                 columns.stream().map(c -> SqlSelected.of(null, c)).toList(), keyColumn, single,
                 child.elementTable().isPresent(), new AtomicReference<>());
     }
@@ -187,10 +180,10 @@ final class PgChildLoader {
             justification = SuppressFBWarnings.GENERATED_SQL)
     private void query(Connection connection, SqlChildTable child, List<SqlLoadedRow> rows, Loaded loaded)
             throws ApiException {
-        String sql = selectSql(child);
+        String sql = selectSql(this.dialect, child);
         Map<Object, List<ChildRow>> byParent = new HashMap<>();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setArray(1, owners(connection, rows));
+            statement.setObject(1, this.dialect.anyOfValues(connection, rows.stream().map(SqlLoadedRow::id).toList()));
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     Object parent = child.nested() ? (Object) rs.getLong(scopeIndex(child)) : rs.getString(scopeIndex(child));
@@ -214,7 +207,7 @@ final class PgChildLoader {
      * @param child the child table, at any depth
      * @return the statement, with one {@code ?} for the array of root ids
      */
-    static String selectSql(SqlChildTable child) {
+    public static String selectSql(ISqlDialect dialect, SqlChildTable child) {
         StringJoiner list = new StringJoiner(", ");
         if (child.hasChildren()) {
             list.add(SqlNaming.quote(SqlChildTable.ID));
@@ -227,7 +220,7 @@ final class PgChildLoader {
             list.add(SqlSelected.of(null, column).expression());
         }
         return "SELECT " + list + " FROM " + SqlNaming.quote(child.name()) + " WHERE "
-                + SqlNaming.quote(SqlChildTable.OWNER) + " = ANY(?) ORDER BY " + scope + ", " + position;
+                + dialect.anyOf(SqlNaming.quote(SqlChildTable.OWNER)) + " ORDER BY " + scope + ", " + position;
     }
 
     /** {@return the 1-based index of {@code _owner} or {@code _parent} in the select list} */
@@ -235,13 +228,10 @@ final class PgChildLoader {
         return child.hasChildren() ? 2 : 1;
     }
 
-    private static Array owners(Connection connection, List<SqlLoadedRow> rows) throws SQLException {
-        return connection.createArrayOf("text", rows.stream().map(SqlLoadedRow::id).toArray());
-    }
 
     /**
      * Loads one top-level child table — and the whole tree below it — from the aggregates the main query
-     * returned ({@link PgChildAggregate}): no statement, the rows are already there.
+     * returned ({@link SqlChildAggregate}): no statement, the rows are already there.
      *
      * @param child      the top-level child table
      * @param rows       the page, in order

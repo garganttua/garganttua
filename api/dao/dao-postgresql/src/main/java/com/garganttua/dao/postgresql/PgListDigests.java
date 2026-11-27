@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlWriteChildren;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -22,7 +23,7 @@ import com.garganttua.dao.postgresql.schema.SchemaMode;
  *
  * <p>
  * The writer skips rewriting a collection whose digest has not changed (see
- * {@code PgWriteChildren#digest}). That is only safe if a stored digest always describes the rows
+ * {@code SqlWriteChildren#digest}). That is only safe if a stored digest always describes the rows
  * that are really there. The DAO keeps it true for its own writes; for every OTHER writer — a SQL
  * script, a migration, an instance still running a version without digests during a rolling
  * upgrade — a trigger on every child table, at every depth, sets the owner's digest to NULL whenever

@@ -1,12 +1,9 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.dao.sql.SqlCondition;
-import com.garganttua.dao.sql.SqlFragment;
-import com.garganttua.dao.sql.SqlOperand;
 
 /**
  * The predicate of one comparison on one single-valued operand, with MongoDB's null and type semantics.
@@ -22,27 +19,27 @@ import com.garganttua.dao.sql.SqlOperand;
  *
  * <p>
  * Values are compared the way MongoDB compares them — only within one type class, numbers exactly,
- * text in binary code-point order — see {@link PgFilterValues}. A JSON value that is an array
+ * text in binary code-point order — see {@link SqlFilterValues}. A JSON value that is an array
  * matches when the array itself or one of its elements does, as a MongoDB array field does.
  * </p>
  *
  * <p>
- * {@code $regex} is delegated to {@link PgRegex}: the PCRE pattern is translated to an equivalent
+ * {@code $regex} is delegated to the dialect ({@link ISqlDialect#regex}): the PCRE pattern is translated to an equivalent
  * PostgreSQL pattern, and matches strings only, as in MongoDB. The geographic operators are delegated
- * to {@link PgGeoPredicates}, which evaluates them on the sphere, as MongoDB's 2dsphere index does.
+ * to the dialect ({@link ISqlDialect#geoWithin}), which evaluates them on the sphere, as MongoDB's 2dsphere index does.
  * </p>
  */
-final class PgScalarPredicates {
+public final class SqlScalarPredicates {
 
     /** The alias of one element of a JSON array, inside {@code jsonb_array_elements}. */
     private static final String JSON_ELEMENT_ALIAS = "x";
 
     private final String domain;
-    private final PgGeoPredicates geo;
+    private final ISqlDialect dialect;
 
-    PgScalarPredicates(String domain) {
+    SqlScalarPredicates(String domain, ISqlDialect dialect) {
         this.domain = domain;
-        this.geo = new PgGeoPredicates(domain);
+        this.dialect = dialect;
     }
 
     /**
@@ -65,9 +62,9 @@ final class PgScalarPredicates {
             case "$empty" -> isNull(o);
             case "$in" -> in(o, c);
             case "$nin" -> SqlFragment.not(in(o, c));
-            case "$geoWithin", "$geoWithinSphere" -> geo.within(o, c);
-            case "$geoIntersects" -> geo.intersects(o, c);
-            case "$near", "$nearSphere" -> geo.near(o, c);
+            case "$geoWithin", "$geoWithinSphere" -> dialect.geoWithin(o, c, domain);
+            case "$geoIntersects" -> dialect.geoIntersects(o, c, domain);
+            case "$near", "$nearSphere" -> dialect.geoNear(o, c, domain);
             default -> throw new ApiException("Unsupported comparison operator: " + c.op());
         };
     }
@@ -86,23 +83,20 @@ final class PgScalarPredicates {
      * elements satisfies it — MongoDB's array semantics, applied inside documents.
      */
     private SqlFragment positive(SqlOperand o, String op, Object value) {
-        SqlFragment direct = PgFilterValues.compare(o, op, value);
+        SqlFragment direct = SqlFilterValues.compare(dialect, o, op, value);
         if (!o.isJson()) {
             return direct;
         }
-        SqlFragment inElement = PgFilterValues.compare(SqlOperand.jsonElement(JSON_ELEMENT_ALIAS), op, value);
+        SqlFragment inElement = SqlFilterValues.compare(dialect, SqlOperand.jsonElement(JSON_ELEMENT_ALIAS), op, value);
         if (SqlFragment.FALSE.equals(inElement)) {
             return direct;
         }
-        SqlFragment json = o.json();
-        SqlFragment elements = json.wrap("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(",
-                ") = 'array' THEN ").then(json).then(" END) AS " + JSON_ELEMENT_ALIAS + "(v) WHERE ")
-                .then(inElement).then(")");
+        SqlFragment elements = dialect.jsonArrayAny(o.json(), JSON_ELEMENT_ALIAS, inElement);
         return SqlFragment.any(List.of(direct, elements));
     }
 
     private SqlFragment regex(SqlOperand o, SqlCondition c) throws ApiException {
-        return PgRegex.on(o, c, domain);
+        return dialect.regex(o, c, domain);
     }
 
     /**
@@ -122,7 +116,7 @@ final class PgScalarPredicates {
         }
         List<SqlFragment> binds = new ArrayList<>();
         for (Object value : c.listedValues()) {
-            PgFilterValues.bound(o, value).ifPresent(b -> binds.add(b.value()));
+            SqlFilterValues.bound(dialect, o, value).ifPresent(b -> binds.add(b.value()));
         }
         if (!binds.isEmpty()) {
             parts.add(o.expr(false).then(" IN (").then(SqlFragment.join(", ", binds)).then(")"));

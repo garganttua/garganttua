@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -7,11 +7,6 @@ import java.util.List;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.dao.sql.schema.SqlChildKind;
 import com.garganttua.dao.sql.schema.SqlChildTable;
-import com.garganttua.dao.sql.SqlCondition;
-import com.garganttua.dao.sql.SqlField;
-import com.garganttua.dao.sql.SqlFragment;
-import com.garganttua.dao.sql.SqlHop;
-import com.garganttua.dao.sql.SqlOperand;
 
 /**
  * Comparisons on a collection field, following MongoDB's array semantics over child tables — at any
@@ -46,14 +41,14 @@ import com.garganttua.dao.sql.SqlOperand;
  * look inside nested arrays).
  * </p>
  */
-final class PgElementPredicates {
+public final class SqlElementPredicates {
 
     private static final String EQ = "$eq";
     private static final String IN = "$in";
 
-    private final PgScalarPredicates scalars;
+    private final SqlScalarPredicates scalars;
 
-    PgElementPredicates(PgScalarPredicates scalars) {
+    SqlElementPredicates(SqlScalarPredicates scalars) {
         this.scalars = scalars;
     }
 
@@ -94,7 +89,7 @@ final class PgElementPredicates {
         if (e.whole() && isList(c.value()) && EQ.equals(c.op())) {
             return SqlHop.some(e.parents(), wholeArray(e.last(), e.operand(), (Collection<?>) c.value()), false);
         }
-        if (e.whole() && IN.equals(c.op()) && c.values().stream().anyMatch(PgElementPredicates::isList)) {
+        if (e.whole() && IN.equals(c.op()) && c.values().stream().anyMatch(SqlElementPredicates::isList)) {
             return inWithArrays(e, c);
         }
         return SqlHop.some(e.hops(), scalars.on(e.operand(), c), c.matchesMissing());

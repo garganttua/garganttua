@@ -4,6 +4,9 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.garganttua.api.commons.ApiException;
+import com.garganttua.api.commons.filter.IFilter;
+
 /**
  * A {@code $text} search string, read the way MongoDB reads it, and the character folding both the
  * search and the searched text go through.
@@ -186,4 +189,45 @@ public record SqlTextQuery(List<String> positive, List<String> negated, List<Str
             term.setLength(0);
         }
     }
+
+    private static final String FIELD_OPERATOR = "$field";
+
+    /**
+     * Refuses what MongoDB refuses: two {@code $text}, a {@code $text} under {@code $nor} or under
+     * {@code $or}.
+     *
+     * @param filter the whole filter, possibly null
+     * @throws ApiException when the filter breaks one of these rules
+     */
+    @SuppressWarnings("PMD.AvoidLiteralsInIfCondition") // 1: the most $text expressions a filter may hold
+    public static void validate(IFilter filter) {
+        if (count(filter, null) > 1) {
+            throw new ApiException("A filter may hold only one $text: MongoDB refuses a second one"
+                    + " ('Too many text expressions'); put every word in the same search string");
+        }
+    }
+
+    private static int count(IFilter filter, String under) {
+        if (filter == null || filter.getName() == null) {
+            return 0;
+        }
+        if (FIELD_OPERATOR.equals(filter.getName())) {
+            boolean text = filter.getFilters() != null && filter.getFilters().size() == 1
+                    && filter.getFilters().get(0) != null && "$text".equals(filter.getFilters().get(0).getName());
+            if (text && under != null) {
+                throw new ApiException("$text cannot be placed under " + under + ": " + ("$nor".equals(under)
+                        ? "MongoDB refuses it ('text expression not allowed in nor')"
+                        : "MongoDB runs it only when every other branch of the $or has its own index, and refuses"
+                                + " the query otherwise; search with $text at the top level, or inside $and"));
+            }
+            return text ? 1 : 0;
+        }
+        String next = "$nor".equals(filter.getName()) || "$or".equals(filter.getName()) ? filter.getName() : under;
+        int texts = 0;
+        for (IFilter sub : filter.getFilters() == null ? List.<IFilter>of() : filter.getFilters()) {
+            texts += count(sub, "$nor".equals(under) ? under : next);
+        }
+        return texts;
+    }
+
 }

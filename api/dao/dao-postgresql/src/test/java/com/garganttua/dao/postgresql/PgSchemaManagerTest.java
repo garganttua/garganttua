@@ -79,16 +79,16 @@ class PgSchemaManagerTest {
     }
 
     private static SqlTable people(Class<?> dto) {
-        return SqlSchemaModel.of("people", IClass.getClass(dto), "uuid", Map.of());
+        return SqlSchemaModel.of(PgDialect.INSTANCE, "people", IClass.getClass(dto), "uuid", Map.of());
     }
 
     private static SqlTable orders() {
-        return SqlSchemaModel.of("orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
+        return SqlSchemaModel.of(PgDialect.INSTANCE, "orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
                 Map.of("customer", "customers", "relatedOrders", "orders"));
     }
 
     private static SqlTable places() {
-        return SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
+        return SqlSchemaModel.of(PgDialect.INSTANCE, "places", IClass.getClass(Place.class), "uuid", Map.of());
     }
 
     private static void ensure(DataSource db, SchemaMode mode, SqlTable table) throws ApiException {

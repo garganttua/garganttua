@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlQueryBuilder;
 import static com.garganttua.dao.postgresql.PgQueryFixture.field;
 import static com.garganttua.dao.postgresql.PgQueryFixture.listed;
 import static com.garganttua.dao.postgresql.PgQueryFixture.logical;
@@ -49,7 +50,7 @@ import com.garganttua.dao.sql.SqlQuery;
  * with no qty; e = a hostile name/7/ACTIVE/Nice, tags [null], no other collection rows.
  * </p>
  */
-@DisplayName("PgQueryBuilder")
+@DisplayName("SqlQueryBuilder")
 class PgQueryBuilderTest {
 
     private static DataSource db;
@@ -486,8 +487,8 @@ class PgQueryBuilderTest {
     @DisplayName("geometry (SQL text only: the embedded engine has no PostGIS)")
     class Geometry {
 
-        private PgQueryBuilder places() {
-            return new PgQueryBuilder(PgQueryFixture.places(), IClass.getClass(PgQueryFixture.Place.class));
+        private SqlQueryBuilder places() {
+            return new SqlQueryBuilder(PgQueryFixture.places(), IClass.getClass(PgQueryFixture.Place.class));
         }
 
         private Polygon square() {

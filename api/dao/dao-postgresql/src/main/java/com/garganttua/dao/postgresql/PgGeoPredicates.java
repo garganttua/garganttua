@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlValues;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -194,6 +195,6 @@ final class PgGeoPredicates {
         if (geometry == null) {
             throw new ApiException(c.op() + ON_FIELD + c.field() + "' requires a GeoJSON geometry value");
         }
-        return SqlFragment.of("(" + PgValues.placeholder(column) + GEOGRAPHY, PgValues.toJdbc(column, geometry));
+        return SqlFragment.of("(" + SqlValues.placeholder(PgDialect.INSTANCE, column) + GEOGRAPHY, SqlValues.toJdbc(PgDialect.INSTANCE, column, geometry));
     }
 }

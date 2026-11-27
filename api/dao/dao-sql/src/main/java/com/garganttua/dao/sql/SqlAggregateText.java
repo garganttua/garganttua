@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Reads the JSON text of a child-row aggregate ({@link PgChildAggregate}) into nested lists — texts,
+ * Reads the JSON text of a child-row aggregate ({@link SqlChildAggregate}) into nested lists — texts,
  * nulls and lists — in one pass over its characters.
  *
  * <p>

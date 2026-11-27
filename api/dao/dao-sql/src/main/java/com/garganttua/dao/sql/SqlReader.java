@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -18,12 +18,6 @@ import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.SqlBeans;
-import com.garganttua.dao.sql.SqlLoadedRow;
-import com.garganttua.dao.sql.SqlQuery;
-import com.garganttua.dao.sql.SqlRowMapper;
-import com.garganttua.dao.sql.SqlRowPlan;
-import com.garganttua.dao.sql.SqlSelected;
 
 /**
  * Read side of the PostgreSQL DAO: executes a translated {@link SqlQuery} and rebuilds the DTOs —
@@ -31,7 +25,7 @@ import com.garganttua.dao.sql.SqlSelected;
  *
  * <p>
  * A page is read in a FIXED number of statements whatever its size — usually ONE: the collections come
- * back inside the main query, as JSON aggregates ({@link PgChildAggregate}); only a referenced domain,
+ * back inside the main query, as JSON aggregates ({@link SqlChildAggregate}); only a referenced domain,
  * or a collection too wide to aggregate, costs a statement more. Reading row by row would be the
  * classic N+1 — invisible on a test with three rows, crippling on a page of a hundred.
  * </p>
@@ -50,7 +44,7 @@ import com.garganttua.dao.sql.SqlSelected;
  * The caller owns the connection (and its transaction); the reader only opens and closes statements.
  * </p>
  */
-public final class PgReader {
+public final class SqlReader {
 
     /** The CTE holding the page, when the collections are aggregated over it. */
     private static final String PAGE = "page";
@@ -65,8 +59,8 @@ public final class PgReader {
     private final IClass<?> dtoClass;
     private final SqlBeans beans = new SqlBeans();
     private final SqlRowMapper mapper = new SqlRowMapper(beans);
-    private final PgChildLoader children;
-    private final PgCompositions compositions;
+    private final SqlChildLoader children;
+    private final SqlCompositions compositions;
 
     /**
      * A reader resolving references one level deep.
@@ -75,7 +69,7 @@ public final class PgReader {
      * @param dtoClass the DTO its rows map to
      * @param registry the shapes of the other domains of the database, to follow references
      */
-    public PgReader(SqlTable table, IClass<?> dtoClass, PgSchemaRegistry registry) {
+    public SqlReader(SqlTable table, IClass<?> dtoClass, SqlSchemaRegistry registry) {
         this(table, dtoClass, registry, true);
     }
 
@@ -83,11 +77,11 @@ public final class PgReader {
      * @param resolve false for the reader of REFERENCED rows, which must not follow their own
      *                references (one level only)
      */
-    PgReader(SqlTable table, IClass<?> dtoClass, PgSchemaRegistry registry, boolean resolve) {
+    SqlReader(SqlTable table, IClass<?> dtoClass, SqlSchemaRegistry registry, boolean resolve) {
         this.table = Objects.requireNonNull(table, "table");
         this.dtoClass = Objects.requireNonNull(dtoClass, "dtoClass");
-        this.children = new PgChildLoader(beans, mapper, table);
-        this.compositions = new PgCompositions(table, dtoClass, registry == null ? new PgSchemaRegistry() : registry,
+        this.children = new SqlChildLoader(beans, mapper, table);
+        this.compositions = new SqlCompositions(table, dtoClass, registry == null ? new SqlSchemaRegistry() : registry,
                 beans, resolve);
     }
 
@@ -141,7 +135,7 @@ public final class PgReader {
     private Paged read(Connection connection, SqlQuery query, boolean withTotal) throws ApiException {
         List<SqlSelected> selected = selection(query.projection());
         List<SqlChildTable> loaded = childrenToLoad(query.projection());
-        List<SqlChildTable> aggregated = loaded.stream().filter(PgChildAggregate::fits).toList();
+        List<SqlChildTable> aggregated = loaded.stream().filter(c -> SqlChildAggregate.fits(table.dialect(), c)).toList();
         String sql = selectSql(selected, aggregated, query, withTotal);
         List<SqlLoadedRow> rows = new ArrayList<>();
         List<List<String>> aggregates = new ArrayList<>();
@@ -220,7 +214,7 @@ public final class PgReader {
     }
 
     /** {@return the select list of a projection — package-visible so tests can check the SQL shape} */
-    String selectList(List<String> projection) {
+    public String selectList(List<String> projection) {
         StringJoiner list = new StringJoiner(", ");
         selection(projection).forEach(s -> list.add(s.expression()));
         return list.toString();
@@ -229,7 +223,7 @@ public final class PgReader {
     /** {@return the full SELECT of a query, with {@code ?} for its parameters and page} */
     String selectSql(SqlQuery query) {
         List<SqlChildTable> aggregated = childrenToLoad(query.projection()).stream()
-                .filter(PgChildAggregate::fits).toList();
+                .filter(c -> SqlChildAggregate.fits(table.dialect(), c)).toList();
         return selectSql(selection(query.projection()), aggregated, query, false);
     }
 
@@ -241,9 +235,9 @@ public final class PgReader {
      * @param query the query
      * @return {@code true} for a single statement
      */
-    boolean singleStatement(SqlQuery query) {
+    public boolean singleStatement(SqlQuery query) {
         return table.compositions().isEmpty()
-                && childrenToLoad(query.projection()).stream().allMatch(PgChildAggregate::fits);
+                && childrenToLoad(query.projection()).stream().allMatch(c -> SqlChildAggregate.fits(table.dialect(), c));
     }
 
     private String selectSql(List<SqlSelected> selected, List<SqlChildTable> aggregated, SqlQuery query,
@@ -281,7 +275,7 @@ public final class PgReader {
         List<String> ctes = new ArrayList<>();
         List<String> names = new ArrayList<>();
         String pageId = SqlNaming.quote(table.id().name());
-        PgChildAggregate.ctes(aggregated, PAGE, pageId, ctes, names);
+        SqlChildAggregate.ctes(table.dialect(), aggregated, PAGE, pageId, ctes, names);
         StringJoiner outer = new StringJoiner(", ");
         StringBuilder joins = new StringBuilder();
         for (int i = 0; i < names.size(); i++) {

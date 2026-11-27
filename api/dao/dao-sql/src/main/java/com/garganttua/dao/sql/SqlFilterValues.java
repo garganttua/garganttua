@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -15,9 +15,6 @@ import com.garganttua.dao.sql.SqlOperand.JsonType;
 import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlTypes;
-import com.garganttua.dao.sql.SqlFilterNumbers;
-import com.garganttua.dao.sql.SqlFragment;
-import com.garganttua.dao.sql.SqlOperand;
 
 /**
  * Filter values against typed operands, with MongoDB's type bracketing.
@@ -26,7 +23,7 @@ import com.garganttua.dao.sql.SqlOperand;
  * MongoDB compares a value only with values of the same type class: numbers of any width together,
  * strings (enums and chars are stored as strings), booleans, dates. A value of another class never
  * matches and never fails: {@code {age: "18"}} finds nothing, and {@code {age: {$ne: "18"}}} finds
- * everything. The writer's conversion ({@link PgValues}) is lenient on purpose — it parses
+ * everything. The writer's conversion ({@link SqlValues}) is lenient on purpose — it parses
  * {@code "18"} into an INTEGER — so a filter value must NOT go through it blindly: that would widen
  * what matches, or throw on {@code "abc"} where MongoDB just answers nothing. This class decides,
  * per value, whether it can compare with the operand at all, and binds it when it can.
@@ -43,11 +40,11 @@ import com.garganttua.dao.sql.SqlOperand;
  * </p>
  *
  * <p>
- * Dates go through {@link PgValues} once their class is checked, so a filter value is truncated to
+ * Dates go through {@link SqlValues} once their class is checked, so a filter value is truncated to
  * the milliseconds MongoDB keeps exactly like a written value is.
  * </p>
  */
-final class PgFilterValues {
+public final class SqlFilterValues {
 
     /** The comparison classes of MongoDB (BSON type brackets) that a filter can meet. */
     enum Bracket {
@@ -61,13 +58,11 @@ final class PgFilterValues {
      * @param value   the placeholder and its bound value
      * @param bracket the value's type class
      */
-    record Bound(SqlFragment expr, SqlFragment value, Bracket bracket) {
+    public record Bound(SqlFragment expr, SqlFragment value, Bracket bracket) {
     }
 
-    private static final String NUMERIC_PLACEHOLDER = "?::numeric";
-    private static final String COLLATE_C = " COLLATE \"C\"";
 
-    private PgFilterValues() {
+    private SqlFilterValues() {
         // Static helpers
     }
 
@@ -112,11 +107,11 @@ final class PgFilterValues {
      * @param value the non-null filter value
      * @return the predicate — {@link SqlFragment#FALSE} when no stored value of the operand can satisfy it
      */
-    static SqlFragment compare(SqlOperand o, String op, Object value) {
+    public static SqlFragment compare(ISqlDialect dialect, SqlOperand o, String op, Object value) {
         if (!o.isJson() && of(o.column()) == Bracket.NUMBER && value instanceof Number n) {
             return SqlFilterNumbers.compare(o.expr(false), isFloat(o.column()), op, n);
         }
-        Optional<Bound> bound = bound(o, value);
+        Optional<Bound> bound = bound(dialect, o, value);
         if (bound.isEmpty()) {
             return SqlFragment.FALSE;
         }
@@ -125,7 +120,7 @@ final class PgFilterValues {
         if (ordering && b.bracket() == Bracket.OTHER) {
             return SqlFragment.FALSE;
         }
-        SqlFragment expr = ordering && b.bracket() == Bracket.STRING ? b.expr().then(COLLATE_C) : b.expr();
+        SqlFragment expr = ordering && b.bracket() == Bracket.STRING ? b.expr().then(dialect.binaryCollation()) : b.expr();
         return expr.then(" " + op + " ").then(b.value());
     }
 
@@ -136,9 +131,9 @@ final class PgFilterValues {
      * @param value the non-null filter value
      * @return the bound value, or empty when no stored value of the operand can equal it
      */
-    static Optional<Bound> bound(SqlOperand o, Object value) {
+    public static Optional<Bound> bound(ISqlDialect dialect, SqlOperand o, Object value) {
         if (o.isJson()) {
-            return json(o, value);
+            return json(dialect, o, value);
         }
         Bracket bracket = of(value);
         if (bracket == Bracket.OTHER || bracket != of(o.column())) {
@@ -149,20 +144,20 @@ final class PgFilterValues {
             case NUMBER -> SqlFilterNumbers.equality(isFloat(o.column()), (Number) value)
                     .map(v -> new Bound(expr, v, bracket));
             case STRING -> Optional.of(new Bound(expr, SqlFragment.of("?", text(value)), bracket));
-            case DATE -> date(o.column(), value).map(v -> new Bound(expr, SqlFragment.of("?", v), bracket));
+            case DATE -> date(dialect, o.column(), value).map(v -> new Bound(expr, SqlFragment.of("?", v), bracket));
             default -> Optional.of(new Bound(expr, SqlFragment.of("?", value), bracket));
         };
     }
 
     /** A JSON value read as the filter value's type; anything else compared as JSON, for equality only. */
-    private static Optional<Bound> json(SqlOperand o, Object value) {
+    private static Optional<Bound> json(ISqlDialect dialect, SqlOperand o, Object value) {
         Bracket bracket = of(value);
         return switch (bracket) {
             case NUMBER -> SqlFilterNumbers.exact((Number) value)
-                    .map(d -> new Bound(o.jsonRead(JsonType.NUMBER), SqlFragment.of(NUMERIC_PLACEHOLDER, d), bracket));
+                    .map(d -> new Bound(o.jsonRead(JsonType.NUMBER), SqlFragment.of(dialect.exactNumberPlaceholder(), d), bracket));
             case STRING -> Optional.of(new Bound(o.jsonRead(JsonType.STRING), SqlFragment.of("?", text(value)), bracket));
             case BOOLEAN -> Optional.of(new Bound(o.jsonRead(JsonType.BOOLEAN), SqlFragment.of("?", value), bracket));
-            default -> Optional.of(new Bound(o.json(), SqlFragment.of("?", PgValues.toJdbc(o.column(), value)),
+            default -> Optional.of(new Bound(o.json(), SqlFragment.of("?", SqlValues.toJdbc(dialect, o.column(), value)),
                     Bracket.OTHER));
         };
     }
@@ -179,11 +174,11 @@ final class PgFilterValues {
 
     /**
      * A date value converted to the column's temporal type, then to its bind value through
-     * {@link PgValues} (millisecond truncation included). MongoDB stores every date class as one
+     * {@link SqlValues} (millisecond truncation included). MongoDB stores every date class as one
      * UTC instant, so any of them compares with a timestamp column; a DATE or TIME column only
      * takes its own class.
      */
-    private static Optional<Object> date(SqlColumn column, Object value) {
+    private static Optional<Object> date(ISqlDialect dialect, SqlColumn column, Object value) {
         Object converted = switch (column.sqlType()) {
             case "TIMESTAMPTZ" -> instant(value);
             case "TIMESTAMP" -> LocalDateTime.ofInstant(instant(value), ZoneOffset.UTC);
@@ -191,7 +186,7 @@ final class PgFilterValues {
             case "TIME" -> value instanceof LocalTime ? value : null;
             default -> null;
         };
-        return converted == null ? Optional.empty() : Optional.ofNullable(PgValues.toJdbc(column, converted));
+        return converted == null ? Optional.empty() : Optional.ofNullable(SqlValues.toJdbc(dialect, column, converted));
     }
 
     private static Instant instant(Object value) {

@@ -1,5 +1,7 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlChildLoader;
+import com.garganttua.dao.sql.SqlReader;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -50,7 +52,7 @@ import com.garganttua.dao.sql.SqlQuery;
  * The read side, proven against a real PostgreSQL. Rows are inserted with PLAIN SQL — the reader
  * must understand what is in the tables, whoever wrote it.
  */
-@DisplayName("PgReader")
+@DisplayName("SqlReader")
 class PgReaderTest {
 
     @BeforeAll
@@ -192,7 +194,7 @@ class PgReaderTest {
     }
 
     private static SqlTable model(String domain, Class<?> dto, Map<String, String> compositions) {
-        return SqlSchemaModel.of(domain, IClass.getClass(dto), "uuid", compositions);
+        return SqlSchemaModel.of(PgDialect.INSTANCE, domain, IClass.getClass(dto), "uuid", compositions);
     }
 
     private Connection db(SqlTable... tables) throws SQLException {
@@ -218,8 +220,8 @@ class PgReaderTest {
         return type.cast(found.get(0));
     }
 
-    private static PgReader reader(SqlTable table, Class<?> dto) {
-        return new PgReader(table, IClass.getClass(dto), new PgSchemaRegistry());
+    private static SqlReader reader(SqlTable table, Class<?> dto) {
+        return new SqlReader(table, IClass.getClass(dto), new PgSchemaRegistry());
     }
 
     // ---------------------------------------------------------------- tests
@@ -514,7 +516,7 @@ class PgReaderTest {
             exec("INSERT INTO bags (uuid, name, tags, lines) VALUES ('b1', 'n', TRUE, TRUE)",
                     "INSERT INTO bags__tags VALUES ('b1', 0, 'a')",
                     "INSERT INTO bags__lines VALUES ('b1', 0, TRUE, 'A', 1)");
-            PgReader reader = reader(table, Bag.class);
+            SqlReader reader = reader(table, Bag.class);
             assertEquals("t.\"uuid\", t.\"tags\"", reader.selectList(List.of("tags")),
                     "only the id and the collection's presence bit for a child projection");
             Bag b = only(reader.find(connection, new SqlQuery("TRUE", List.of(), "", null, null, List.of("tags"))),
@@ -547,7 +549,7 @@ class PgReaderTest {
             PgSchemaRegistry registry = new PgSchemaRegistry();
             registry.register("customers", customers, IClass.getClass(Customer.class));
             registry.register("orders", orders, IClass.getClass(Order.class));
-            Order o = only(new PgReader(orders, IClass.getClass(Order.class), registry)
+            Order o = only(new SqlReader(orders, IClass.getClass(Order.class), registry)
                     .find(connection, SqlQuery.all()), Order.class);
 
             assertNotNull(o.customer, "the referenced customer must be resolved");
@@ -565,7 +567,7 @@ class PgReaderTest {
             exec("UPDATE orders SET customer = 'ghost'");
             PgSchemaRegistry registry = new PgSchemaRegistry();
             registry.register("customers", customers, IClass.getClass(Customer.class));
-            Order o = only(new PgReader(orders, IClass.getClass(Order.class), registry)
+            Order o = only(new SqlReader(orders, IClass.getClass(Order.class), registry)
                     .find(connection, SqlQuery.all()), Order.class);
             assertNull(o.customer, "a reference to a missing row reads as null");
         }
@@ -607,7 +609,7 @@ class PgReaderTest {
         @DisplayName("count the rows matching the filter")
         void count() throws Exception {
             SqlTable table = ranked();
-            PgReader reader = reader(table, Ranked.class);
+            SqlReader reader = reader(table, Ranked.class);
             assertEquals(4, reader.count(connection, new SqlQuery("t.\"rank\" >= ?", List.of(2), "", 1, 0L, null)),
                     "count ignores the page");
             assertEquals(5, reader.count(connection, SqlQuery.all()));
@@ -687,8 +689,8 @@ class PgReaderTest {
             SqlTable table = model("shops", Shop.class, Map.of());
             assertEquals("SELECT \"_parent\", \"_ord\", \"_present\", \"sku\" FROM \"shops__orders__lines\" "
                     + "WHERE \"_owner\" = ANY(?) ORDER BY \"_parent\", \"_ord\"",
-                    PgChildLoader.selectSql(table.child("orders.lines").orElseThrow()));
-            assertTrue(PgChildLoader.selectSql(table.child("orders").orElseThrow()).startsWith("SELECT \"_id\", \"_owner\""),
+                    SqlChildLoader.selectSql(PgDialect.INSTANCE, table.child("orders.lines").orElseThrow()));
+            assertTrue(SqlChildLoader.selectSql(PgDialect.INSTANCE, table.child("orders").orElseThrow()).startsWith("SELECT \"_id\", \"_owner\""),
                     "a table with children selects the id its children reference");
         }
     }

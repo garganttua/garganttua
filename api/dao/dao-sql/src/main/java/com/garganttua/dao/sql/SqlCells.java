@@ -16,7 +16,7 @@ import com.garganttua.dao.sql.schema.SqlTypes;
 
 /**
  * The cells of one row, whatever carries them: a JDBC {@link ResultSet}, or a row of a child table read
- * from the JSON aggregate the main query returns ({@link PgChildAggregate}).
+ * from the JSON aggregate the main query returns ({@link SqlChildAggregate}).
  *
  * <p>
  * It exposes exactly what {@link SqlJdbcDecoder} needs, so one decoder serves both and a value reads back
@@ -80,7 +80,7 @@ public interface SqlCells {
 
     /**
      * The cells of one child row read from the JSON aggregate: each cell is the TEXT the aggregate wrote
-     * for it ({@link PgChildAggregate#text}), decoded back by its SQL type exactly as pgjdbc decodes the
+     * for it ({@link SqlChildAggregate#text}), decoded back by its SQL type exactly as pgjdbc decodes the
      * column — temporals from their exact epoch form, binary from hexadecimal, numbers in the Java type
      * JDBC would hand back.
      *

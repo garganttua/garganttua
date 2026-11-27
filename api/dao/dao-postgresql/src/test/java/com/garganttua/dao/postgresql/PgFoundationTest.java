@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlValues;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,7 +43,7 @@ class PgFoundationTest {
     }
 
     private static SqlTable orders() {
-        return SqlSchemaModel.of("orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
+        return SqlSchemaModel.of(PgDialect.INSTANCE, "orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
                 Map.of("customer", "customers", "relatedOrders", "orders"));
     }
 
@@ -117,7 +118,7 @@ class PgFoundationTest {
         @Test
         @DisplayName("creates tables three levels deep, and a root delete cascades through all of them")
         void nestedTablesCascade() throws Exception {
-            SqlTable shops = SqlSchemaModel.of("shops", IClass.getClass(PgSchemaModelTest.Shop.class), "uuid", Map.of());
+            SqlTable shops = SqlSchemaModel.of(PgDialect.INSTANCE, "shops", IClass.getClass(PgSchemaModelTest.Shop.class), "uuid", Map.of());
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
                 for (String ddl : SqlDdl.create(shops)) {
@@ -153,7 +154,7 @@ class PgFoundationTest {
         @Test
         @DisplayName("creates the table of an element that is itself a collection")
         void collectionOfCollections() throws Exception {
-            SqlTable grids = SqlSchemaModel.of("grids", IClass.getClass(PgSchemaModelTest.Grid.class), "uuid", Map.of());
+            SqlTable grids = SqlSchemaModel.of(PgDialect.INSTANCE, "grids", IClass.getClass(PgSchemaModelTest.Grid.class), "uuid", Map.of());
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
                 for (String ddl : SqlDdl.create(grids)) {
@@ -179,20 +180,20 @@ class PgFoundationTest {
         @Test
         @DisplayName("stores an enum by its name")
         void enumByName() throws ApiException {
-            assertEquals("ACTIVE", PgValues.toJdbc(column("status"), PgSchemaModelTest.Status.ACTIVE));
+            assertEquals("ACTIVE", SqlValues.toJdbc(PgDialect.INSTANCE, column("status"), PgSchemaModelTest.Status.ACTIVE));
         }
 
         @Test
         @DisplayName("coerces a filter's string to the column's type")
         void stringsAreCoerced() throws ApiException {
-            assertEquals(42L, PgValues.toJdbc(column("total"), "42"));
-            assertEquals(42, PgValues.toJdbc(column("address.zip"), "42"));
+            assertEquals(42L, SqlValues.toJdbc(PgDialect.INSTANCE, column("total"), "42"));
+            assertEquals(42, SqlValues.toJdbc(PgDialect.INSTANCE, column("address.zip"), "42"));
         }
 
         @Test
         @DisplayName("refuses a value that does not parse, rather than matching nothing in silence")
         void unparseableIsAnError() {
-            assertThrows(ApiException.class, () -> PgValues.toJdbc(column("total"), "forty-two"));
+            assertThrows(ApiException.class, () -> SqlValues.toJdbc(PgDialect.INSTANCE, column("total"), "forty-two"));
         }
 
         @Test
@@ -203,7 +204,7 @@ class PgFoundationTest {
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
                 s.execute("CREATE TABLE ts (v TIMESTAMPTZ)");
                 try (PreparedStatement p = c.prepareStatement("INSERT INTO ts VALUES (?)")) {
-                    p.setObject(1, PgValues.toJdbc(column("createdAt"), now));
+                    p.setObject(1, SqlValues.toJdbc(PgDialect.INSTANCE, column("createdAt"), now));
                     p.executeUpdate();
                 }
                 try (ResultSet r = s.executeQuery("SELECT v FROM ts")) {
@@ -222,7 +223,7 @@ class PgFoundationTest {
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
                 s.execute("CREATE TABLE j (v JSONB)");
                 try (PreparedStatement p = c.prepareStatement("INSERT INTO j VALUES (?)")) {
-                    p.setObject(1, PgValues.toJdbc(column("node"), node));
+                    p.setObject(1, SqlValues.toJdbc(PgDialect.INSTANCE, column("node"), node));
                     p.executeUpdate();
                 }
                 try (ResultSet r = s.executeQuery("SELECT jsonb_typeof(v) FROM j")) {

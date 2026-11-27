@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlQueryBuilder;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -82,15 +83,15 @@ final class PgQueryFixture {
     static final String INJECTED_NAME = "Robert'); DROP TABLE items; --";
 
     static SqlTable items() {
-        return SqlSchemaModel.of("items", IClass.getClass(Item.class), "uuid", Map.of());
+        return SqlSchemaModel.of(PgDialect.INSTANCE, "items", IClass.getClass(Item.class), "uuid", Map.of());
     }
 
     static SqlTable places() {
-        return SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
+        return SqlSchemaModel.of(PgDialect.INSTANCE, "places", IClass.getClass(Place.class), "uuid", Map.of());
     }
 
-    static PgQueryBuilder builder() {
-        return new PgQueryBuilder(items(), IClass.getClass(Item.class));
+    static SqlQueryBuilder builder() {
+        return new SqlQueryBuilder(items(), IClass.getClass(Item.class));
     }
 
     /**

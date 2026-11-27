@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -14,7 +14,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import org.geojson.GeoJsonObject;
-import org.postgresql.util.PGobject;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.garganttua.api.binding.geojson.GeoJsonCodec;
@@ -23,8 +22,6 @@ import com.garganttua.core.crypto.IKey;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlColumnKind;
-import com.garganttua.dao.sql.SqlJson;
-import com.garganttua.dao.sql.SqlKeyCodec;
 
 /**
  * Java values to JDBC bind values — ONE conversion, shared by the writer and the filter translator.
@@ -54,14 +51,13 @@ import com.garganttua.dao.sql.SqlKeyCodec;
  * </p>
  */
 @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
-public final class PgValues {
+public final class SqlValues {
 
-    private static final String JSONB = "jsonb";
 
     /** The significant digits of a BSON {@code Decimal128} — the widest decimal MongoDB stores. */
-    static final int DECIMAL128_DIGITS = 34;
+    public static final int DECIMAL128_DIGITS = 34;
 
-    private PgValues() {
+    private SqlValues() {
         // Static helpers
     }
 
@@ -72,8 +68,8 @@ public final class PgValues {
      * @param column the column
      * @return the placeholder expression
      */
-    public static String placeholder(SqlColumn column) {
-        return column.kind() == SqlColumnKind.GEOMETRY ? "ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)" : "?";
+    public static String placeholder(ISqlDialect dialect, SqlColumn column) {
+        return dialect.placeholder(column);
     }
 
     /**
@@ -103,15 +99,15 @@ public final class PgValues {
      * @return the bind value
      * @throws ApiException when the value cannot be represented in the column's type
      */
-    public static Object toJdbc(SqlColumn column, Object value) throws ApiException {
+    public static Object toJdbc(ISqlDialect dialect, SqlColumn column, Object value) throws ApiException {
         if (value == null) {
             return null;
         }
         try {
             return switch (column.kind()) {
                 case ID, COMPOSITION -> value.toString();
-                case JSONB -> jsonb(SqlJson.MAPPER.writeValueAsString(value));
-                case IKEY -> jsonb(SqlKeyCodec.toJson((IKey) value).toString());
+                case JSONB -> dialect.json(SqlJson.MAPPER.writeValueAsString(value));
+                case IKEY -> dialect.json(SqlKeyCodec.toJson((IKey) value).toString());
                 case GEOMETRY -> geoJson(column, value);
                 case SCALAR -> withinDecimal128(column, scalar(column.javaType(), value));
                 // The value is the structure itself: present when non-null. NULL, not FALSE, so an
@@ -143,16 +139,10 @@ public final class PgValues {
         return bound;
     }
 
-    private static PGobject jsonb(String json) throws SQLException {
-        PGobject object = new PGobject();
-        object.setType(JSONB);
-        object.setValue(json);
-        return object;
-    }
 
     /** A scalar in the representation pgjdbc binds natively for the column's Java type. */
     @SuppressWarnings({ "PMD.CyclomaticComplexity", "PMD.NPathComplexity" })
-    static Object scalar(IClass<?> type, Object value) {
+    public static Object scalar(IClass<?> type, Object value) {
         if (value instanceof Enum<?> e) {
             return e.name();
         }
@@ -210,7 +200,7 @@ public final class PgValues {
      * A temporal value in its column type, truncated to the millisecond a BSON date keeps.
      * Package-visible: the filter side binds its temporal values through it too.
      */
-    static Object temporal(IClass<?> type, Object value) {
+    public static Object temporal(IClass<?> type, Object value) {
         if (type.represents(Instant.class) || type.represents(java.util.Date.class)
                 || type.represents(OffsetDateTime.class) || type.represents(ZonedDateTime.class)) {
             return OffsetDateTime.ofInstant(instantOf(value).truncatedTo(ChronoUnit.MILLIS), ZoneOffset.UTC);

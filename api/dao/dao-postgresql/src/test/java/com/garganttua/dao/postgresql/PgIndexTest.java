@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlQueryBuilder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -203,7 +204,7 @@ class PgIndexTest {
             dao(PgIndexMode.CREATE, UNIQUE_KEY);
             dao(PgIndexMode.STRICT, UNIQUE_KEY);
             assertEquals(1, indexDefinitions().size());
-            assertRecognised(PgIndexPlanner.plan(SqlSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid",
+            assertRecognised(PgIndexPlanner.plan(SqlSchemaModel.of(PgDialect.INSTANCE, "claims", IClass.getClass(Claim.class), "uuid",
                     Map.of()), List.of(UNIQUE_KEY), p -> p, "tenantId").get(0).spec().orElseThrow());
         }
 
@@ -415,15 +416,15 @@ class PgIndexTest {
 
             String definition = indexDefinitions().get(0);
             assertTrue(definition.contains("USING gin (to_tsvector("), definition);
-            assertRecognised(PgIndexPlanner.plan(SqlSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid",
+            assertRecognised(PgIndexPlanner.plan(SqlSchemaModel.of(PgDialect.INSTANCE, "claims", IClass.getClass(Claim.class), "uuid",
                     Map.of()), List.of(textOnTitle), p -> p, "tenantId").get(0).spec().orElseThrow());
             assertTrue(plan(search).contains("claims__gg_title_system_text_idx"),
                     "the search must be served by the index");
         }
 
         private String plan(IFilter search) throws Exception {
-            SqlTable table = SqlSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid", Map.of());
-            SqlQuery query = new PgQueryBuilder(table, null, Optional.of(table.column("title").orElseThrow()))
+            SqlTable table = SqlSchemaModel.of(PgDialect.INSTANCE, "claims", IClass.getClass(Claim.class), "uuid", Map.of());
+            SqlQuery query = new SqlQueryBuilder(table, null, Optional.of(table.column("title").orElseThrow()))
                     .build(Optional.empty(), Optional.of(search), Optional.empty(), Optional.empty());
             StringBuilder plan = new StringBuilder();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {

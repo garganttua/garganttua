@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -9,10 +9,9 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.StringJoiner;
 
-import org.postgresql.util.PSQLException;
-import org.postgresql.util.ServerErrorMessage;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.observability.Logger;
@@ -21,15 +20,14 @@ import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * The write side of the PostgreSQL DAO: one entity in, one main row plus its collection rows out.
  *
  * <p>
  * An upsert is the relational twin of MongoDB's {@code save()}: {@code INSERT … ON CONFLICT (id) DO
- * UPDATE} on the main row, then every collection REPLACED (see {@link PgWriteChildren}) — every collection
- * that CHANGED, when the list digests are installed ({@link PgListDigests}): the digest of the rows a
+ * UPDATE} on the main row, then every collection REPLACED (see {@link SqlWriteChildren}) — every collection
+ * that CHANGED, when the list digests are installed (the dialect's digest capability ({@link ISqlListDigests})): the digest of the rows a
  * collection would be written as is stored on the main row, and a collection whose digest is the stored
  * one is left as it is, rows, indexes and WAL untouched. It spans
  * several statements, so it is only atomic inside a transaction — which the CALLER owns: the writer
@@ -37,18 +35,20 @@ import com.garganttua.dao.sql.SqlQuery;
  * </p>
  *
  * <p>
- * Every value is a bind parameter converted by {@link PgValues}; every identifier comes from the
+ * Every value is a bind parameter converted by {@link SqlValues}; every identifier comes from the
  * {@link SqlTable} model, quoted. Nothing from the entity is ever concatenated into SQL.
  * </p>
  */
 @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName") // accessor style: a constant/field and the method using it share a name
-public final class PgWriter {
+public final class SqlWriter {
 
-    private static final Logger LOG = Logger.getLogger(PgWriter.class);
+    private static final Logger LOG = Logger.getLogger(SqlWriter.class);
 
     private final SqlTable table;
-    private final PgWriteReferences references;
-    private final PgWriteChildren children;
+    /** The database's digest capability, when the table has collections and the database provides it. */
+    private final Optional<ISqlListDigests> digests;
+    private final SqlWriteReferences references;
+    private final SqlWriteChildren children;
     private final Map<SqlChildTable, String> digestColumns;
     private final String upsertSql;
     private final String digestsSql;
@@ -60,7 +60,7 @@ public final class PgWriter {
      * @param table    the domain's table model
      * @param registry the shapes of the other domains, to read the uuid of a composed entity
      */
-    public PgWriter(SqlTable table, PgSchemaRegistry registry) {
+    public SqlWriter(SqlTable table, SqlSchemaRegistry registry) {
         this(table, registry, false);
     }
 
@@ -70,14 +70,15 @@ public final class PgWriter {
      * @param digests  whether the list digests are installed — the writer then rewrites only the
      *                 collections that changed
      */
-    public PgWriter(SqlTable table, PgSchemaRegistry registry, boolean digests) {
+    public SqlWriter(SqlTable table, SqlSchemaRegistry registry, boolean digests) {
         this.table = Objects.requireNonNull(table, "table");
-        this.references = new PgWriteReferences(table, Objects.requireNonNull(registry, "registry"));
-        this.children = new PgWriteChildren(table, references);
-        this.digestColumns = digests && !table.children().isEmpty() ? PgListDigests.columns(table) : Map.of();
+        this.references = new SqlWriteReferences(table, Objects.requireNonNull(registry, "registry"));
+        this.children = new SqlWriteChildren(table, references);
+        this.digests = table.children().isEmpty() ? Optional.empty() : table.dialect().listDigests();
+        this.digestColumns = digests && this.digests.isPresent() ? this.digests.get().columns(table) : Map.of();
         this.upsertSql = buildUpsertSql(table, this.digestColumns.values());
-        this.digestsSql = this.digestColumns.isEmpty() ? "" : buildDigestsSql(table, this.digestColumns.values());
-        this.deleteSql = buildDeleteSql(table);
+        this.digestsSql = this.digestColumns.isEmpty() ? "" : buildDigestsSql(table, this.digests.get(), this.digestColumns.values());
+        this.deleteSql = buildDeleteSql(table, this.digests);
     }
 
     /**
@@ -160,11 +161,11 @@ public final class PgWriter {
      * not: a trigger left by an earlier installation must not erase anything the DAO writes either.
      */
     private void raiseFlag(Connection connection) throws SQLException {
-        if (table.children().isEmpty()) {
+        if (this.digests.isEmpty()) {
             return;
         }
         try (Statement statement = connection.createStatement()) {
-            statement.execute(PgListDigests.RAISE_FLAG);
+            statement.execute("SELECT " + this.digests.get().flagExpression());
         }
     }
 
@@ -202,20 +203,18 @@ public final class PgWriter {
      * index: a declared uniqueness.
      */
     private ApiException writeFailure(Object id, SQLException e) {
-        if (!PgIndexManager.UNIQUE_VIOLATION.equals(e.getSQLState())) {
+        Optional<ISqlDialect.UniqueViolation> unique = table.dialect().uniqueViolation(e);
+        if (unique.isEmpty()) {
             return new ApiException("Failed to save entity " + id + " into table '" + table.name() + "': "
                     + e.getMessage(), e);
         }
-        ServerErrorMessage server = e instanceof PSQLException psql ? psql.getServerErrorMessage() : null;
-        String constraint = server == null ? null : server.getConstraint();
-        String detail = server == null ? e.getMessage() : server.getDetail();
         return ApiException.conflict("Unicity constraint violated on table '" + table.name() + "'"
-                + (constraint == null ? "" : " (index '" + constraint + "')") + ", refused by the database: "
-                + detail);
+                + unique.get().index().map(index -> " (index '" + index + "')").orElse("")
+                + ", refused by the database: " + unique.get().detail());
     }
 
     /** {@return the main-row upsert statement} Package-private so a test can inspect placeholders. */
-    String upsertSql() {
+    public String upsertSql() {
         return upsertSql;
     }
 
@@ -223,24 +222,24 @@ public final class PgWriter {
         if (dto == null) {
             throw new ApiException("Cannot " + operation + " a null entity into table '" + table.name() + "'");
         }
-        Object uuid = PgWriteSupport.valueAt(dto, table.id().fieldPath());
+        Object uuid = SqlWriteSupport.valueAt(dto, table.id().fieldPath());
         if (uuid == null) {
             throw new ApiException("Cannot " + operation + " a " + dto.getClass().getName() + " without a uuid ('"
                     + table.id().dottedPath() + "' is null): a relational row needs its primary key");
         }
-        return PgValues.toJdbc(table.id(), uuid);
+        return SqlValues.toJdbc(table.dialect(), table.id(), uuid);
     }
 
     /** Binds every model column of the main row; {@return the next parameter index} */
     private int bindMainRow(PreparedStatement statement, Object dto) throws SQLException, ApiException {
         int index = 1;
         for (SqlColumn column : table.columns()) {
-            Object value = PgWriteSupport.valueAt(dto, column.fieldPath());
+            Object value = SqlWriteSupport.valueAt(dto, column.fieldPath());
             if (column.kind() == SqlColumnKind.COMPOSITION) {
                 String target = table.compositionTarget(column.dottedPath()).orElse(null);
                 value = references.uuidOf(target, value);
             }
-            PgWriteSupport.bind(statement, index, column, PgValues.toJdbc(column, value));
+            SqlWriteSupport.bind(table.dialect(), statement, index, column, SqlValues.toJdbc(table.dialect(), column, value));
             index++;
         }
         return index;
@@ -250,14 +249,14 @@ public final class PgWriter {
      * Reads the stored digests, locking the row, and raises the DAO's flag for the transaction — in ONE
      * statement, and always one row: a new entity has no row to lock, yet its collections are written too.
      */
-    private static String buildDigestsSql(SqlTable table, Collection<String> digestColumns) {
+    private static String buildDigestsSql(SqlTable table, ISqlListDigests digests, Collection<String> digestColumns) {
         StringJoiner columns = new StringJoiner(", ");
         digestColumns.forEach(c -> columns.add("d." + SqlNaming.quote(c)));
         StringJoiner stored = new StringJoiner(", ");
         digestColumns.forEach(c -> stored.add(SqlNaming.quote(c)));
-        return "SELECT " + PgListDigests.FLAG_EXPRESSION + ", " + columns + " FROM (SELECT 1) one LEFT JOIN (SELECT "
+        return "SELECT " + digests.flagExpression() + ", " + columns + " FROM (SELECT 1) one LEFT JOIN (SELECT "
                 + stored + " FROM " + SqlNaming.quote(table.name()) + " WHERE " + SqlNaming.quote(table.id().name())
-                + " = ? FOR UPDATE) d ON TRUE";
+                + " = ?" + digests.lockForUpdate() + ") d ON TRUE";
     }
 
     /**
@@ -265,11 +264,11 @@ public final class PgWriter {
      * flag is raised by the same statement — evaluated while the row is matched, so before the cascade
      * runs: the digest triggers have nothing to keep true for rows that disappear with their owner.
      */
-    private static String buildDeleteSql(SqlTable table) {
+    private static String buildDeleteSql(SqlTable table, Optional<ISqlListDigests> digests) {
         String delete = "DELETE FROM " + SqlNaming.quote(table.name()) + " AS " + SqlQuery.ALIAS + " WHERE "
                 + SqlQuery.ALIAS + "." + SqlNaming.quote(table.id().name()) + " = ?";
-        return table.children().isEmpty() ? delete
-                : "WITH flag AS (SELECT " + PgListDigests.FLAG_EXPRESSION + ") " + delete
+        return digests.isEmpty() ? delete
+                : "WITH flag AS (SELECT " + digests.get().flagExpression() + ") " + delete
                         + " AND EXISTS (SELECT 1 FROM flag)";
     }
 
@@ -280,7 +279,7 @@ public final class PgWriter {
         for (SqlColumn column : table.columns()) {
             String quoted = SqlNaming.quote(column.name());
             names.add(quoted);
-            values.add(PgValues.placeholder(column));
+            values.add(SqlValues.placeholder(table.dialect(), column));
             if (column.kind() != SqlColumnKind.ID) {
                 updates.add(quoted + " = EXCLUDED." + quoted);
             }

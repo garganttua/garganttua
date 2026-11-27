@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -16,8 +16,6 @@ import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
 import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.SqlFragment;
-import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Turns a DAO read request — page, filter, sort, projection — into a {@link SqlQuery} for one domain.
@@ -27,9 +25,9 @@ import com.garganttua.dao.sql.SqlQuery;
  * meaning wherever SQL would quietly change it:
  * </p>
  * <ul>
- * <li>the filter is translated with MongoDB's null and array semantics ({@link PgFilterTranslator});</li>
+ * <li>the filter is translated with MongoDB's null and array semantics ({@link SqlFilterTranslator});</li>
  * <li>the sort follows BSON order — missing first, binary text, NaN below numbers, arrays by their
- * extreme element, sub-documents field by field, unknown fields as no key ({@link PgSortClause});</li>
+ * extreme element, sub-documents field by field, unknown fields as no key ({@link SqlSortClause});</li>
  * <li>when a page is requested, the uuid is appended as a last sort key, so pages over a non-unique
  * key are stable and complementary; a negative index or size is refused, and the offset is computed
  * in {@code long} — a page far beyond the data is simply empty;</li>
@@ -37,20 +35,20 @@ import com.garganttua.dao.sql.SqlQuery;
  * does: MongoDB then returns the whole sub-document.</li>
  * </ul>
  */
-public final class PgQueryBuilder {
+public final class SqlQueryBuilder {
 
-    private static final Logger LOG = Logger.getLogger(PgQueryBuilder.class);
+    private static final Logger LOG = Logger.getLogger(SqlQueryBuilder.class);
 
     private final SqlTable table;
     private final IClass<?> dtoClass;
-    private final PgFilterTranslator translator;
-    private final PgSortClause sorts;
+    private final SqlFilterTranslator translator;
+    private final SqlSortClause sorts;
 
     /**
      * @param table    the domain's relational shape
      * @param dtoClass its DTO class — where {@code @FieldMappingRule} translates projected entity fields
      */
-    public PgQueryBuilder(SqlTable table, IClass<?> dtoClass) {
+    public SqlQueryBuilder(SqlTable table, IClass<?> dtoClass) {
         this(table, dtoClass, Optional.empty());
     }
 
@@ -59,11 +57,11 @@ public final class PgQueryBuilder {
      * @param dtoClass   its DTO class
      * @param textColumn the column a declared text index covers — {@code $text} then searches it alone
      */
-    public PgQueryBuilder(SqlTable table, IClass<?> dtoClass, Optional<SqlColumn> textColumn) {
+    public SqlQueryBuilder(SqlTable table, IClass<?> dtoClass, Optional<SqlColumn> textColumn) {
         this.table = table;
         this.dtoClass = dtoClass;
-        this.translator = new PgFilterTranslator(table, textColumn);
-        this.sorts = new PgSortClause(table);
+        this.translator = new SqlFilterTranslator(table, textColumn);
+        this.sorts = new SqlSortClause(table);
     }
 
     /**
@@ -152,7 +150,7 @@ public final class PgQueryBuilder {
      * The DTO field whose {@code @FieldMappingRule} reads the entity field; the same name otherwise.
      * Shared with the index planner, which must speak in the same DTO fields as every query.
      */
-    static String translateToDtoField(IClass<?> dtoClass, String entityField) {
+    public static String translateToDtoField(IClass<?> dtoClass, String entityField) {
         IClass<?> current = dtoClass;
         while (current != null) {
             for (IField field : current.getDeclaredFields()) {

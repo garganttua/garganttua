@@ -1,9 +1,7 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,9 +13,6 @@ import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.sql.schema.SqlTypes;
-import com.garganttua.dao.sql.SqlFragment;
-import com.garganttua.dao.sql.SqlHop;
-import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Follows a dotted field path down the tree of child tables, one {@link SqlHop} per collection or map
@@ -37,7 +32,7 @@ import com.garganttua.dao.sql.SqlQuery;
  * none), inlined as a hex-encoded literal, which cannot break out of its quotes whatever the key holds.
  * </p>
  */
-final class PgPathLocator {
+public final class SqlPathLocator {
 
     /**
      * Where a path leads.
@@ -46,14 +41,14 @@ final class PgPathLocator {
      * @param rest the rest of the path inside the last hop's element; null when the path names the
      *             last hop's collection itself, or the value of the map entry it reached
      */
-    record Located(List<SqlHop> hops, String rest) {
+    public record Located(List<SqlHop> hops, String rest) {
 
-        Located {
+        public Located {
             hops = List.copyOf(hops);
         }
 
         /** {@return the last hop} */
-        SqlHop last() {
+        public SqlHop last() {
             return hops.get(hops.size() - 1);
         }
     }
@@ -71,7 +66,7 @@ final class PgPathLocator {
      * @param inlineKeys  whether map keys are inlined as literals (for an {@code ORDER BY}) instead of
      *                    bound
      */
-    PgPathLocator(SqlTable table, String aliasPrefix, boolean inlineKeys) {
+    public SqlPathLocator(SqlTable table, String aliasPrefix, boolean inlineKeys) {
         this.table = table;
         this.aliasPrefix = aliasPrefix;
         this.inlineKeys = inlineKeys;
@@ -84,7 +79,7 @@ final class PgPathLocator {
      * @return where it leads; empty when it crosses no collection, or names a map key that cannot be a
      *         key of the map
      */
-    Optional<Located> locate(String field) {
+    public Optional<Located> locate(String field) {
         Optional<SqlChildTable> top = deepest(table.children(), field);
         if (top.isEmpty()) {
             return Optional.empty();
@@ -98,7 +93,7 @@ final class PgPathLocator {
      * @param holder the hop whose elements are collections
      * @return the hop to their items, or empty when the elements are not collections
      */
-    Optional<SqlHop> items(List<SqlHop> holder) {
+    public Optional<SqlHop> items(List<SqlHop> holder) {
         SqlHop last = holder.get(holder.size() - 1);
         return last.child().elementTable().map(items -> hop(holder, items));
     }
@@ -162,15 +157,15 @@ final class PgPathLocator {
                 SqlColumnKind.SCALAR, List.of(), map.keyType());
         Object value;
         try {
-            value = PgValues.toJdbc(keyColumn, key);
+            value = SqlValues.toJdbc(this.table.dialect(), keyColumn, key);
         } catch (ApiException e) {
             // A key that cannot be a key of this map (text against an Integer-keyed map) is in no document.
             return Optional.empty();
         }
         String ref = alias + "." + SqlNaming.quote(SqlChildTable.KEY);
         SqlFragment narrowed = inlineKeys
-                ? SqlFragment.of(" AND " + ref + EQUALS + literal(String.valueOf(value), keyColumn.sqlType()))
-                : SqlFragment.of(" AND " + ref + EQUALS + PgValues.placeholder(keyColumn), value);
+                ? SqlFragment.of(" AND " + ref + EQUALS + this.table.dialect().textLiteral(String.valueOf(value), keyColumn.sqlType()))
+                : SqlFragment.of(" AND " + ref + EQUALS + SqlValues.placeholder(this.table.dialect(), keyColumn), value);
         SqlFragment scope = scope(hops, alias).then(narrowed);
         SqlFragment keyAbsent = SqlFragment.of("SELECT 1 FROM " + SqlNaming.quote(map.name()) + " " + alias + " WHERE ")
                 .then(scope).wrap("NOT EXISTS (", ")");
@@ -230,10 +225,4 @@ final class PgPathLocator {
         return String.join(".", child.fieldPath());
     }
 
-    /** A text literal no content can escape — hex digits only — cast to the key column's type. */
-    private static String literal(String text, String sqlType) {
-        String hex = HexFormat.of().formatHex(text.getBytes(StandardCharsets.UTF_8));
-        String decoded = "convert_from(decode('" + hex + "', 'hex'), 'UTF8')";
-        return SqlTypes.TEXT.equals(sqlType) ? decoded : "CAST(" + decoded + " AS " + sqlType + ")";
-    }
 }

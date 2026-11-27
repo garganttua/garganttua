@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlQueryBuilder;
 import static com.garganttua.dao.postgresql.PgQueryFixture.field;
 import static com.garganttua.dao.postgresql.PgQueryFixture.listed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -49,7 +50,7 @@ import com.garganttua.dao.sql.SqlQuery;
  * p = palettes ({@code lines.attrs.<key>}); g = grids, a {@code List<List<String>>}.
  * </p>
  */
-@DisplayName("PgQueryBuilder — paths through nested child tables")
+@DisplayName("SqlQueryBuilder — paths through nested child tables")
 class PgNestedQueryTest {
 
     public static class OLine {
@@ -144,7 +145,7 @@ class PgNestedQueryTest {
     }
 
     private static SqlTable model(String domain, Class<?> dto) {
-        return SqlSchemaModel.of(domain, IClass.getClass(dto), "uuid", Map.of());
+        return SqlSchemaModel.of(PgDialect.INSTANCE, domain, IClass.getClass(dto), "uuid", Map.of());
     }
 
     private static void create(Connection c, String domain, Class<?> dto) throws SQLException {
@@ -248,9 +249,9 @@ class PgNestedQueryTest {
     private static final Map<String, Class<?>> DOMAINS = Map.of("shops", Shop.class, "taggeds", Tagged.class,
             "depots", Depot.class, "catalogs", Catalog.class, "palettes", Palette.class, "grids", Grid.class);
 
-    private static PgQueryBuilder builder(String domain) {
+    private static SqlQueryBuilder builder(String domain) {
         Class<?> dto = DOMAINS.get(domain);
-        return new PgQueryBuilder(model(domain, dto), IClass.getClass(dto));
+        return new SqlQueryBuilder(model(domain, dto), IClass.getClass(dto));
     }
 
     private static List<String> run(String domain, SqlQuery q) throws SQLException {

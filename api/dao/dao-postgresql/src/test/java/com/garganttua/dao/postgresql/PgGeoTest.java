@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlQueryBuilder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -205,7 +206,7 @@ class PgGeoTest {
             assertTrue(rs.next());
             assertTrue(rs.getString(1).contains("USING gist (((location)::geography))"), rs.getString(1));
         }
-        SqlTable table = SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
+        SqlTable table = SqlSchemaModel.of(PgDialect.INSTANCE, "places", IClass.getClass(Place.class), "uuid", Map.of());
         PgIndexSpec spec = PgIndexPlanner.plan(table, List.of(GEO_LOCATION), p -> p, "tenantId").get(0).spec()
                 .orElseThrow();
         try (Connection c = db.getConnection()) {
@@ -216,8 +217,8 @@ class PgGeoTest {
     }
 
     private String plan(IFilter filter) throws SQLException, ApiException {
-        SqlTable table = SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
-        SqlQuery query = new PgQueryBuilder(table, null).build(Optional.empty(), Optional.of(filter),
+        SqlTable table = SqlSchemaModel.of(PgDialect.INSTANCE, "places", IClass.getClass(Place.class), "uuid", Map.of());
+        SqlQuery query = new SqlQueryBuilder(table, null).build(Optional.empty(), Optional.of(filter),
                 Optional.empty(), Optional.empty());
         StringBuilder plan = new StringBuilder();
         try (Connection c = db.getConnection(); Statement s = c.createStatement()) {

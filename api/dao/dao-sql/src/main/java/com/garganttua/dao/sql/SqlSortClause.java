@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,10 +15,6 @@ import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.sql.schema.SqlTypes;
-import com.garganttua.dao.sql.SqlBsonOrder;
-import com.garganttua.dao.sql.SqlHop;
-import com.garganttua.dao.sql.SqlPathSortKey;
-import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Builds the {@code ORDER BY} of a read so that PostgreSQL returns rows in the order MongoDB would.
@@ -46,22 +42,21 @@ import com.garganttua.dao.sql.SqlQuery;
  * disjoint and complementary. The MongoDB DAO appends {@code _id} for the same reason.</li>
  * </ul>
  */
-final class PgSortClause {
+public final class SqlSortClause {
 
-    private static final Logger LOG = Logger.getLogger(PgSortClause.class);
+    private static final Logger LOG = Logger.getLogger(SqlSortClause.class);
 
     /** MongoDB's key field, which the MongoDB DAO fills with the uuid. */
     static final String MONGO_ID = "_id";
 
-    private static final String BINARY_COLLATION = " COLLATE \"C\"";
 
     private final SqlTable table;
-    private final PgPathLocator locator;
+    private final SqlPathLocator locator;
 
-    PgSortClause(SqlTable table) {
+    public SqlSortClause(SqlTable table) {
         this.table = table;
         // Keys inlined: an ORDER BY carries no bind values. "h" keeps its aliases apart from SqlBsonOrder's.
-        this.locator = new PgPathLocator(table, "h", true);
+        this.locator = new SqlPathLocator(table, "h", true);
     }
 
     /**
@@ -73,7 +68,7 @@ final class PgSortClause {
      * @throws ApiException when the sort has no field name, or names a value whose MongoDB order is not
      *                      reproduced (a JSONB or geometry value, a collection nested in a collection)
      */
-    String orderBy(ISort sort, boolean paged) throws ApiException {
+    public String orderBy(ISort sort, boolean paged) throws ApiException {
         return orderBy(sort, paged, java.util.Optional.empty());
     }
 
@@ -87,7 +82,7 @@ final class PgSortClause {
      * @return the clause, or an empty string
      * @throws ApiException when the sort names an unsortable field
      */
-    String orderBy(ISort sort, boolean paged, java.util.Optional<String> leading) throws ApiException {
+    public String orderBy(ISort sort, boolean paged, java.util.Optional<String> leading) throws ApiException {
         List<String> keys = new ArrayList<>();
         leading.ifPresent(keys::add);
         boolean byId = false;
@@ -96,11 +91,11 @@ final class PgSortClause {
             // Same test as MongoDao: anything but asc sorts descending.
             boolean ascending = sort.getDirection() == SortDirection.asc;
             byId = MONGO_ID.equals(field) || table.id().dottedPath().equals(field);
-            keys.addAll(byId ? List.of(SqlBsonOrder.ref(SqlQuery.ALIAS, table.id()) + BINARY_COLLATION
+            keys.addAll(byId ? List.of(SqlBsonOrder.ref(SqlQuery.ALIAS, table.id()) + table.dialect().binaryCollation()
                     + direction(ascending)) : keys(field, ascending));
         }
         if (paged && !byId) {
-            keys.add(SqlBsonOrder.ref(SqlQuery.ALIAS, table.id()) + BINARY_COLLATION + " ASC");
+            keys.add(SqlBsonOrder.ref(SqlQuery.ALIAS, table.id()) + table.dialect().binaryCollation() + " ASC");
         }
         return keys.isEmpty() ? "" : "ORDER BY " + String.join(", ", keys);
     }
@@ -132,7 +127,7 @@ final class PgSortClause {
             return List.of(bson.document(SqlQuery.ALIAS, table.columns(), p.fieldPath(),
                     SqlBsonOrder.ref(SqlQuery.ALIAS, p)).orNull() + direction(ascending));
         }
-        Optional<PgPathLocator.Located> located = locator.locate(field);
+        Optional<SqlPathLocator.Located> located = locator.locate(field);
         if (located.isPresent()) {
             return pathKeys(bson, located.get(), field, ascending);
         }
@@ -150,12 +145,12 @@ final class PgSortClause {
         String ref = SqlBsonOrder.ref(SqlQuery.ALIAS, column);
         String dir = direction(ascending);
         if (SqlBsonOrder.floating(column)) {
-            return List.of("(" + ref + " <> 'NaN')" + dir, ref + dir);
+            return List.of(table.dialect().notNaN(ref) + dir, ref + dir);
         }
         if (SqlTypes.BYTEA.equals(column.sqlType())) {
-            return List.of("octet_length(" + ref + ")" + dir, ref + dir);
+            return List.of(table.dialect().byteLength(ref) + dir, ref + dir);
         }
-        return List.of(ref + ("TEXT".equals(column.sqlType()) ? BINARY_COLLATION : "") + dir);
+        return List.of(ref + ("TEXT".equals(column.sqlType()) ? table.dialect().binaryCollation() : "") + dir);
     }
 
     /** A whole collection (by its smallest / largest element) or a whole map (as a sub-document). */
@@ -184,7 +179,7 @@ final class PgSortClause {
      * reachable ({@link SqlPathSortKey}). MongoDB gives an empty array no special place here — its key is
      * simply missing.
      */
-    private List<String> pathKeys(SqlBsonOrder bson, PgPathLocator.Located at, String field, boolean ascending)
+    private List<String> pathKeys(SqlBsonOrder bson, SqlPathLocator.Located at, String field, boolean ascending)
             throws ApiException {
         SqlHop last = at.last();
         SqlChildTable child = last.child();

@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.util.List;
 import java.util.UUID;
@@ -13,7 +13,7 @@ import com.garganttua.dao.sql.schema.SqlTable;
  *
  * <p>
  * The referenced entity belongs to ANOTHER domain, so its uuid is read with THAT domain's id field,
- * found in the {@link PgSchemaRegistry}. When the target is not registered (it is not stored in
+ * found in the {@link SqlSchemaRegistry}. When the target is not registered (it is not stored in
  * this database), the writer falls back to the OWNING domain's uuid field name — exactly what the
  * MongoDB DAO does in every case, since it reads a composed DTO's uuid with its own uuid field name.
  * Nothing about the target is invented: if the composed object has no such field, the write fails.
@@ -25,14 +25,14 @@ import com.garganttua.dao.sql.schema.SqlTable;
  * from a string.
  * </p>
  */
-final class PgWriteReferences {
+public final class SqlWriteReferences {
 
-    private static final Logger LOG = Logger.getLogger(PgWriteReferences.class);
+    private static final Logger LOG = Logger.getLogger(SqlWriteReferences.class);
 
     private final SqlTable table;
-    private final PgSchemaRegistry registry;
+    private final SqlSchemaRegistry registry;
 
-    PgWriteReferences(SqlTable table, PgSchemaRegistry registry) {
+    SqlWriteReferences(SqlTable table, SqlSchemaRegistry registry) {
         this.table = table;
         this.registry = registry;
     }
@@ -60,7 +60,7 @@ final class PgWriteReferences {
         List<String> idPath = idPathOf(targetDomain);
         Object uuid;
         try {
-            uuid = PgWriteSupport.valueAt(referenced, idPath);
+            uuid = SqlWriteSupport.valueAt(referenced, idPath);
         } catch (ApiException e) {
             throw new ApiException("Composed " + referenced.getClass().getName() + " (domain '" + targetDomain
                     + "', referenced from table '" + table.name() + "') has no uuid field '"

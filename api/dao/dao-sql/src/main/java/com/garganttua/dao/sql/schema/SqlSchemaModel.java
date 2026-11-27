@@ -15,6 +15,7 @@ import org.geojson.GeoJsonObject;
 
 import com.garganttua.core.crypto.IKey;
 import com.garganttua.core.reflection.IClass;
+import com.garganttua.dao.sql.ISqlDialect;
 import com.garganttua.core.reflection.IField;
 
 /**
@@ -78,6 +79,7 @@ public final class SqlSchemaModel {
     /**
      * Builds the relational shape of one domain.
      *
+     * @param dialect      the database the tables live on — carried by the model to every collaborator
      * @param domainName   the domain name — the main table is named after it
      * @param dtoClass     the domain's persisted DTO class
      * @param uuidField    the DTO field holding the uuid — the primary key
@@ -85,7 +87,7 @@ public final class SqlSchemaModel {
      * @return the table model
      * @throws IllegalArgumentException if the DTO has no uuid field, or two fields map to one column
      */
-    public static SqlTable of(String domainName, IClass<?> dtoClass, String uuidField,
+    public static SqlTable of(ISqlDialect dialect, String domainName, IClass<?> dtoClass, String uuidField,
             Map<String, String> compositions) {
         String table = SqlNaming.table(domainName);
         List<SqlColumn> columns = new ArrayList<>();
@@ -115,7 +117,7 @@ public final class SqlSchemaModel {
         all.add(id);
         all.addAll(columns);
         refuseCollisions(table, all, children);
-        return new SqlTable(table, id, all, children, composedFields(dtoClass, compositions));
+        return new SqlTable(table, id, all, children, composedFields(dtoClass, compositions), dialect);
     }
 
     /** The {@code @Composed} fields the DTO really persists, in field order: field name to target domain. */

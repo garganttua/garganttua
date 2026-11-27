@@ -109,7 +109,7 @@ class PgSchemaModelTest {
     }
 
     private static SqlTable model() {
-        return SqlSchemaModel.of("orders", IClass.getClass(Order.class), "uuid",
+        return SqlSchemaModel.of(PgDialect.INSTANCE, "orders", IClass.getClass(Order.class), "uuid",
                 Map.of("customer", "customers", "relatedOrders", "orders"));
     }
 
@@ -158,7 +158,7 @@ class PgSchemaModelTest {
         @Test
         @DisplayName("a collection inside a collection element to a NESTED child table, at any depth")
         void nestedCollectionsGetNestedTables() {
-            SqlTable table = SqlSchemaModel.of("shops", IClass.getClass(Shop.class), "uuid", Map.of());
+            SqlTable table = SqlSchemaModel.of(PgDialect.INSTANCE, "shops", IClass.getClass(Shop.class), "uuid", Map.of());
             SqlChildTable orders = child(table, "orders");
             SqlChildTable lines = child(table, "orders.lines");
             SqlChildTable tags = child(table, "orders.lines.tags");
@@ -176,7 +176,7 @@ class PgSchemaModelTest {
         @Test
         @DisplayName("an element that IS a collection to a table holding the element itself")
         void collectionOfCollections() {
-            SqlTable table = SqlSchemaModel.of("grids", IClass.getClass(Grid.class), "uuid", Map.of());
+            SqlTable table = SqlSchemaModel.of(PgDialect.INSTANCE, "grids", IClass.getClass(Grid.class), "uuid", Map.of());
             SqlChildTable rows = child(table, "rows");
             assertEquals(SqlChildKind.NESTED_COLLECTION, rows.kind());
             SqlChildTable cells = rows.elementTable().orElseThrow(() -> new AssertionError("no element table"));
@@ -265,7 +265,7 @@ class PgSchemaModelTest {
         @DisplayName("a DTO without its uuid field")
         void aTableNeedsAKey() {
             assertThrows(IllegalArgumentException.class,
-                    () -> SqlSchemaModel.of("things", IClass.getClass(NoUuid.class), "uuid", Map.of()));
+                    () -> SqlSchemaModel.of(PgDialect.INSTANCE, "things", IClass.getClass(NoUuid.class), "uuid", Map.of()));
         }
     }
 

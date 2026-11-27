@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.util.Arrays;
 import java.util.List;
@@ -10,11 +10,6 @@ import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlColumnKind;
 import com.garganttua.dao.sql.schema.SqlNaming;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.SqlField;
-import com.garganttua.dao.sql.SqlFragment;
-import com.garganttua.dao.sql.SqlHop;
-import com.garganttua.dao.sql.SqlOperand;
-import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Resolves a filter's field name (a dotted DTO path, used as is, like MongoDB does) to where it lives
@@ -34,10 +29,10 @@ import com.garganttua.dao.sql.SqlQuery;
  * Resolution order, most specific first: a reference ({@code customer}, or {@code customer.$id}, the
  * path of MongoDB's DBRef id), a main-table column or a path inside a JSONB one, a path through the
  * child tables — a collection, a path inside its elements, a map entry, at any depth
- * ({@link PgPathLocator}) — and last an embedded POJO.
+ * ({@link SqlPathLocator}) — and last an embedded POJO.
  * </p>
  */
-final class PgFieldResolver {
+public final class SqlFieldResolver {
 
     /** The alias of the first-level child table inside an {@code EXISTS}; deeper levels append their depth. */
     static final String CHILD_ALIAS = "c";
@@ -46,11 +41,11 @@ final class PgFieldResolver {
     static final String DBREF_ID = "$id";
 
     private final SqlTable table;
-    private final PgPathLocator locator;
+    private final SqlPathLocator locator;
 
-    PgFieldResolver(SqlTable table) {
+    public SqlFieldResolver(SqlTable table) {
         this.table = table;
-        this.locator = new PgPathLocator(table, CHILD_ALIAS, false);
+        this.locator = new SqlPathLocator(table, CHILD_ALIAS, false);
     }
 
     /**
@@ -59,7 +54,7 @@ final class PgFieldResolver {
      * @param field the dotted field path from the filter
      * @return where it lives — {@link SqlField.Opaque#MISSING} when the model has no such field
      */
-    SqlField resolve(String field) {
+    public SqlField resolve(String field) {
         Optional<SqlField> reference = reference(field);
         if (reference.isPresent()) {
             return reference.get();
@@ -68,7 +63,7 @@ final class PgFieldResolver {
         if (main.isPresent()) {
             return new SqlField.Scalar(main.get());
         }
-        Optional<PgPathLocator.Located> located = locator.locate(field);
+        Optional<SqlPathLocator.Located> located = locator.locate(field);
         if (located.isPresent()) {
             return located.get().rest() == null ? whole(located.get()) : inElement(located.get());
         }
@@ -100,7 +95,7 @@ final class PgFieldResolver {
      * are compared element by element; anything else is an object, of which only presence can be
      * asked — absent on EVERY branch for {@code $exists: false}, on SOME branch for {@code $eq null}.
      */
-    private SqlField whole(PgPathLocator.Located at) {
+    private SqlField whole(SqlPathLocator.Located at) {
         List<SqlHop> hops = at.hops();
         SqlHop last = at.last();
         SqlChildTable child = last.child();
@@ -142,7 +137,7 @@ final class PgFieldResolver {
      * A path inside the elements of a collection ({@code lines.sku}, {@code orders.lines.sku}) or inside
      * the value of a map entry ({@code stock.apple.qty}).
      */
-    private static SqlField inElement(PgPathLocator.Located at) {
+    private static SqlField inElement(SqlPathLocator.Located at) {
         SqlHop last = at.last();
         SqlChildTable child = last.child();
         Optional<SqlOperand> operand = switch (child.kind()) {

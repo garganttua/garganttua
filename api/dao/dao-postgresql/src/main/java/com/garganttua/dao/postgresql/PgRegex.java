@@ -1,5 +1,6 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlElementPredicates;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -30,7 +31,7 @@ import com.garganttua.dao.sql.SqlOperand;
  * nothing: {@code FALSE}, which a surrounding {@code $nor} turns into a kept row.</li>
  * </ul>
  * <p>
- * On a collection, {@link PgElementPredicates} wraps this predicate in an {@code EXISTS}: the owner
+ * On a collection, {@link SqlElementPredicates} wraps this predicate in an {@code EXISTS}: the owner
  * matches when any element matches.
  * </p>
  *

@@ -1,5 +1,10 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlWriter;
+import com.garganttua.dao.sql.SqlReader;
+import com.garganttua.dao.sql.SqlChildAggregate;
+import com.garganttua.dao.sql.SqlQueryBuilder;
+import com.garganttua.dao.sql.SqlSchemaRegistry;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -42,14 +47,14 @@ import com.garganttua.dao.sql.SqlQuery;
  * <p>
  * The shape of the tables is derived once from the domain's DTO by {@link SqlSchemaModel} and is the
  * single contract of the four collaborators this class wires: {@link PgSchemaManager} (DDL),
- * {@link PgWriter} (upsert, delete), {@link PgReader} (select, rebuild) and {@link PgQueryBuilder}
+ * {@link SqlWriter} (upsert, delete), {@link SqlReader} (select, rebuild) and {@link SqlQueryBuilder}
  * (filters, sort, pagination, projection). None of them re-derives the mapping.
  * </p>
  *
  * <p>
  * <b>Round trips, and transactions only where they are needed.</b> Over a network, what an operation
  * costs is mostly how many times it waits for the server. A read is ONE statement — the collections come
- * back inside the main query, aggregated ({@link PgChildAggregate}) — and a paginated read carries its
+ * back inside the main query, aggregated ({@link SqlChildAggregate}) — and a paginated read carries its
  * total in the same statement ({@link #findPage}); one statement is one snapshot, so these run in
  * autocommit, with no {@code BEGIN}, {@code COMMIT} or {@code SET}. So do the writes that are one
  * statement: an entity without collections, and every delete (the collections go by cascade). An entity
@@ -74,7 +79,7 @@ public class PgDao implements IDao {
 
     private final DataSource dataSource;
     private final String domainName;
-    private final PgSchemaRegistry registry;
+    private final SqlSchemaRegistry registry;
     private final SchemaMode schemaMode;
     private final PgIndexMode indexMode;
 
@@ -84,7 +89,7 @@ public class PgDao implements IDao {
     private volatile Wiring wiring;
 
     /** The collaborators of one registered domain — rebuilt as a whole if the domain re-registers. */
-    private record Wiring(SqlTable table, PgWriter writer, PgReader reader, PgQueryBuilder queries) {
+    private record Wiring(SqlTable table, SqlWriter writer, SqlReader reader, SqlQueryBuilder queries) {
     }
 
     /**
@@ -141,7 +146,7 @@ public class PgDao implements IDao {
         for (DtoComposition composition : dto.compositions()) {
             compositions.put(composition.field().getLastElement(), composition.collection());
         }
-        SqlTable table = SqlSchemaModel.of(this.domainName, dtoClass, uuidField, compositions);
+        SqlTable table = SqlSchemaModel.of(PgDialect.INSTANCE, this.domainName, dtoClass, uuidField, compositions);
         List<PgIndexPlanner.Planned> indexes = planIndexes(domainDefinition, dto, table);
         try {
             new PgSchemaManager(this.dataSource, this.schemaMode).ensure(table);
@@ -152,9 +157,9 @@ public class PgDao implements IDao {
                     + "' is not usable: " + e.getMessage(), e);
         }
         this.registry.register(this.domainName, table, dtoClass);
-        this.wiring = new Wiring(table, new PgWriter(table, this.registry, ensureDigests(table)),
-                new PgReader(table, dtoClass, this.registry),
-                new PgQueryBuilder(table, dtoClass, PgIndexPlanner.textColumn(table, indexes)));
+        this.wiring = new Wiring(table, new SqlWriter(table, this.registry, ensureDigests(table)),
+                new SqlReader(table, dtoClass, this.registry),
+                new SqlQueryBuilder(table, dtoClass, PgIndexPlanner.textColumn(table, indexes)));
         log.debug("PostgreSQL domain '{}' mapped to table '{}' ({} columns, {} child tables)",
                 this.domainName, table.name(), table.columns().size(), table.children().size());
     }
@@ -215,8 +220,8 @@ public class PgDao implements IDao {
         IClass<?> dtoClass = dto.dtoClass();
         return PgIndexPlanner.plan(table, rules, path -> {
             int dot = path.indexOf('.');
-            return dot < 0 ? PgQueryBuilder.translateToDtoField(dtoClass, path)
-                    : PgQueryBuilder.translateToDtoField(dtoClass, path.substring(0, dot)) + path.substring(dot);
+            return dot < 0 ? SqlQueryBuilder.translateToDtoField(dtoClass, path)
+                    : SqlQueryBuilder.translateToDtoField(dtoClass, path.substring(0, dot)) + path.substring(dot);
         }, dto.tenantId() == null ? null : dto.tenantId().toString());
     }
 
@@ -244,7 +249,7 @@ public class PgDao implements IDao {
             Optional<List<String>> projection) throws ApiException {
         Wiring w = wired();
         SqlQuery query = w.queries().build(pageable, filter, sort, projection);
-        PgReader.Paged paged = w.reader().singleStatement(query) ? single(c -> w.reader().findPage(c, query))
+        SqlReader.Paged paged = w.reader().singleStatement(query) ? single(c -> w.reader().findPage(c, query))
                 : inSnapshot(c -> w.reader().findPage(c, query));
         return new Page(paged.total(), paged.dtos());
     }

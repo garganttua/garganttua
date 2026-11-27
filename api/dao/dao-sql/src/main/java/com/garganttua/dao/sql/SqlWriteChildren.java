@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
 
-import org.postgresql.util.PGobject;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.dao.sql.schema.SqlChildKind;
@@ -54,12 +53,15 @@ import com.garganttua.dao.sql.schema.SqlTypes;
  * MongoDB DAO skips it when building its {@code DBRef} list: there is no entity to point to.
  * </p>
  */
-final class PgWriteChildren {
+public final class SqlWriteChildren {
+
+    /** The label of a JSON value in a digest — kept from the PostgreSQL DAO, whose stored digests must stay valid. */
+    private static final String JSON_DIGEST_LABEL = "jsonb";
 
     private final SqlTable table;
-    private final PgWriteReferences references;
+    private final SqlWriteReferences references;
 
-    PgWriteChildren(SqlTable table, PgWriteReferences references) {
+    SqlWriteChildren(SqlTable table, SqlWriteReferences references) {
         this.table = table;
         this.references = references;
     }
@@ -119,11 +121,14 @@ final class PgWriteChildren {
             justification = SuppressFBWarnings.GENERATED_SQL)
     private List<Holder> insert(Connection connection, SqlChildTable child, Object ownerId, List<Row> rows)
             throws SQLException, ApiException {
-        String sql = insertSql(child);
+        String sql = insertSql(table.dialect(), child);
         try (PreparedStatement insert = child.hasChildren()
                 ? connection.prepareStatement(sql, new String[] { SqlChildTable.ID })
                 : connection.prepareStatement(sql)) {
             SqlColumn keyColumn = child.ordered() ? null : keyColumn(child);
+            if (child.hasChildren() && !table.dialect().batchesGeneratedKeys()) {
+                return oneByOne(insert, child, keyColumn, ownerId, rows);
+            }
             for (Row row : rows) {
                 bindRow(insert, child, keyColumn, ownerId, row);
                 insert.addBatch();
@@ -144,9 +149,29 @@ final class PgWriteChildren {
         if (keyColumn == null) {
             insert.setObject(position, row.position());
         } else {
-            PgWriteSupport.bind(insert, position, keyColumn, PgValues.toJdbc(keyColumn, row.position()));
+            SqlWriteSupport.bind(table.dialect(), insert, position, keyColumn, SqlValues.toJdbc(table.dialect(), keyColumn, row.position()));
         }
         bindValues(insert, position + 1, child, row.element());
+    }
+
+    /** Inserts the rows one at a time, reading each one's generated id — for a driver that cannot batch them. */
+    private List<Holder> oneByOne(PreparedStatement insert, SqlChildTable child, SqlColumn keyColumn, Object ownerId,
+            List<Row> rows) throws SQLException, ApiException {
+        List<Holder> out = new ArrayList<>(rows.size());
+        for (Row row : rows) {
+            bindRow(insert, child, keyColumn, ownerId, row);
+            insert.executeUpdate();
+            try (ResultSet keys = insert.getGeneratedKeys()) {
+                if (!keys.next()) {
+                    throw new ApiException("The insert into child table '" + child.name()
+                            + "' returned no generated id: the rows nested under it cannot be linked");
+                }
+                if (row.element() != null) {
+                    out.add(new Holder(keys.getLong(1), row.element()));
+                }
+            }
+        }
+        return out;
     }
 
     /** Pairs each inserted row with its generated id — pgjdbc returns them in batch order. */
@@ -174,7 +199,7 @@ final class PgWriteChildren {
     private List<Row> rows(SqlChildTable child, List<Holder> holders) throws ApiException {
         List<Row> rows = new ArrayList<>();
         for (Holder holder : holders) {
-            Object container = PgWriteSupport.valueAt(holder.object(), child.fieldPath());
+            Object container = SqlWriteSupport.valueAt(holder.object(), child.fieldPath());
             if (container == null) {
                 continue;
             }
@@ -217,7 +242,7 @@ final class PgWriteChildren {
         int index = first;
         List<Object> values = values(child, element);
         for (int i = 0; i < values.size(); i++) {
-            PgWriteSupport.bind(insert, index, child.valueColumns().get(i), values.get(i));
+            SqlWriteSupport.bind(table.dialect(), insert, index, child.valueColumns().get(i), values.get(i));
             index++;
         }
     }
@@ -228,8 +253,8 @@ final class PgWriteChildren {
         for (SqlColumn column : child.valueColumns()) {
             Object value = column.kind() == SqlColumnKind.COMPOSITION
                     ? references.uuidOf(child.composedCollection(), element)
-                    : PgWriteSupport.valueAt(element, column.fieldPath());
-            values.add(PgValues.toJdbc(column, value));
+                    : SqlWriteSupport.valueAt(element, column.fieldPath());
+            values.add(SqlValues.toJdbc(table.dialect(), column, value));
         }
         return values;
     }
@@ -271,14 +296,14 @@ final class PgWriteChildren {
             throws ApiException {
         List<Row> rows = rows(child, holders);
         SqlColumn keyColumn = child.ordered() ? null : keyColumn(child);
-        feed(sha, "table", child.name());
-        feed(sha, "rows", rows.size());
+        feed(table.dialect(), sha, "table", child.name());
+        feed(table.dialect(), sha, "rows", rows.size());
         List<Holder> written = new ArrayList<>();
         for (Row row : rows) {
-            feed(sha, "parent", row.parent());
-            feed(sha, "position", keyColumn == null ? row.position() : PgValues.toJdbc(keyColumn, row.position()));
+            feed(table.dialect(), sha, "parent", row.parent());
+            feed(table.dialect(), sha, "position", keyColumn == null ? row.position() : SqlValues.toJdbc(table.dialect(), keyColumn, row.position()));
             for (Object value : values(child, row.element())) {
-                feed(sha, "value", value);
+                feed(table.dialect(), sha, "value", value);
             }
             if (child.hasChildren() && row.element() != null) {
                 written.add(new Holder(ids.next(), row.element()));
@@ -294,13 +319,14 @@ final class PgWriteChildren {
      * can feed the same bytes ({@code "ab","c"} is not {@code "a","bc"}; the string {@code "1"} is not the
      * number 1).
      */
-    private static void feed(MessageDigest sha, String label, Object value) {
+    private static void feed(ISqlDialect dialect, MessageDigest sha, String label, Object value) {
         String type = value == null ? "null" : value.getClass().getName();
         byte[] content;
         if (value instanceof byte[] bytes) {
             content = bytes;
-        } else if (value instanceof PGobject object) {
-            content = (object.getType() + ":" + object.getValue()).getBytes(StandardCharsets.UTF_8);
+        } else if (dialect.boundJsonText(value).isPresent()) {
+            // Labelled as the PostgreSQL DAO always labelled its JSONB values, so stored digests stay valid.
+            content = (JSON_DIGEST_LABEL + ":" + dialect.boundJsonText(value).get()).getBytes(StandardCharsets.UTF_8);
         } else {
             content = String.valueOf(value).getBytes(StandardCharsets.UTF_8);
         }
@@ -345,7 +371,7 @@ final class PgWriteChildren {
     }
 
     /** {@return the insert of one child table's row, package-visible for tests} */
-    static String insertSql(SqlChildTable child) {
+    static String insertSql(ISqlDialect dialect, SqlChildTable child) {
         StringJoiner names = new StringJoiner(", ");
         StringJoiner values = new StringJoiner(", ");
         names.add(SqlNaming.quote(SqlChildTable.OWNER));
@@ -358,7 +384,7 @@ final class PgWriteChildren {
         values.add("?");
         for (SqlColumn column : child.valueColumns()) {
             names.add(SqlNaming.quote(column.name()));
-            values.add(PgValues.placeholder(column));
+            values.add(SqlValues.placeholder(dialect, column));
         }
         return "INSERT INTO " + SqlNaming.quote(child.name()) + " (" + names + ") VALUES (" + values + ")";
     }

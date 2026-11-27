@@ -3,6 +3,8 @@ package com.garganttua.dao.sql.schema;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import com.garganttua.dao.sql.ISqlDialect;
 import java.util.Optional;
 
 /**
@@ -22,9 +24,10 @@ import java.util.Optional;
  * @param compositions every {@code @Composed} field — single or collection — by its dotted path, to
  *                     the domain it references: what the writer needs to read the target's uuid and
  *                     the reader to resolve it
+ * @param dialect      the database these tables live on: how their values are bound and their SQL spelled
  */
 public record SqlTable(String name, SqlColumn id, List<SqlColumn> columns, List<SqlChildTable> children,
-        Map<String, String> compositions) {
+        Map<String, String> compositions, ISqlDialect dialect) {
 
     public SqlTable {
         Objects.requireNonNull(name, "name");
@@ -32,6 +35,7 @@ public record SqlTable(String name, SqlColumn id, List<SqlColumn> columns, List<
         columns = List.copyOf(Objects.requireNonNull(columns, "columns"));
         children = List.copyOf(Objects.requireNonNull(children, "children"));
         compositions = compositions == null ? Map.of() : Map.copyOf(compositions);
+        Objects.requireNonNull(dialect, "dialect");
     }
 
     /**

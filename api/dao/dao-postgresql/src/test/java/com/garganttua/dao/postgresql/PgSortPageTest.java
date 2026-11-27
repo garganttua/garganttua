@@ -1,5 +1,7 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlQueryBuilder;
+import com.garganttua.dao.sql.SqlSortClause;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -23,12 +25,12 @@ import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.dao.sql.SqlQuery;
 
 /**
- * Sort, pagination and projection of {@link PgQueryBuilder} ({@link PgSortClause}, {@link SqlBsonOrder}):
+ * Sort, pagination and projection of {@link SqlQueryBuilder} ({@link SqlSortClause}, {@link SqlBsonOrder}):
  * the SQL shape where it is the point (no field name ever reaches the SQL, the uuid tiebreaker), and
  * the real order on {@link PgQueryFixture#seed} otherwise. A page of size 0 is used to read everything
  * with the uuid tiebreaker, so ties come back in a known order.
  */
-@DisplayName("PgQueryBuilder — sort, pagination, projection")
+@DisplayName("SqlQueryBuilder — sort, pagination, projection")
 class PgSortPageTest {
 
     private static final String UUID_ASC = "t.\"uuid\" COLLATE \"C\" ASC";

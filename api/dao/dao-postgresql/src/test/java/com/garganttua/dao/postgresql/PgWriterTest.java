@@ -1,5 +1,7 @@
 package com.garganttua.dao.postgresql;
 
+import com.garganttua.dao.sql.SqlWriteSupport;
+import com.garganttua.dao.sql.SqlWriter;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -49,7 +51,7 @@ import com.garganttua.dao.sql.schema.SqlSchemaModel;
 import com.garganttua.dao.sql.schema.SqlTable;
 
 /**
- * The write side, proven against a real PostgreSQL: what {@link PgWriter} stores is read back with
+ * The write side, proven against a real PostgreSQL: what {@link SqlWriter} stores is read back with
  * plain JDBC, never through the DAO's own reader — a writer checked by its own reader would pass
  * with both sides wrong in the same way.
  */
@@ -202,7 +204,7 @@ class PgWriterTest {
     // --------------------------------------------------------------- helpers
 
     private static SqlTable model(String domain, IClass<?> dto, Map<String, String> compositions) {
-        return SqlSchemaModel.of(domain, dto, "uuid", compositions);
+        return SqlSchemaModel.of(PgDialect.INSTANCE, domain, dto, "uuid", compositions);
     }
 
     private static DataSource create(SqlTable table) throws SQLException {
@@ -216,7 +218,7 @@ class PgWriterTest {
     }
 
     /** Writes in a caller-owned transaction, as the DAO will. */
-    private static void save(DataSource db, PgWriter writer, Object dto) throws Exception {
+    private static void save(DataSource db, SqlWriter writer, Object dto) throws Exception {
         try (Connection c = db.getConnection()) {
             c.setAutoCommit(false);
             writer.upsert(c, dto);
@@ -224,7 +226,7 @@ class PgWriterTest {
         }
     }
 
-    private static void remove(DataSource db, PgWriter writer, Object dto) throws Exception {
+    private static void remove(DataSource db, SqlWriter writer, Object dto) throws Exception {
         try (Connection c = db.getConnection()) {
             c.setAutoCommit(false);
             writer.delete(c, dto);
@@ -322,7 +324,7 @@ class PgWriterTest {
             s.ref = UUID.randomUUID();
             s.blob = new byte[] { 0, 1, (byte) 0xFF };
 
-            save(db, new PgWriter(table, new PgSchemaRegistry()), s);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), s);
 
             try (Connection c = db.getConnection(); Statement st = c.createStatement();
                     ResultSet r = st.executeQuery("SELECT * FROM \"scalars\"")) {
@@ -362,7 +364,7 @@ class PgWriterTest {
             s.uuid = "s2";
             // A primitive char defaults to U+0000, which PostgreSQL TEXT cannot hold (see the report).
             s.letter = 'y';
-            save(db, new PgWriter(table, new PgSchemaRegistry()), s);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), s);
 
             List<Object> row = rows(db, "SELECT \"text\", \"level\", \"boxed\", \"amount\", \"huge\", \"at\", "
                     + "\"date\", \"day\", \"local\", \"time\", \"offset\", \"ref\", \"blob\" FROM \"scalars\"").get(0);
@@ -393,7 +395,7 @@ class PgWriterTest {
             s.local = LocalDateTime.parse("2024-01-02T03:04:05.123456");
             s.time = LocalTime.parse("23:59:58.999999");
             s.offset = OffsetDateTime.parse("2024-01-02T03:04:05.123999+02:00");
-            save(db, new PgWriter(table, new PgSchemaRegistry()), s);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), s);
             try (Connection c = db.getConnection(); Statement st = c.createStatement();
                     ResultSet r = st.executeQuery("SELECT \"local\", \"time\", \"offset\" FROM \"scalars\"")) {
                 r.next();
@@ -408,7 +410,7 @@ class PgWriterTest {
         @DisplayName("accept 34 significant digits and refuse 35, naming the field")
         void decimal128() throws Exception {
             DataSource db = create(table);
-            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            SqlWriter writer = new SqlWriter(table, new PgSchemaRegistry());
             Scalars s = scalars();
             s.amount = new BigDecimal("1234567890123456789012345678901.234");
             save(db, writer, s);
@@ -427,15 +429,15 @@ class PgWriterTest {
             Scalars s = scalars();
             s.text = "a\0b";
             ApiException e = assertThrows(ApiException.class,
-                    () -> save(db, new PgWriter(table, new PgSchemaRegistry()), s));
+                    () -> save(db, new SqlWriter(table, new PgSchemaRegistry()), s));
             assertTrue(e.getMessage().contains("text") && e.getMessage().contains("NUL"), e::getMessage);
         }
 
         @Test
         @DisplayName("tell an escaped NUL in JSON from an escaped backslash followed by 'u0000'")
         void escapedNul() {
-            assertTrue(PgWriteSupport.escapesNul("{\"a\":\"x\\u0000\"}"));
-            assertFalse(PgWriteSupport.escapesNul("{\"a\":\"x\\\\u0000\"}"));
+            assertTrue(SqlWriteSupport.escapesNul("{\"a\":\"x\\u0000\"}"));
+            assertFalse(SqlWriteSupport.escapesNul("{\"a\":\"x\\\\u0000\"}"));
         }
     }
 
@@ -449,7 +451,7 @@ class PgWriterTest {
         @DisplayName("flatten an embedded POJO into its prefixed columns")
         void pojoIsFlattened() throws Exception {
             DataSource db = create(table);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), rich("r1"));
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), rich("r1"));
             assertEquals(List.of(List.of("1 rue de la Paix", "Dole", 39100)),
                     rows(db, "SELECT \"address__street\", \"address__city\", \"address__zip\" FROM \"riches\""));
         }
@@ -460,7 +462,7 @@ class PgWriterTest {
             DataSource db = create(table);
             Rich r = rich("r1");
             r.address = null;
-            save(db, new PgWriter(table, new PgSchemaRegistry()), r);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), r);
             assertEquals(Arrays.asList(null, null, null),
                     rows(db, "SELECT \"address__street\", \"address__city\", \"address__zip\" FROM \"riches\"").get(0),
                     "a missing POJO must not become an int 0 the reader would turn into an empty object");
@@ -470,7 +472,7 @@ class PgWriterTest {
         @DisplayName("write a scalar list as rows ordered by _ord")
         void scalarListRows() throws Exception {
             DataSource db = create(table);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), rich("r1"));
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), rich("r1"));
             assertEquals(List.of(List.of("r1", 0, "b"), List.of("r1", 1, "a"), List.of("r1", 2, "c")),
                     rows(db, "SELECT \"_owner\", \"_ord\", \"value\" FROM \"riches__tags\" ORDER BY \"_ord\""));
         }
@@ -482,7 +484,7 @@ class PgWriterTest {
             Rich r = rich("r1");
             r.tags = Arrays.asList("b", null, "c");
             r.lines = Arrays.asList(new Line("A", "1"), null);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), r);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), r);
             assertEquals(List.of(List.of(0, "b"), Arrays.asList(1, null), List.of(2, "c")),
                     rows(db, "SELECT \"_ord\", \"value\" FROM \"riches__tags\" ORDER BY \"_ord\""));
             assertEquals(Arrays.asList(1, null, null),
@@ -498,7 +500,7 @@ class PgWriterTest {
             r.tags = new ArrayList<>();
             r.stock = null;
             r.lines = Arrays.asList(new Line(), null);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), r);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), r);
             assertEquals(Arrays.asList(true, true, null),
                     rows(db, "SELECT \"address\", \"tags\", \"stock\" FROM \"riches\"").get(0),
                     "an all-null POJO and an empty list exist; a null map does not");
@@ -512,7 +514,7 @@ class PgWriterTest {
         @DisplayName("write an array like a list")
         void arrayRows() throws Exception {
             DataSource db = create(table);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), rich("r1"));
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), rich("r1"));
             assertEquals(List.of(List.of(0, 7), List.of(1, 3)),
                     rows(db, "SELECT \"_ord\", \"value\" FROM \"riches__scores\" ORDER BY \"_ord\""));
         }
@@ -521,7 +523,7 @@ class PgWriterTest {
         @DisplayName("write a POJO list as flattened element rows")
         void pojoListRows() throws Exception {
             DataSource db = create(table);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), rich("r1"));
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), rich("r1"));
             List<List<Object>> lines = rows(db,
                     "SELECT \"_ord\", \"sku\", \"price\" FROM \"riches__lines\" ORDER BY \"_ord\"");
             assertEquals(2, lines.size(), "one row per element");
@@ -535,7 +537,7 @@ class PgWriterTest {
         @DisplayName("write a map as rows keyed by _key")
         void mapRows() throws Exception {
             DataSource db = create(table);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), rich("r1"));
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), rich("r1"));
             assertEquals(List.of(List.of("x", 1), List.of("y", 2)),
                     rows(db, "SELECT \"_key\", \"value\" FROM \"riches__stock\" ORDER BY \"_key\""));
         }
@@ -548,7 +550,7 @@ class PgWriterTest {
             r.stock = new HashMap<>();
             r.stock.put(null, 1);
             ApiException e = assertThrows(ApiException.class,
-                    () -> save(db, new PgWriter(table, new PgSchemaRegistry()), r));
+                    () -> save(db, new SqlWriter(table, new PgSchemaRegistry()), r));
             assertTrue(e.getMessage().contains("null key"), () -> "the message must say why: " + e.getMessage());
         }
 
@@ -562,7 +564,7 @@ class PgWriterTest {
             r.node.self = new Node();
             r.node.self.label = "leaf";
             r.anything = Map.of("k", 5);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), r);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), r);
             assertEquals(List.of(List.of("root", "leaf", "5")), rows(db,
                     "SELECT \"node\"->>'label', \"node\"->'self'->>'label', \"anything\"->>'k' FROM \"riches\""));
         }
@@ -573,7 +575,7 @@ class PgWriterTest {
             DataSource db = create(table);
             Rich r = rich("r1");
             r.key = signingKey();
-            save(db, new PgWriter(table, new PgSchemaRegistry()), r);
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), r);
             List<Object> row = rows(db, "SELECT \"key\"->>'__ikey', \"key\"->>'algorithm', "
                     + "\"key\"->>'type', length(\"key\"->>'rawKey') FROM \"riches\"").get(0);
             assertEquals("true", row.get(0), "the descriptor must carry the __ikey marker the reader looks for");
@@ -593,7 +595,7 @@ class PgWriterTest {
         @DisplayName("twice REPLACES: the main row updated, removed elements gone, no duplicates")
         void secondWriteReplaces() throws Exception {
             DataSource db = create(table);
-            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            SqlWriter writer = new SqlWriter(table, new PgSchemaRegistry());
             save(db, writer, rich("r1"));
 
             Rich second = rich("r1");
@@ -617,7 +619,7 @@ class PgWriterTest {
         @DisplayName("of one entity leaves the collections of another untouched")
         void ownersAreIsolated() throws Exception {
             DataSource db = create(table);
-            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            SqlWriter writer = new SqlWriter(table, new PgSchemaRegistry());
             save(db, writer, rich("r1"));
             Rich other = rich("r2");
             other.tags = List.of("only");
@@ -630,7 +632,7 @@ class PgWriterTest {
         @DisplayName("of a table with only an id does nothing on conflict")
         void idOnlyTable() throws Exception {
             SqlTable legacy = model("legacies", IClass.getClass(Legacy.class), Map.of());
-            PgWriter writer = new PgWriter(legacy, new PgSchemaRegistry());
+            SqlWriter writer = new SqlWriter(legacy, new PgSchemaRegistry());
             assertTrue(writer.upsertSql().endsWith("DO NOTHING"), writer::upsertSql);
             DataSource db = create(legacy);
             Legacy l = new Legacy();
@@ -646,7 +648,7 @@ class PgWriterTest {
             DataSource db = create(table);
             Rich r = rich(null);
             ApiException e = assertThrows(ApiException.class,
-                    () -> save(db, new PgWriter(table, new PgSchemaRegistry()), r));
+                    () -> save(db, new SqlWriter(table, new PgSchemaRegistry()), r));
             assertTrue(e.getMessage().contains("uuid"), e::getMessage);
             assertEquals(0, count(db, "riches"));
         }
@@ -657,7 +659,7 @@ class PgWriterTest {
             DataSource db = create(table);
             try (Connection c = db.getConnection()) {
                 c.setAutoCommit(false);
-                new PgWriter(table, new PgSchemaRegistry()).upsert(c, rich("r1"));
+                new SqlWriter(table, new PgSchemaRegistry()).upsert(c, rich("r1"));
                 assertEquals(0, count(db, "riches"), "another connection must not see an uncommitted write");
                 c.rollback();
             }
@@ -674,7 +676,7 @@ class PgWriterTest {
             r.stock.put(null, 1);
             try (Connection c = db.getConnection()) {
                 c.setAutoCommit(false);
-                assertThrows(ApiException.class, () -> new PgWriter(table, new PgSchemaRegistry()).upsert(c, r));
+                assertThrows(ApiException.class, () -> new SqlWriter(table, new PgSchemaRegistry()).upsert(c, r));
                 assertEquals(3, rows(c, "SELECT 1 FROM \"riches__tags\"").size(),
                         "precondition: the failure must happen AFTER earlier rows were written");
                 c.rollback();
@@ -702,7 +704,7 @@ class PgWriterTest {
         @DisplayName("link each grandchild row to its parent row's _id, with the ROOT id as _owner at every level")
         void grandchildrenLinked() throws Exception {
             DataSource db = create(table);
-            save(db, new PgWriter(table, new PgSchemaRegistry()), shop("s1",
+            save(db, new SqlWriter(table, new PgSchemaRegistry()), shop("s1",
                     new ShopOrder("R1", List.of("x", "y"), List.of(new ShopLine("K1"), new ShopLine("K2"))),
                     new ShopOrder("R2", null, List.of()),
                     null));
@@ -724,7 +726,7 @@ class PgWriterTest {
         @DisplayName("replace the whole tree on a second upsert, leaving no orphan at any depth")
         void upsertReplacesTree() throws Exception {
             DataSource db = create(table);
-            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            SqlWriter writer = new SqlWriter(table, new PgSchemaRegistry());
             save(db, writer, shop("s1", new ShopOrder("R1", List.of("x"), List.of(new ShopLine("K1")))));
             save(db, writer, shop("s2", new ShopOrder("R9", List.of("z"), List.of(new ShopLine("K9")))));
             save(db, writer, shop("s1", new ShopOrder("R2", List.of(), List.of(new ShopLine("K2"), new ShopLine("K3")))));
@@ -741,7 +743,7 @@ class PgWriterTest {
         @DisplayName("delete the whole tree with the root")
         void deleteCascadesToGrandchildren() throws Exception {
             DataSource db = create(table);
-            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            SqlWriter writer = new SqlWriter(table, new PgSchemaRegistry());
             save(db, writer, shop("s1", new ShopOrder("R1", List.of("x"), List.of(new ShopLine("K1")))));
             remove(db, writer, shop("s1"));
             for (String t : List.of("shops__orders", "shops__orders__lines", "shops__orders__tags")) {
@@ -759,7 +761,7 @@ class PgWriterTest {
             g.rows = new ArrayList<>(Arrays.asList(List.of("a", "b"), List.of(), null));
             g.byGenre = new LinkedHashMap<>();
             g.byGenre.put("sf", List.of(new ShopLine("Dune")));
-            save(db, new PgWriter(grids, new PgSchemaRegistry()), g);
+            save(db, new SqlWriter(grids, new PgSchemaRegistry()), g);
 
             assertEquals(List.of(List.of(0, true), List.of(1, true), Arrays.asList(2, null)),
                     rows(db, "SELECT \"_ord\", \"_present\" FROM \"grids__rows\" ORDER BY \"_ord\""));
@@ -782,7 +784,7 @@ class PgWriterTest {
         @DisplayName("removes the row and cascades to its collections")
         void deleteCascades() throws Exception {
             DataSource db = create(table);
-            PgWriter writer = new PgWriter(table, new PgSchemaRegistry());
+            SqlWriter writer = new SqlWriter(table, new PgSchemaRegistry());
             save(db, writer, rich("r1"));
             save(db, writer, rich("r2"));
             remove(db, writer, rich("r1"));
@@ -800,7 +802,7 @@ class PgWriterTest {
         void missingIsAnError() throws Exception {
             DataSource db = create(table);
             ApiException e = assertThrows(ApiException.class,
-                    () -> remove(db, new PgWriter(table, new PgSchemaRegistry()), rich("ghost")));
+                    () -> remove(db, new SqlWriter(table, new PgSchemaRegistry()), rich("ghost")));
             assertTrue(e.getMessage().contains("not found for deletion"), e::getMessage);
         }
 
@@ -808,7 +810,7 @@ class PgWriterTest {
         @DisplayName("without a uuid is an error")
         void nullUuidIsAnError() throws Exception {
             DataSource db = create(table);
-            assertThrows(ApiException.class, () -> remove(db, new PgWriter(table, new PgSchemaRegistry()), rich(null)));
+            assertThrows(ApiException.class, () -> remove(db, new SqlWriter(table, new PgSchemaRegistry()), rich(null)));
         }
     }
 
@@ -821,7 +823,7 @@ class PgWriterTest {
 
         private PgSchemaRegistry registry() {
             PgSchemaRegistry registry = new PgSchemaRegistry();
-            registry.register("customers", SqlSchemaModel.of("customers", IClass.getClass(Customer.class), "id",
+            registry.register("customers", SqlSchemaModel.of(PgDialect.INSTANCE, "customers", IClass.getClass(Customer.class), "id",
                     Map.of()), IClass.getClass(Customer.class));
             return registry;
         }
@@ -833,7 +835,7 @@ class PgWriterTest {
             Invoice i = new Invoice();
             i.uuid = "i1";
             i.customer = new Customer("c-1");
-            save(db, new PgWriter(table, registry()), i);
+            save(db, new SqlWriter(table, registry()), i);
             assertEquals(List.of(List.of("c-1")), rows(db, "SELECT \"customer\" FROM \"invoices\""));
         }
 
@@ -843,7 +845,7 @@ class PgWriterTest {
             DataSource db = create(table);
             Invoice i = new Invoice();
             i.uuid = "i1";
-            save(db, new PgWriter(table, registry()), i);
+            save(db, new SqlWriter(table, registry()), i);
             assertEquals(List.of(Arrays.asList((Object) null)), rows(db, "SELECT \"customer\" FROM \"invoices\""));
         }
 
@@ -854,7 +856,7 @@ class PgWriterTest {
             Invoice i = new Invoice();
             i.uuid = "i1";
             i.payers = Arrays.asList(new Customer("c-2"), null, new Customer("c-3"));
-            save(db, new PgWriter(table, registry()), i);
+            save(db, new SqlWriter(table, registry()), i);
             assertEquals(List.of(List.of(0, "c-2"), List.of(1, "c-3")),
                     rows(db, "SELECT \"_ord\", \"value\" FROM \"invoices__payers\" ORDER BY \"_ord\""));
         }
@@ -866,7 +868,7 @@ class PgWriterTest {
             Invoice i = new Invoice();
             i.uuid = "i1";
             i.customer = new Customer(null);
-            ApiException e = assertThrows(ApiException.class, () -> save(db, new PgWriter(table, registry()), i));
+            ApiException e = assertThrows(ApiException.class, () -> save(db, new SqlWriter(table, registry()), i));
             assertTrue(e.getMessage().contains("null uuid"), e::getMessage);
         }
 
@@ -879,7 +881,7 @@ class PgWriterTest {
             h.uuid = "h1";
             h.legacy = new Legacy();
             h.legacy.uuid = "l-9";
-            save(db, new PgWriter(holders, new PgSchemaRegistry()), h);
+            save(db, new SqlWriter(holders, new PgSchemaRegistry()), h);
             assertEquals(List.of(Arrays.asList("l-9", null)), rows(db, "SELECT \"legacy\", \"ticket\" FROM \"holders\""),
                     "an unregistered target is read with 'uuid'");
         }
@@ -892,7 +894,7 @@ class PgWriterTest {
             Holder h = new Holder();
             h.uuid = "h1";
             h.ticket = "t-4";
-            ApiException e = assertThrows(ApiException.class, () -> save(db, new PgWriter(holders, new PgSchemaRegistry()), h),
+            ApiException e = assertThrows(ApiException.class, () -> save(db, new SqlWriter(holders, new PgSchemaRegistry()), h),
                     "a composition holds the referenced entity: MongoDB refuses a String there, so must PostgreSQL");
             assertTrue(e.getMessage().contains("must hold the referenced entity"), e::getMessage);
         }
@@ -905,7 +907,7 @@ class PgWriterTest {
             i.uuid = "i1";
             i.customer = new Customer("c-1");
             ApiException e = assertThrows(ApiException.class,
-                    () -> save(db, new PgWriter(table, new PgSchemaRegistry()), i));
+                    () -> save(db, new SqlWriter(table, new PgSchemaRegistry()), i));
             assertTrue(e.getMessage().contains("no uuid field"), e::getMessage);
         }
     }
@@ -918,7 +920,7 @@ class PgWriterTest {
         @DisplayName("is bound through ST_GeomFromGeoJSON (SQL only: no PostGIS in the test engine)")
         void geometryPlaceholder() {
             SqlTable places = model("places", IClass.getClass(Place.class), Map.of());
-            String sql = new PgWriter(places, new PgSchemaRegistry()).upsertSql();
+            String sql = new SqlWriter(places, new PgSchemaRegistry()).upsertSql();
             assertTrue(sql.contains("ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)"), sql);
             assertTrue(sql.contains("\"where\" = EXCLUDED.\"where\""), sql);
         }

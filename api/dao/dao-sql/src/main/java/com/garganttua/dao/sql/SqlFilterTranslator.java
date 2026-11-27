@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,9 +9,6 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.dao.sql.schema.SqlColumn;
 import com.garganttua.dao.sql.schema.SqlTable;
-import com.garganttua.dao.sql.SqlCondition;
-import com.garganttua.dao.sql.SqlField;
-import com.garganttua.dao.sql.SqlFragment;
 
 /**
  * Translates an {@link IFilter} tree into a {@code WHERE} expression over the main table {@code t}.
@@ -21,7 +18,7 @@ import com.garganttua.dao.sql.SqlFragment;
  * validation, the same error messages — so a filter that works on one store works on the other and
  * a filter one store refuses, the other refuses too. What it adds is the relational part: a field
  * may live in a child table (compared through {@code EXISTS}), in a flattened POJO or inside a JSONB
- * document; see {@link PgFieldResolver}. A field the model does not know is ABSENT, as a field no
+ * document; see {@link SqlFieldResolver}. A field the model does not know is ABSENT, as a field no
  * document holds is on MongoDB — under every operator and inside every logical operator — and never
  * reaches the SQL text.
  * </p>
@@ -35,26 +32,26 @@ import com.garganttua.dao.sql.SqlFragment;
  * </p>
  *
  * <p>
- * <b>{@code $text}</b> is delegated to {@link PgTextSearch}: MongoDB's search over every string of
+ * <b>{@code $text}</b> is delegated to the dialect ({@link ISqlDialect#text}): MongoDB's search over every string of
  * the entity, with its restrictions (one {@code $text}, never under {@code $or} or {@code $nor}).
  * Like MongoDB, it ignores the field the filter names. When the domain declares a text index, the
  * search covers that field only — what MongoDB's text index covers — and spells the index expression,
  * so the index serves it.
  * </p>
  */
-final class PgFilterTranslator {
+public final class SqlFilterTranslator {
 
     private static final Set<String> COMPARISONS = Set.of("$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$regex",
             "$empty", "$in", "$nin", "$text", "$geoWithin", "$geoWithinSphere", "$geoIntersects", "$near",
             "$nearSphere");
 
     private final SqlTable table;
-    private final PgFieldResolver resolver;
-    private final PgScalarPredicates scalars;
-    private final PgElementPredicates elements;
+    private final SqlFieldResolver resolver;
+    private final SqlScalarPredicates scalars;
+    private final SqlElementPredicates elements;
     private final Optional<SqlColumn> textColumn;
 
-    PgFilterTranslator(SqlTable table) {
+    SqlFilterTranslator(SqlTable table) {
         this(table, Optional.empty());
     }
 
@@ -63,12 +60,12 @@ final class PgFilterTranslator {
      * @param textColumn the column a declared text index covers, which {@code $text} then searches
      *                   alone; empty to search every string of the entity
      */
-    PgFilterTranslator(SqlTable table, Optional<SqlColumn> textColumn) {
+    SqlFilterTranslator(SqlTable table, Optional<SqlColumn> textColumn) {
         this.table = table;
         this.textColumn = textColumn == null ? Optional.empty() : textColumn;
-        this.resolver = new PgFieldResolver(table);
-        this.scalars = new PgScalarPredicates(table.name());
-        this.elements = new PgElementPredicates(scalars);
+        this.resolver = new SqlFieldResolver(table);
+        this.scalars = new SqlScalarPredicates(table.name(), table.dialect());
+        this.elements = new SqlElementPredicates(scalars);
     }
 
     /**
@@ -79,8 +76,8 @@ final class PgFilterTranslator {
      * @throws ApiException when the filter is malformed (an unknown FIELD is not an error: it is absent)
      */
     SqlFragment translate(IFilter filter) throws ApiException {
-        PgTextSearch.validate(filter);
-        PgGeoPredicates.nearOrder(table, filter);
+        SqlTextQuery.validate(filter);
+        table.dialect().geoNearOrder(table, filter);
         return translate(filter, false);
     }
 
@@ -92,7 +89,7 @@ final class PgFilterTranslator {
      * @throws ApiException when the {@code $near} breaks one of MongoDB's rules
      */
     Optional<String> nearOrder(IFilter filter) throws ApiException {
-        return PgGeoPredicates.nearOrder(table, filter);
+        return table.dialect().geoNearOrder(table, filter);
     }
 
     private SqlFragment translate(IFilter filter, boolean negated) throws ApiException {
@@ -191,7 +188,7 @@ final class PgFilterTranslator {
     }
 
     private SqlFragment text(SqlCondition c) throws ApiException {
-        return textColumn.isPresent() ? PgTextSearch.predicateOnIndexed(textColumn.get(), c.value())
-                : PgTextSearch.predicate(table, c.value());
+        return textColumn.isPresent() ? table.dialect().textOnIndexed(textColumn.get(), c.value())
+                : table.dialect().text(table, c.value());
     }
 }

@@ -1,4 +1,4 @@
-package com.garganttua.dao.postgresql;
+package com.garganttua.dao.sql;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -6,7 +6,6 @@ import java.sql.Types;
 import java.util.List;
 import java.util.Optional;
 
-import org.postgresql.util.PGobject;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
@@ -24,9 +23,9 @@ import com.garganttua.dao.sql.schema.SqlColumnKind;
  * are declared.
  * </p>
  */
-final class PgWriteSupport {
+public final class SqlWriteSupport {
 
-    private PgWriteSupport() {
+    private SqlWriteSupport() {
         // Static helpers
     }
 
@@ -91,7 +90,7 @@ final class PgWriteSupport {
     }
 
     /**
-     * Binds a value already converted by {@link PgValues#toJdbc} to its placeholder.
+     * Binds a value already converted by {@link SqlValues#toJdbc} to its placeholder.
      *
      * <p>
      * Geometry is bound as explicit text: its placeholder wraps it in {@code ST_GeomFromGeoJSON},
@@ -116,9 +115,9 @@ final class PgWriteSupport {
      * @throws SQLException when the driver refuses the value
      * @throws ApiException when the value holds a NUL character
      */
-    static void bind(PreparedStatement statement, int index, SqlColumn column, Object jdbcValue)
+    static void bind(ISqlDialect dialect, PreparedStatement statement, int index, SqlColumn column, Object jdbcValue)
             throws SQLException, ApiException {
-        refuseNul(column, jdbcValue);
+        refuseNul(dialect, column, jdbcValue);
         if (column.kind() == SqlColumnKind.GEOMETRY) {
             statement.setObject(index, jdbcValue, Types.VARCHAR);
         } else {
@@ -126,19 +125,22 @@ final class PgWriteSupport {
         }
     }
 
-    private static void refuseNul(SqlColumn column, Object jdbcValue) throws ApiException {
+    private static void refuseNul(ISqlDialect dialect, SqlColumn column, Object jdbcValue) throws ApiException {
+        if (dialect.storesNul()) {
+            return;
+        }
         boolean nul = jdbcValue instanceof String text ? text.indexOf('\0') >= 0
-                : jdbcValue instanceof PGobject json && escapesNul(json.getValue());
+                : dialect.boundJsonText(jdbcValue).map(SqlWriteSupport::escapesNul).orElse(Boolean.FALSE);
         if (nul) {
             String field = column.dottedPath().isEmpty() ? "a collection element (column '" + column.name() + "')"
                     : "field '" + column.dottedPath() + "'";
             throw new ApiException("Cannot store " + field + ": it contains the NUL character U+0000, which "
-                    + "PostgreSQL TEXT and JSONB cannot hold");
+                    + dialect.name() + " TEXT and JSONB cannot hold");
         }
     }
 
     /** Whether a JSON text escapes U+0000: a backslash-u-0000 escape whose backslash is not itself escaped. */
-    static boolean escapesNul(String json) {
+    public static boolean escapesNul(String json) {
         if (json == null) {
             return false;
         }

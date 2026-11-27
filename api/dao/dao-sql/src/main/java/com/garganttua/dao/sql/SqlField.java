@@ -71,7 +71,7 @@ public sealed interface SqlField {
      * Something that holds no comparable value — an embedded object, a whole collection of objects,
      * a map, a reference — or nothing at all: a path the model does not know (MongoDB has no schema,
      * so an unknown field is simply absent from every document). A scalar never equals an object, so
-     * only presence can be asked of it; see {@link PgFilterTranslator}.
+     * only presence can be asked of it; see {@link SqlFilterTranslator}.
      *
      * @param absent  the predicate "absent from the document" ({@code $empty})
      * @param nullish the predicate "absent, or null" ({@code $eq null}) — the same, except for an
