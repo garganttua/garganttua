@@ -5,7 +5,7 @@ import java.util.UUID;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.observability.Logger;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlTable;
 
 /**
  * Turns a {@code @Composed} value into the uuid the row stores — the relational counterpart of the
@@ -29,10 +29,10 @@ final class PgWriteReferences {
 
     private static final Logger LOG = Logger.getLogger(PgWriteReferences.class);
 
-    private final PgTable table;
+    private final SqlTable table;
     private final PgSchemaRegistry registry;
 
-    PgWriteReferences(PgTable table, PgSchemaRegistry registry) {
+    PgWriteReferences(SqlTable table, PgSchemaRegistry registry) {
         this.table = table;
         this.registry = registry;
     }

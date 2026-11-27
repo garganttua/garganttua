@@ -5,8 +5,11 @@ import java.util.Collections;
 import java.util.List;
 
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlTypes;
+import com.garganttua.dao.sql.SqlCondition;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlOperand;
 
 /**
  * The predicate of a {@code $regex} comparison, with MongoDB's meaning.
@@ -56,7 +59,7 @@ final class PgRegex {
      * @return the predicate
      * @throws ApiException when the pattern is missing, invalid, or not translatable exactly
      */
-    static PgSql on(PgOperand o, PgCondition c, String domain) {
+    static SqlFragment on(SqlOperand o, SqlCondition c, String domain) {
         if (c.value() == null) {
             throw new ApiException("$regex filter on field '" + c.field() + "' requires a pattern");
         }
@@ -65,9 +68,9 @@ final class PgRegex {
             return inJson(o, pattern);
         }
         if (!holdsStrings(o)) {
-            return PgSql.FALSE;
+            return SqlFragment.FALSE;
         }
-        return o.expr(false).then(COLLATE_C + " ~ ?").then(PgSql.of("", pattern));
+        return o.expr(false).then(COLLATE_C + " ~ ?").then(SqlFragment.of("", pattern));
     }
 
     private static String translate(String pattern, String field, String domain) {
@@ -80,17 +83,17 @@ final class PgRegex {
     }
 
     /** Only a column of strings can match: never a number, a date, a document or a reference. */
-    private static boolean holdsStrings(PgOperand o) {
-        PgColumnKind kind = o.column().kind();
-        return (kind == PgColumnKind.SCALAR || kind == PgColumnKind.ID) && PgTypes.TEXT.equals(o.column().sqlType());
+    private static boolean holdsStrings(SqlOperand o) {
+        SqlColumnKind kind = o.column().kind();
+        return (kind == SqlColumnKind.SCALAR || kind == SqlColumnKind.ID) && SqlTypes.TEXT.equals(o.column().sqlType());
     }
 
     /** The string at a JSON path, or any string element of the array there. */
-    private static PgSql inJson(PgOperand o, String pattern) {
+    private static SqlFragment inJson(SqlOperand o, String pattern) {
         String marks = String.join(", ", Collections.nCopies(o.jsonPath().size(), "?"));
         List<Object> params = new ArrayList<>(o.jsonPath());
         params.add(pattern);
-        return new PgSql("EXISTS (SELECT 1 FROM jsonb_path_query(jsonb_extract_path(" + o.qualifiedColumn() + ", "
+        return new SqlFragment("EXISTS (SELECT 1 FROM jsonb_path_query(jsonb_extract_path(" + o.qualifiedColumn() + ", "
                 + marks + "), 'lax $ ? (@.type() == \"string\")') AS rx(v) WHERE (rx.v #>> '{}')" + COLLATE_C
                 + " ~ ?)", params);
     }

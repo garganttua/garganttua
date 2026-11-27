@@ -14,11 +14,13 @@ import com.garganttua.core.mapper.annotations.FieldMappingRule;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
- * Turns a DAO read request — page, filter, sort, projection — into a {@link PgQuery} for one domain.
+ * Turns a DAO read request — page, filter, sort, projection — into a {@link SqlQuery} for one domain.
  *
  * <p>
  * It is the relational twin of what {@code MongoDao.find} hands to the driver, and it keeps MongoDB's
@@ -39,7 +41,7 @@ public final class PgQueryBuilder {
 
     private static final Logger LOG = Logger.getLogger(PgQueryBuilder.class);
 
-    private final PgTable table;
+    private final SqlTable table;
     private final IClass<?> dtoClass;
     private final PgFilterTranslator translator;
     private final PgSortClause sorts;
@@ -48,7 +50,7 @@ public final class PgQueryBuilder {
      * @param table    the domain's relational shape
      * @param dtoClass its DTO class — where {@code @FieldMappingRule} translates projected entity fields
      */
-    public PgQueryBuilder(PgTable table, IClass<?> dtoClass) {
+    public PgQueryBuilder(SqlTable table, IClass<?> dtoClass) {
         this(table, dtoClass, Optional.empty());
     }
 
@@ -57,7 +59,7 @@ public final class PgQueryBuilder {
      * @param dtoClass   its DTO class
      * @param textColumn the column a declared text index covers — {@code $text} then searches it alone
      */
-    public PgQueryBuilder(PgTable table, IClass<?> dtoClass, Optional<PgColumn> textColumn) {
+    public PgQueryBuilder(SqlTable table, IClass<?> dtoClass, Optional<SqlColumn> textColumn) {
         this.table = table;
         this.dtoClass = dtoClass;
         this.translator = new PgFilterTranslator(table, textColumn);
@@ -75,9 +77,9 @@ public final class PgQueryBuilder {
      * @return the query
      * @throws ApiException when the filter or sort names an unknown or unsortable field, or the page is invalid
      */
-    public PgQuery build(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
+    public SqlQuery build(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
             Optional<List<String>> projection) throws ApiException {
-        PgSql where = translator.translate(present(filter));
+        SqlFragment where = translator.translate(present(filter));
         IPageable page = present(pageable);
         Integer limit = limit(page);
         Long offset = offset(page);
@@ -86,7 +88,7 @@ public final class PgQueryBuilder {
         String orderBy = sorts.orderBy(requested, page != null,
                 requested == null ? translator.nearOrder(present(filter)) : Optional.empty());
         LOG.debug("Query on {}: WHERE {} {} LIMIT {} OFFSET {}", table.name(), where.text(), orderBy, limit, offset);
-        return new PgQuery(where.text(), where.params(), orderBy, limit, offset,
+        return new SqlQuery(where.text(), where.params(), orderBy, limit, offset,
                 projection(present(projection)).orElse(null));
     }
 
@@ -97,9 +99,9 @@ public final class PgQueryBuilder {
      * @return a query carrying only {@code where} and its values
      * @throws ApiException when the filter is malformed or names an unknown field
      */
-    public PgQuery count(IFilter filter) throws ApiException {
-        PgSql where = translator.translate(filter);
-        return new PgQuery(where.text(), where.params(), "", null, null, null);
+    public SqlQuery count(IFilter filter) throws ApiException {
+        SqlFragment where = translator.translate(filter);
+        return new SqlQuery(where.text(), where.params(), "", null, null, null);
     }
 
     private static <T> T present(Optional<T> optional) {

@@ -21,13 +21,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgChildKind;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlChildKind;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
 
 /**
  * The relational shape a DTO gets — the contract every other part of the DAO reads.
@@ -108,16 +108,16 @@ class PgSchemaModelTest {
         private Map<String, List<Line>> byGenre;
     }
 
-    private static PgTable model() {
-        return PgSchemaModel.of("orders", IClass.getClass(Order.class), "uuid",
+    private static SqlTable model() {
+        return SqlSchemaModel.of("orders", IClass.getClass(Order.class), "uuid",
                 Map.of("customer", "customers", "relatedOrders", "orders"));
     }
 
-    private static PgColumn column(PgTable table, String path) {
+    private static SqlColumn column(SqlTable table, String path) {
         return table.column(path).orElseThrow(() -> new AssertionError("no column for " + path));
     }
 
-    private static PgChildTable child(PgTable table, String path) {
+    private static SqlChildTable child(SqlTable table, String path) {
         return table.child(path).orElseThrow(() -> new AssertionError("no child table for " + path));
     }
 
@@ -128,16 +128,16 @@ class PgSchemaModelTest {
         @Test
         @DisplayName("the uuid to the primary key, first")
         void uuidIsThePrimaryKey() {
-            PgTable table = model();
+            SqlTable table = model();
             assertEquals("uuid", table.id().name());
-            assertEquals(PgColumnKind.ID, table.id().kind());
+            assertEquals(SqlColumnKind.ID, table.id().kind());
             assertEquals(table.id(), table.columns().get(0));
         }
 
         @Test
         @DisplayName("scalars to typed columns, reserved words included")
         void scalarsGetTypedColumns() {
-            PgTable table = model();
+            SqlTable table = model();
             assertEquals("BIGINT", column(table, "total").sqlType());
             assertEquals("TIMESTAMPTZ", column(table, "createdAt").sqlType());
             assertEquals("BYTEA", column(table, "signature").sqlType());
@@ -148,71 +148,71 @@ class PgSchemaModelTest {
         @Test
         @DisplayName("an embedded POJO to prefixed columns, its collections to child tables")
         void embeddedPojoIsFlattened() {
-            PgTable table = model();
+            SqlTable table = model();
             assertEquals("address__city", column(table, "address.city").name());
             assertEquals("INTEGER", column(table, "address.zip").sqlType());
-            assertEquals(PgChildKind.SCALAR_COLLECTION, child(table, "address.tags").kind());
+            assertEquals(SqlChildKind.SCALAR_COLLECTION, child(table, "address.tags").kind());
             assertEquals("orders__address__tags", child(table, "address.tags").name());
         }
 
         @Test
         @DisplayName("a collection inside a collection element to a NESTED child table, at any depth")
         void nestedCollectionsGetNestedTables() {
-            PgTable table = PgSchemaModel.of("shops", IClass.getClass(Shop.class), "uuid", Map.of());
-            PgChildTable orders = child(table, "orders");
-            PgChildTable lines = child(table, "orders.lines");
-            PgChildTable tags = child(table, "orders.lines.tags");
+            SqlTable table = SqlSchemaModel.of("shops", IClass.getClass(Shop.class), "uuid", Map.of());
+            SqlChildTable orders = child(table, "orders");
+            SqlChildTable lines = child(table, "orders.lines");
+            SqlChildTable tags = child(table, "orders.lines.tags");
             assertTrue(orders.hasChildren() && !orders.nested(), "orders is top-level and has children");
             assertEquals(orders.name(), lines.parent(), "lines hangs under orders");
             assertEquals(List.of("lines"), lines.fieldPath(), "a nested table's field path is relative to its parent element");
             assertEquals("shops__orders__lines__tags", tags.name());
             assertEquals(lines.name(), tags.parent());
             assertTrue(lines.valueColumns().stream().anyMatch(c -> c.name().equals("tags")
-                    && c.kind() == PgColumnKind.PRESENCE), "a nested collection has a presence bit on its parent element");
+                    && c.kind() == SqlColumnKind.PRESENCE), "a nested collection has a presence bit on its parent element");
             assertEquals(List.of("shops__orders", "shops__orders__lines", "shops__orders__lines__tags"),
-                    table.allChildren().stream().map(PgChildTable::name).toList(), "parents before children");
+                    table.allChildren().stream().map(SqlChildTable::name).toList(), "parents before children");
         }
 
         @Test
         @DisplayName("an element that IS a collection to a table holding the element itself")
         void collectionOfCollections() {
-            PgTable table = PgSchemaModel.of("grids", IClass.getClass(Grid.class), "uuid", Map.of());
-            PgChildTable rows = child(table, "rows");
-            assertEquals(PgChildKind.NESTED_COLLECTION, rows.kind());
-            PgChildTable cells = rows.elementTable().orElseThrow(() -> new AssertionError("no element table"));
+            SqlTable table = SqlSchemaModel.of("grids", IClass.getClass(Grid.class), "uuid", Map.of());
+            SqlChildTable rows = child(table, "rows");
+            assertEquals(SqlChildKind.NESTED_COLLECTION, rows.kind());
+            SqlChildTable cells = rows.elementTable().orElseThrow(() -> new AssertionError("no element table"));
             assertTrue(cells.fieldPath().isEmpty(), "the element table holds the element itself");
-            assertEquals(PgChildKind.SCALAR_COLLECTION, cells.kind());
-            PgChildTable byGenre = child(table, "byGenre");
-            assertEquals(PgChildKind.MAP, byGenre.kind());
-            assertEquals(PgChildKind.POJO_COLLECTION, byGenre.elementTable().orElseThrow().kind(),
+            assertEquals(SqlChildKind.SCALAR_COLLECTION, cells.kind());
+            SqlChildTable byGenre = child(table, "byGenre");
+            assertEquals(SqlChildKind.MAP, byGenre.kind());
+            assertEquals(SqlChildKind.POJO_COLLECTION, byGenre.elementTable().orElseThrow().kind(),
                     "Map<String, List<Line>>: each map value is a table of Lines");
         }
 
         @Test
         @DisplayName("collections and maps to child tables")
         void collectionsGetChildTables() {
-            PgTable table = model();
-            assertEquals(PgChildKind.SCALAR_COLLECTION, child(table, "labels").kind());
+            SqlTable table = model();
+            assertEquals(SqlChildKind.SCALAR_COLLECTION, child(table, "labels").kind());
 
-            PgChildTable lines = child(table, "lines");
-            assertEquals(PgChildKind.POJO_COLLECTION, lines.kind());
+            SqlChildTable lines = child(table, "lines");
+            assertEquals(SqlChildKind.POJO_COLLECTION, lines.kind());
             assertEquals(List.of("_present", "sku", "price"),
-                    lines.valueColumns().stream().map(PgColumn::name).toList(),
+                    lines.valueColumns().stream().map(SqlColumn::name).toList(),
                     "a POJO element carries its own presence bit first, then its flattened fields");
             assertEquals("NUMERIC", lines.valueColumns().get(2).sqlType());
 
-            PgChildTable stock = child(table, "stock");
-            assertEquals(PgChildKind.MAP, stock.kind());
+            SqlChildTable stock = child(table, "stock");
+            assertEquals(SqlChildKind.MAP, stock.kind());
             assertEquals("INTEGER", stock.valueColumns().get(0).sqlType());
         }
 
         @Test
         @DisplayName("compositions to uuid references")
         void compositionsAreReferences() {
-            PgTable table = model();
-            assertEquals(PgColumnKind.COMPOSITION, column(table, "customer").kind());
-            PgChildTable related = child(table, "relatedOrders");
-            assertEquals(PgChildKind.COMPOSITION_COLLECTION, related.kind());
+            SqlTable table = model();
+            assertEquals(SqlColumnKind.COMPOSITION, column(table, "customer").kind());
+            SqlChildTable related = child(table, "relatedOrders");
+            assertEquals(SqlChildKind.COMPOSITION_COLLECTION, related.kind());
             assertEquals("orders", related.composedCollection());
             assertEquals("customers", table.compositionTarget("customer").orElseThrow(),
                     "a single reference must say which domain it points to, like a collection does");
@@ -222,21 +222,21 @@ class PgSchemaModelTest {
         @Test
         @DisplayName("shapes with no finite relational form to JSONB — and only those")
         void unshapeableFieldsGoToJsonb() {
-            PgTable table = model();
-            assertEquals(PgColumnKind.JSONB, column(table, "node").kind(), "Node contains itself");
-            assertEquals(PgColumnKind.JSONB, column(table, "anything").kind(), "Object has no shape");
-            assertEquals(PgColumnKind.SCALAR, column(table, "geo.type").kind(),
+            SqlTable table = model();
+            assertEquals(SqlColumnKind.JSONB, column(table, "node").kind(), "Node contains itself");
+            assertEquals(SqlColumnKind.JSONB, column(table, "anything").kind(), "Object has no shape");
+            assertEquals(SqlColumnKind.SCALAR, column(table, "geo.type").kind(),
                     "GeoShape itself is finite and flattens");
-            assertEquals(PgColumnKind.JSONB, column(table, "geo.coordinates").kind(),
+            assertEquals(SqlColumnKind.JSONB, column(table, "geo.coordinates").kind(),
                     "…but its List<Object> has no column type");
         }
 
         @Test
         @DisplayName("a presence bit for every structure — the fact relational storage would lose")
         void structuresCarryPresence() {
-            PgTable table = model();
+            SqlTable table = model();
             for (String structure : List.of("address", "labels", "lines", "stock", "address.tags", "relatedOrders")) {
-                assertEquals(PgColumnKind.PRESENCE, table.presence(structure)
+                assertEquals(SqlColumnKind.PRESENCE, table.presence(structure)
                         .orElseThrow(() -> new AssertionError("no presence bit for " + structure)).kind());
             }
             assertTrue(table.column("address").isEmpty(),
@@ -247,7 +247,7 @@ class PgSchemaModelTest {
         @Test
         @DisplayName("nothing for static or transient fields")
         void staticAndTransientAreSkipped() {
-            PgTable table = model();
+            SqlTable table = model();
             assertTrue(table.column("IGNORED").isEmpty());
             assertTrue(table.column("scratch").isEmpty());
         }
@@ -265,7 +265,7 @@ class PgSchemaModelTest {
         @DisplayName("a DTO without its uuid field")
         void aTableNeedsAKey() {
             assertThrows(IllegalArgumentException.class,
-                    () -> PgSchemaModel.of("things", IClass.getClass(NoUuid.class), "uuid", Map.of()));
+                    () -> SqlSchemaModel.of("things", IClass.getClass(NoUuid.class), "uuid", Map.of()));
         }
     }
 
@@ -276,9 +276,9 @@ class PgSchemaModelTest {
         @Test
         @DisplayName("keep a too-long identifier unique instead of letting PostgreSQL truncate it")
         void longNamesStayDistinct() {
-            String a = PgNaming.column(List.of("a".repeat(40), "b".repeat(40)));
-            String b = PgNaming.column(List.of("a".repeat(40), "c".repeat(40)));
-            assertTrue(a.length() <= PgNaming.MAX_IDENTIFIER_BYTES);
+            String a = SqlNaming.column(List.of("a".repeat(40), "b".repeat(40)));
+            String b = SqlNaming.column(List.of("a".repeat(40), "c".repeat(40)));
+            assertTrue(a.length() <= SqlNaming.MAX_IDENTIFIER_BYTES);
             assertTrue(!a.equals(b), "two long paths sharing a prefix must not become one column");
         }
 
@@ -287,10 +287,10 @@ class PgSchemaModelTest {
         void quotedReservedWordsWork() throws Exception {
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
-                s.execute("CREATE TABLE t (" + PgNaming.quote("order") + " TEXT, "
-                        + PgNaming.quote("createdAt") + " TEXT)");
+                s.execute("CREATE TABLE t (" + SqlNaming.quote("order") + " TEXT, "
+                        + SqlNaming.quote("createdAt") + " TEXT)");
                 s.execute("INSERT INTO t VALUES ('x', 'y')");
-                try (ResultSet r = s.executeQuery("SELECT " + PgNaming.quote("createdAt") + " FROM t")) {
+                try (ResultSet r = s.executeQuery("SELECT " + SqlNaming.quote("createdAt") + " FROM t")) {
                     assertTrue(r.next());
                     assertEquals("y", r.getString(1));
                 }
@@ -302,7 +302,7 @@ class PgSchemaModelTest {
     @Test
     @DisplayName("gives every column a distinct name")
     void columnNamesAreDistinct() {
-        PgTable table = model();
+        SqlTable table = model();
         Set<String> names = new java.util.HashSet<>();
         table.columns().forEach(c -> assertTrue(names.add(c.name()), "duplicate " + c.name()));
     }

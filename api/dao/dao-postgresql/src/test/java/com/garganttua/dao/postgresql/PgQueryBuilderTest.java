@@ -36,6 +36,7 @@ import com.garganttua.api.commons.sort.Sort;
 import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.dao.postgresql.PgQueryFixture.Status;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * The query builder, proved against a real PostgreSQL: each filter is run and the ids it returns are
@@ -60,7 +61,7 @@ class PgQueryBuilderTest {
     }
 
     private static Set<String> match(IFilter filter) throws Exception {
-        PgQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.of(filter), Optional.empty(),
+        SqlQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.of(filter), Optional.empty(),
                 Optional.empty());
         return new HashSet<>(PgQueryFixture.ids(db, q));
     }
@@ -396,7 +397,7 @@ class PgQueryBuilderTest {
         @Test
         @DisplayName("no filter, and count(null), match every row")
         void noFilter() throws Exception {
-            PgQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.empty(), Optional.empty(),
+            SqlQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.empty(), Optional.empty(),
                     Optional.empty());
             assertEquals(5, PgQueryFixture.ids(db, q).size(), "no filter must match all rows");
             assertEquals(5, PgQueryFixture.ids(db, PgQueryFixture.builder().count(null)).size(),
@@ -475,7 +476,7 @@ class PgQueryBuilderTest {
         @Test
         @DisplayName("every value is a bind parameter: the SQL text never contains it")
         void valuesAreBound() throws Exception {
-            PgQuery q = PgQueryFixture.builder().count(field("name", "$eq", "Needle"));
+            SqlQuery q = PgQueryFixture.builder().count(field("name", "$eq", "Needle"));
             assertFalse(q.where().contains("Needle"), () -> "value leaked into SQL: " + q.where());
             assertEquals(List.of("Needle"), q.params(), "the value must travel as a parameter");
         }
@@ -498,7 +499,7 @@ class PgQueryBuilderTest {
         @DisplayName("$geoWithin and $geoWithinSphere become ST_CoveredBy on the sphere, with the GeoJSON bound")
         void geoWithin() throws Exception {
             for (String op : List.of("$geoWithin", "$geoWithinSphere")) {
-                PgQuery q = places().count(field("location", op, square()));
+                SqlQuery q = places().count(field("location", op, square()));
                 assertEquals("ST_CoveredBy((t.\"location\")::geography, (ST_SetSRID(ST_GeomFromGeoJSON(?), 4326))"
                         + "::geography)", q.where(), op);
                 assertTrue(q.params().get(0).toString().contains("\"Polygon\""),
@@ -521,7 +522,7 @@ class PgQueryBuilderTest {
     class Paging {
 
         private List<String> run(Optional<Pageable> page, Sort sort) throws Exception {
-            PgQuery q = PgQueryFixture.builder().build(page.map(p -> (IPageable) p), Optional.empty(),
+            SqlQuery q = PgQueryFixture.builder().build(page.map(p -> (IPageable) p), Optional.empty(),
                     Optional.ofNullable(sort), Optional.empty());
             return PgQueryFixture.ids(db, q);
         }
@@ -544,7 +545,7 @@ class PgQueryBuilderTest {
                 all.addAll(run(Optional.of(new Pageable(page, 2)), byStatus));
             }
             assertEquals(List.of("c", "a", "d", "e", "b"), all, "pages must follow status then id, without overlap");
-            PgQuery q = PgQueryFixture.builder().build(Optional.of(new Pageable(2, 2)), Optional.empty(),
+            SqlQuery q = PgQueryFixture.builder().build(Optional.of(new Pageable(2, 2)), Optional.empty(),
                     Optional.of(byStatus), Optional.empty());
             assertEquals("ORDER BY t.\"status\" COLLATE \"C\" ASC NULLS FIRST, t.\"uuid\" COLLATE \"C\" ASC",
                     q.orderBy());
@@ -563,7 +564,7 @@ class PgQueryBuilderTest {
         @Test
         @DisplayName("a page size of 0 means no limit, as in MongoDB; a negative page is refused")
         void pageSizes() throws Exception {
-            PgQuery q = PgQueryFixture.builder().build(Optional.of(new Pageable(3, 0)), Optional.empty(),
+            SqlQuery q = PgQueryFixture.builder().build(Optional.of(new Pageable(3, 0)), Optional.empty(),
                     Optional.empty(), Optional.empty());
             assertNull(q.limit(), "size 0 must not limit");
             assertNull(q.offset(), "size 0 must not skip");
@@ -588,7 +589,7 @@ class PgQueryBuilderTest {
         @Test
         @DisplayName("entity field names are translated through @FieldMappingRule, dotted tails kept")
         void translated() throws Exception {
-            PgQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.empty(), Optional.empty(),
+            SqlQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.empty(), Optional.empty(),
                     Optional.of(List.of("identifier", "address.city", "name", " ", "name")));
             assertEquals(List.of("uuid", "address", "name"), q.projection());
         }

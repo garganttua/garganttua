@@ -39,9 +39,10 @@ import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.dao.postgresql.schema.PgIndexMode;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * The indexes a domain declares, proved against a real PostgreSQL: what is created, that the
@@ -202,7 +203,7 @@ class PgIndexTest {
             dao(PgIndexMode.CREATE, UNIQUE_KEY);
             dao(PgIndexMode.STRICT, UNIQUE_KEY);
             assertEquals(1, indexDefinitions().size());
-            assertRecognised(PgIndexPlanner.plan(PgSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid",
+            assertRecognised(PgIndexPlanner.plan(SqlSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid",
                     Map.of()), List.of(UNIQUE_KEY), p -> p, "tenantId").get(0).spec().orElseThrow());
         }
 
@@ -414,20 +415,20 @@ class PgIndexTest {
 
             String definition = indexDefinitions().get(0);
             assertTrue(definition.contains("USING gin (to_tsvector("), definition);
-            assertRecognised(PgIndexPlanner.plan(PgSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid",
+            assertRecognised(PgIndexPlanner.plan(SqlSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid",
                     Map.of()), List.of(textOnTitle), p -> p, "tenantId").get(0).spec().orElseThrow());
             assertTrue(plan(search).contains("claims__gg_title_system_text_idx"),
                     "the search must be served by the index");
         }
 
         private String plan(IFilter search) throws Exception {
-            PgTable table = PgSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid", Map.of());
-            PgQuery query = new PgQueryBuilder(table, null, Optional.of(table.column("title").orElseThrow()))
+            SqlTable table = SqlSchemaModel.of("claims", IClass.getClass(Claim.class), "uuid", Map.of());
+            SqlQuery query = new PgQueryBuilder(table, null, Optional.of(table.column("title").orElseThrow()))
                     .build(Optional.empty(), Optional.of(search), Optional.empty(), Optional.empty());
             StringBuilder plan = new StringBuilder();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
                 s.execute("SET enable_seqscan = off");
-                try (var statement = c.prepareStatement("EXPLAIN SELECT 1 FROM claims AS " + PgQuery.ALIAS
+                try (var statement = c.prepareStatement("EXPLAIN SELECT 1 FROM claims AS " + SqlQuery.ALIAS
                         + " WHERE " + query.where())) {
                     for (int i = 0; i < query.params().size(); i++) {
                         statement.setObject(i + 1, query.params().get(i));

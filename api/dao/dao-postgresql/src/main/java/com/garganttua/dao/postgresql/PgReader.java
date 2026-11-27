@@ -12,15 +12,21 @@ import java.util.StringJoiner;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgChildKind;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlChildKind;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlBeans;
+import com.garganttua.dao.sql.SqlLoadedRow;
+import com.garganttua.dao.sql.SqlQuery;
+import com.garganttua.dao.sql.SqlRowMapper;
+import com.garganttua.dao.sql.SqlRowPlan;
+import com.garganttua.dao.sql.SqlSelected;
 
 /**
- * Read side of the PostgreSQL DAO: executes a translated {@link PgQuery} and rebuilds the DTOs —
+ * Read side of the PostgreSQL DAO: executes a translated {@link SqlQuery} and rebuilds the DTOs —
  * flattened POJOs, child-table collections and {@code @Composed} references included.
  *
  * <p>
@@ -55,10 +61,10 @@ public final class PgReader {
     /** The number of rows the filter matches, carried by every row of a page. */
     private static final String TOTAL = "_total";
 
-    private final PgTable table;
+    private final SqlTable table;
     private final IClass<?> dtoClass;
-    private final PgBeans beans = new PgBeans();
-    private final PgRowMapper mapper = new PgRowMapper(beans);
+    private final SqlBeans beans = new SqlBeans();
+    private final SqlRowMapper mapper = new SqlRowMapper(beans);
     private final PgChildLoader children;
     private final PgCompositions compositions;
 
@@ -69,7 +75,7 @@ public final class PgReader {
      * @param dtoClass the DTO its rows map to
      * @param registry the shapes of the other domains of the database, to follow references
      */
-    public PgReader(PgTable table, IClass<?> dtoClass, PgSchemaRegistry registry) {
+    public PgReader(SqlTable table, IClass<?> dtoClass, PgSchemaRegistry registry) {
         this(table, dtoClass, registry, true);
     }
 
@@ -77,7 +83,7 @@ public final class PgReader {
      * @param resolve false for the reader of REFERENCED rows, which must not follow their own
      *                references (one level only)
      */
-    PgReader(PgTable table, IClass<?> dtoClass, PgSchemaRegistry registry, boolean resolve) {
+    PgReader(SqlTable table, IClass<?> dtoClass, PgSchemaRegistry registry, boolean resolve) {
         this.table = Objects.requireNonNull(table, "table");
         this.dtoClass = Objects.requireNonNull(dtoClass, "dtoClass");
         this.children = new PgChildLoader(beans, mapper, table);
@@ -93,7 +99,7 @@ public final class PgReader {
      * @return the DTOs — a mutable list, empty when nothing matches
      * @throws ApiException when a statement fails or a row cannot be rebuilt into the DTO
      */
-    public List<Object> find(Connection connection, PgQuery query) throws ApiException {
+    public List<Object> find(Connection connection, SqlQuery query) throws ApiException {
         return new ArrayList<>(read(connection, query, false).dtos());
     }
 
@@ -107,7 +113,7 @@ public final class PgReader {
      * @return the DTOs of the page and the total
      * @throws ApiException when a statement fails or a row cannot be rebuilt into the DTO
      */
-    public Paged findPage(Connection connection, PgQuery query) throws ApiException {
+    public Paged findPage(Connection connection, SqlQuery query) throws ApiException {
         Paged paged = read(connection, query, true);
         if (paged.total() < 0) {
             boolean firstPage = query.offset() == null || query.offset() == 0L;
@@ -132,12 +138,12 @@ public final class PgReader {
 
     @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
             justification = SuppressFBWarnings.GENERATED_SQL)
-    private Paged read(Connection connection, PgQuery query, boolean withTotal) throws ApiException {
-        List<PgSelected> selected = selection(query.projection());
-        List<PgChildTable> loaded = childrenToLoad(query.projection());
-        List<PgChildTable> aggregated = loaded.stream().filter(PgChildAggregate::fits).toList();
+    private Paged read(Connection connection, SqlQuery query, boolean withTotal) throws ApiException {
+        List<SqlSelected> selected = selection(query.projection());
+        List<SqlChildTable> loaded = childrenToLoad(query.projection());
+        List<SqlChildTable> aggregated = loaded.stream().filter(PgChildAggregate::fits).toList();
         String sql = selectSql(selected, aggregated, query, withTotal);
-        List<PgLoadedRow> rows = new ArrayList<>();
+        List<SqlLoadedRow> rows = new ArrayList<>();
         List<List<String>> aggregates = new ArrayList<>();
         aggregated.forEach(c -> aggregates.add(new ArrayList<>()));
         // After the selected columns: the page's row number (when aggregating), the total (when asked),
@@ -146,7 +152,7 @@ public final class PgReader {
         int totalIndex = withTotal ? extra : -1;
         int firstAggregate = withTotal ? extra + 1 : extra;
         long total = -1L;
-        PgRowPlan plan = mapper.plan(dtoClass, selected);
+        SqlRowPlan plan = mapper.plan(dtoClass, selected);
         int idIndex = 1 + indexOfId(selected);
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             bindPage(statement, bind(statement, query.params()), query);
@@ -171,13 +177,13 @@ public final class PgReader {
      * Puts the collections and references back on the rows read: from the aggregates, then — for a
      * collection too wide to aggregate — by a query of its own; {@return the DTOs, in order}
      */
-    private List<Object> complete(Connection connection, List<PgLoadedRow> rows, List<PgChildTable> loaded,
-            List<PgChildTable> aggregated, List<List<String>> aggregates) throws ApiException {
+    private List<Object> complete(Connection connection, List<SqlLoadedRow> rows, List<SqlChildTable> loaded,
+            List<SqlChildTable> aggregated, List<List<String>> aggregates) throws ApiException {
         if (!rows.isEmpty()) {
             for (int i = 0; i < aggregated.size(); i++) {
                 children.loadAggregated(aggregated.get(i), rows, aggregates.get(i));
             }
-            for (PgChildTable child : loaded) {
+            for (SqlChildTable child : loaded) {
                 if (!aggregated.contains(child)) {
                     children.load(connection, child, rows);
                 }
@@ -199,8 +205,8 @@ public final class PgReader {
      */
     @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
             justification = SuppressFBWarnings.GENERATED_SQL)
-    public long count(Connection connection, PgQuery query) throws ApiException {
-        String sql = "SELECT count(*) FROM " + PgNaming.quote(table.name()) + " " + PgQuery.ALIAS
+    public long count(Connection connection, SqlQuery query) throws ApiException {
+        String sql = "SELECT count(*) FROM " + SqlNaming.quote(table.name()) + " " + SqlQuery.ALIAS
                 + " WHERE " + query.where();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             bind(statement, query.params());
@@ -221,8 +227,8 @@ public final class PgReader {
     }
 
     /** {@return the full SELECT of a query, with {@code ?} for its parameters and page} */
-    String selectSql(PgQuery query) {
-        List<PgChildTable> aggregated = childrenToLoad(query.projection()).stream()
+    String selectSql(SqlQuery query) {
+        List<SqlChildTable> aggregated = childrenToLoad(query.projection()).stream()
                 .filter(PgChildAggregate::fits).toList();
         return selectSql(selection(query.projection()), aggregated, query, false);
     }
@@ -235,12 +241,12 @@ public final class PgReader {
      * @param query the query
      * @return {@code true} for a single statement
      */
-    boolean singleStatement(PgQuery query) {
+    boolean singleStatement(SqlQuery query) {
         return table.compositions().isEmpty()
                 && childrenToLoad(query.projection()).stream().allMatch(PgChildAggregate::fits);
     }
 
-    private String selectSql(List<PgSelected> selected, List<PgChildTable> aggregated, PgQuery query,
+    private String selectSql(List<SqlSelected> selected, List<SqlChildTable> aggregated, SqlQuery query,
             boolean withTotal) {
         StringJoiner list = new StringJoiner(", ");
         selected.forEach(s -> list.add(s.expression()));
@@ -248,13 +254,13 @@ public final class PgReader {
         if (!aggregated.isEmpty()) {
             // The page's own order, numbered: the outer query restores it after joining the aggregates.
             String order = query.orderBy().isBlank() ? "" : query.orderBy();
-            main.append(", row_number() OVER (").append(order).append(") AS ").append(PgNaming.quote(ROW_NUMBER));
+            main.append(", row_number() OVER (").append(order).append(") AS ").append(SqlNaming.quote(ROW_NUMBER));
         }
         if (withTotal) {
             // Over every matching row: window functions run before the LIMIT.
-            main.append(", count(*) OVER () AS ").append(PgNaming.quote(TOTAL));
+            main.append(", count(*) OVER () AS ").append(SqlNaming.quote(TOTAL));
         }
-        main.append(" FROM ").append(PgNaming.quote(table.name())).append(' ').append(PgQuery.ALIAS)
+        main.append(" FROM ").append(SqlNaming.quote(table.name())).append(' ').append(SqlQuery.ALIAS)
                 .append(" WHERE ").append(query.where());
         if (!query.orderBy().isBlank()) {
             main.append(' ').append(query.orderBy());
@@ -271,10 +277,10 @@ public final class PgReader {
     /**
      * The page as a CTE, the aggregates of its collections beside it, joined back in the page's own order.
      */
-    private String withAggregates(String main, List<PgChildTable> aggregated) {
+    private String withAggregates(String main, List<SqlChildTable> aggregated) {
         List<String> ctes = new ArrayList<>();
         List<String> names = new ArrayList<>();
-        String pageId = PgNaming.quote(table.id().name());
+        String pageId = SqlNaming.quote(table.id().name());
         PgChildAggregate.ctes(aggregated, PAGE, pageId, ctes, names);
         StringJoiner outer = new StringJoiner(", ");
         StringBuilder joins = new StringBuilder();
@@ -285,20 +291,20 @@ public final class PgReader {
                     .append(".k = ").append(PAGE).append('.').append(pageId);
         }
         return "WITH " + PAGE + " AS (" + main + "), " + String.join(", ", ctes) + " SELECT " + PAGE + ".*, " + outer
-                + " FROM " + PAGE + joins + " ORDER BY " + PAGE + "." + PgNaming.quote(ROW_NUMBER);
+                + " FROM " + PAGE + joins + " ORDER BY " + PAGE + "." + SqlNaming.quote(ROW_NUMBER);
     }
 
     /**
      * The main columns to select: those the projection names or lies under or above, plus — always —
      * the id and every reference column.
      */
-    private List<PgSelected> selection(List<String> projection) {
-        List<PgSelected> selected = new ArrayList<>();
-        for (PgColumn column : table.columns()) {
-            boolean always = column.kind() == PgColumnKind.ID || column.kind() == PgColumnKind.COMPOSITION
+    private List<SqlSelected> selection(List<String> projection) {
+        List<SqlSelected> selected = new ArrayList<>();
+        for (SqlColumn column : table.columns()) {
+            boolean always = column.kind() == SqlColumnKind.ID || column.kind() == SqlColumnKind.COMPOSITION
                     || isReferenceCollectionPresence(column);
             if (always || projects(projection, column.dottedPath())) {
-                selected.add(PgSelected.of(PgQuery.ALIAS, column));
+                selected.add(SqlSelected.of(SqlQuery.ALIAS, column));
             }
         }
         return selected;
@@ -308,19 +314,19 @@ public final class PgReader {
      * Whether a column is the presence bit of a reference collection — read whenever its child table
      * is, i.e. always: without it, a reference list saved null could not be told from an empty one.
      */
-    private boolean isReferenceCollectionPresence(PgColumn column) {
-        return column.kind() == PgColumnKind.PRESENCE && table.child(column.dottedPath())
-                .map(c -> c.kind() == PgChildKind.COMPOSITION_COLLECTION).orElse(false);
+    private boolean isReferenceCollectionPresence(SqlColumn column) {
+        return column.kind() == SqlColumnKind.PRESENCE && table.child(column.dottedPath())
+                .map(c -> c.kind() == SqlChildKind.COMPOSITION_COLLECTION).orElse(false);
     }
 
     /**
      * The child tables to read: the projected ones, and — like the MongoDB DAO, which always keeps its
      * DBRef fields — every reference collection.
      */
-    private List<PgChildTable> childrenToLoad(List<String> projection) {
-        List<PgChildTable> out = new ArrayList<>();
-        for (PgChildTable child : table.children()) {
-            boolean reference = child.kind() == PgChildKind.COMPOSITION_COLLECTION;
+    private List<SqlChildTable> childrenToLoad(List<String> projection) {
+        List<SqlChildTable> out = new ArrayList<>();
+        for (SqlChildTable child : table.children()) {
+            boolean reference = child.kind() == SqlChildKind.COMPOSITION_COLLECTION;
             if (reference ? compositions.needsRows(child) : projects(projection, child.dottedPath())) {
                 out.add(child);
             }
@@ -353,15 +359,15 @@ public final class PgReader {
         return false;
     }
 
-    private PgLoadedRow row(ResultSet rs, PgRowPlan plan, int idIndex) throws ApiException, SQLException {
-        PgLoadedRow row = new PgLoadedRow(rs.getString(idIndex), plan.instantiate());
+    private SqlLoadedRow row(ResultSet rs, SqlRowPlan plan, int idIndex) throws ApiException, SQLException {
+        SqlLoadedRow row = new SqlLoadedRow(rs.getString(idIndex), plan.instantiate());
         mapper.fill(row, plan, rs, 1);
         return row;
     }
 
-    private static int indexOfId(List<PgSelected> selected) {
+    private static int indexOfId(List<SqlSelected> selected) {
         for (int i = 0; i < selected.size(); i++) {
-            if (selected.get(i).column().kind() == PgColumnKind.ID) {
+            if (selected.get(i).column().kind() == SqlColumnKind.ID) {
                 return i;
             }
         }
@@ -377,7 +383,7 @@ public final class PgReader {
         return index;
     }
 
-    private static void bindPage(PreparedStatement statement, int next, PgQuery query)
+    private static void bindPage(PreparedStatement statement, int next, SqlQuery query)
             throws SQLException, ApiException {
         int index = next;
         if (query.limit() != null) {

@@ -8,6 +8,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.dao.sql.SqlCaseFold;
+import com.garganttua.dao.sql.SqlPcreClass;
+import com.garganttua.dao.sql.SqlPcreCursor;
 
 /**
  * Rewrites a PCRE pattern — what MongoDB's {@code $regex} runs — into a PostgreSQL ARE (advanced
@@ -24,8 +27,8 @@ import com.garganttua.api.commons.ApiException;
  * <li>{@code $} and {@code \Z} become {@code (?=\n?$)}; {@code \z} becomes {@code $}; {@code \A}
  * and {@code \G} become {@code ^}; {@code (?m)} anchors become lookarounds on {@code \n};</li>
  * <li>{@code \b} / {@code \B} become lookarounds on the ASCII word characters;</li>
- * <li>classes become explicit code-point brackets ({@link PgPcreClass}), and case-insensitive
- * letters become brackets of their case variants ({@link PgCaseFold}) — so {@code (?i)} works
+ * <li>classes become explicit code-point brackets ({@link SqlPcreClass}), and case-insensitive
+ * letters become brackets of their case variants ({@link SqlCaseFold}) — so {@code (?i)} works
  * anywhere in the pattern, with PCRE's scoping, and folds non-ASCII letters whatever the database's
  * {@code LC_CTYPE};</li>
  * <li>a possessive quantifier or an atomic group becomes its plain form when nothing follows it,
@@ -63,7 +66,7 @@ final class PgPcreTranslator {
     private record Group(Flags saved, boolean atomic, boolean assertion) {
     }
 
-    private final PgPcreCursor in;
+    private final SqlPcreCursor in;
     @SuppressWarnings("PMD.AvoidStringBufferField") // one translator per pattern, discarded once translated
     private final StringBuilder out = new StringBuilder();
     private final Deque<Group> groups = new ArrayDeque<>();
@@ -73,7 +76,7 @@ final class PgPcreTranslator {
     private boolean repeatable;
 
     private PgPcreTranslator(String pattern) {
-        this.in = new PgPcreCursor(pattern);
+        this.in = new SqlPcreCursor(pattern);
     }
 
     /**
@@ -100,7 +103,7 @@ final class PgPcreTranslator {
         }
         switch (cp) {
             case '\\' -> escape(in.next());
-            case '[' -> atom(PgPcreClass.parse(in).toAre(flags.caseless()));
+            case '[' -> atom(SqlPcreClass.parse(in).toAre(flags.caseless()));
             case '(' -> open();
             case ')' -> close();
             case '|' -> {
@@ -128,7 +131,7 @@ final class PgPcreTranslator {
     }
 
     private void escape(int c) {
-        PgPcreClass cls = PgPcreClass.escape(c);
+        SqlPcreClass cls = SqlPcreClass.escape(c);
         if (cls != null) {
             atom(cls.toAre(false));
             return;
@@ -371,14 +374,14 @@ final class PgPcreTranslator {
     }
 
     private void literal(int cp) {
-        if (flags.caseless() && PgCaseFold.variants(cp).length > 1) {
+        if (flags.caseless() && SqlCaseFold.variants(cp).length > 1) {
             StringBuilder bracket = new StringBuilder("[");
-            for (int variant : PgCaseFold.variants(cp)) {
-                bracket.append(PgPcreClass.escape(variant, true));
+            for (int variant : SqlCaseFold.variants(cp)) {
+                bracket.append(SqlPcreClass.escape(variant, true));
             }
             atom(bracket.append(']').toString());
             return;
         }
-        atom(PgPcreClass.escape(cp, false));
+        atom(SqlPcreClass.escape(cp, false));
     }
 }

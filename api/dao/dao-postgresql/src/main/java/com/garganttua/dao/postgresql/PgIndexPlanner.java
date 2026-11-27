@@ -8,18 +8,18 @@ import java.util.function.UnaryOperator;
 import com.garganttua.api.commons.entity.EntityIndexRule;
 import com.garganttua.api.commons.entity.annotations.IndexKind;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.schema.SqlTypes;
 
 /**
  * Turns the indexes an entity declares into the PostgreSQL indexes that hold them.
  *
  * <p>
- * Each declaration is resolved against the domain's {@link PgTable}, the single source of truth for
+ * Each declaration is resolved against the domain's {@link SqlTable}, the single source of truth for
  * where a field lives:
  * </p>
  * <ul>
@@ -66,7 +66,7 @@ final class PgIndexPlanner {
     }
 
     /** Where a declared field lives: a column of the main table or of one child table. */
-    private record Located(String table, PgColumn column, boolean child) {
+    private record Located(String table, SqlColumn column, boolean child) {
     }
 
     private PgIndexPlanner() {
@@ -81,7 +81,7 @@ final class PgIndexPlanner {
      * @param tenantPath the DTO path of the tenant identifier, or {@code null} when the domain has none
      * @return one plan per declaration, in declaration order
      */
-    static List<Planned> plan(PgTable table, List<EntityIndexRule> rules, UnaryOperator<String> toDtoPath,
+    static List<Planned> plan(SqlTable table, List<EntityIndexRule> rules, UnaryOperator<String> toDtoPath,
             String tenantPath) {
         List<Planned> plans = new ArrayList<>();
         boolean textPlanned = false;
@@ -107,12 +107,12 @@ final class PgIndexPlanner {
      *
      * @param plans the domain's plans
      */
-    static Optional<PgColumn> textColumn(PgTable table, List<Planned> plans) {
+    static Optional<SqlColumn> textColumn(SqlTable table, List<Planned> plans) {
         return plans.stream().filter(p -> p.rule().kind() == IndexKind.text && p.spec().isPresent())
                 .findFirst().flatMap(p -> table.column(p.spec().get().field()));
     }
 
-    private static Planned planOne(PgTable table, EntityIndexRule rule, String path, String tenantPath) {
+    private static Planned planOne(SqlTable table, EntityIndexRule rule, String path, String tenantPath) {
         Optional<Located> located = locate(table, path);
         if (located.isEmpty()) {
             return Planned.refused(rule, FIELD + path + "' maps no column of table '" + table.name()
@@ -126,12 +126,12 @@ final class PgIndexPlanner {
         };
     }
 
-    private static Planned standard(PgTable table, EntityIndexRule rule, String path, Located where,
+    private static Planned standard(SqlTable table, EntityIndexRule rule, String path, Located where,
             String tenantPath) {
-        PgColumnKind kind = where.column().kind();
-        if (kind == PgColumnKind.GEOMETRY || kind == PgColumnKind.IKEY) {
+        SqlColumnKind kind = where.column().kind();
+        if (kind == SqlColumnKind.GEOMETRY || kind == SqlColumnKind.IKEY) {
             return Planned.refused(rule, FIELD + path + "' is a " + kind.name().toLowerCase(java.util.Locale.ROOT)
-                    + " column, which a standard index does not serve" + (kind == PgColumnKind.GEOMETRY
+                    + " column, which a standard index does not serve" + (kind == SqlColumnKind.GEOMETRY
                             ? ": declare it with IndexKind.geo" : ""));
         }
         if (where.child()) {
@@ -143,7 +143,7 @@ final class PgIndexPlanner {
             return Planned.of(rule, spec(rule, where, BTREE, List.of(where.column().name()), path));
         }
         List<String> columns = new ArrayList<>();
-        Optional<PgColumn> tenant = tenantPath == null ? Optional.empty() : table.column(tenantPath);
+        Optional<SqlColumn> tenant = tenantPath == null ? Optional.empty() : table.column(tenantPath);
         if (rule.scope() == UnicityScope.tenant && tenant.isPresent()
                 && !tenant.get().name().equals(where.column().name())) {
             columns.add(tenant.get().name());
@@ -153,29 +153,29 @@ final class PgIndexPlanner {
     }
 
     private static Planned geo(EntityIndexRule rule, String path, Located where) {
-        if (where.column().kind() != PgColumnKind.GEOMETRY) {
+        if (where.column().kind() != SqlColumnKind.GEOMETRY) {
             return Planned.refused(rule, FIELD + path + "' is not a geometry (it is " + where.column().sqlType()
                     + "): only a GeoJSON field, stored as a PostGIS geometry, takes a geo index");
         }
         if (rule.unique()) {
             return Planned.refused(rule, FIELD + path + "': a geo index cannot be unique");
         }
-        String key = "(" + PgNaming.quote(where.column().name()) + "::geography)";
+        String key = "(" + SqlNaming.quote(where.column().name()) + "::geography)";
         return Planned.of(rule, new PgIndexSpec(name(rule, where), where.table(), "gist", List.of(key), false,
                 path, null, List.of()));
     }
 
     private static Planned text(EntityIndexRule rule, String path, Located where) {
-        PgColumn column = where.column();
-        if (where.child() || !PgTypes.TEXT.equals(column.sqlType())
-                || (column.kind() != PgColumnKind.SCALAR && column.kind() != PgColumnKind.ID)) {
+        SqlColumn column = where.column();
+        if (where.child() || !SqlTypes.TEXT.equals(column.sqlType())
+                || (column.kind() != SqlColumnKind.SCALAR && column.kind() != SqlColumnKind.ID)) {
             return Planned.refused(rule, FIELD + path + "' is not a text column of the main table: a text "
                     + "index is built on one string field of the entity");
         }
         if (rule.unique()) {
             return Planned.refused(rule, FIELD + path + "': a text index cannot be unique");
         }
-        String key = PgTextSearch.indexedVector(PgNaming.quote(column.name()));
+        String key = PgTextSearch.indexedVector(SqlNaming.quote(column.name()));
         return Planned.of(rule, new PgIndexSpec(name(rule, where), where.table(), "gin", List.of(key), false,
                 path, null, List.of()));
     }
@@ -183,35 +183,35 @@ final class PgIndexPlanner {
     private static PgIndexSpec spec(EntityIndexRule rule, Located where, String method, List<String> columns,
             String path) {
         return new PgIndexSpec(name(rule, where), where.table(), method,
-                columns.stream().map(PgNaming::quote).toList(), rule.unique(), path,
+                columns.stream().map(SqlNaming::quote).toList(), rule.unique(), path,
                 rule.unique() ? where.column().name() : null, columns);
     }
 
     private static String name(EntityIndexRule rule, Located where) {
-        return PgNaming.index(where.table(), rule.name());
+        return SqlNaming.index(where.table(), rule.name());
     }
 
     /**
      * Finds the column a DTO path names: on the main table, as a scalar collection's value, or as a
      * field of the elements of a POJO collection.
      */
-    private static Optional<Located> locate(PgTable table, String path) {
-        Optional<PgColumn> main = table.column(path);
+    private static Optional<Located> locate(SqlTable table, String path) {
+        Optional<SqlColumn> main = table.column(path);
         if (main.isPresent()) {
             return Optional.of(new Located(table.name(), main.get(), false));
         }
-        Optional<PgChildTable> collection = table.child(path);
+        Optional<SqlChildTable> collection = table.child(path);
         if (collection.isPresent()) {
             return collection.get().valueColumns().stream()
-                    .filter(c -> PgChildTable.VALUE.equals(c.name()))
+                    .filter(c -> SqlChildTable.VALUE.equals(c.name()))
                     .findFirst().map(c -> new Located(collection.get().name(), c, true));
         }
-        for (PgChildTable child : table.allChildren()) {
+        for (SqlChildTable child : table.allChildren()) {
             String prefix = child.dottedPath() + ".";
             if (path.startsWith(prefix)) {
                 String rest = path.substring(prefix.length());
-                Optional<PgColumn> element = child.valueColumns().stream()
-                        .filter(c -> c.kind() != PgColumnKind.PRESENCE && c.dottedPath().equals(rest)).findFirst();
+                Optional<SqlColumn> element = child.valueColumns().stream()
+                        .filter(c -> c.kind() != SqlColumnKind.PRESENCE && c.dottedPath().equals(rest)).findFirst();
                 if (element.isPresent()) {
                     return Optional.of(new Located(child.name(), element.get(), true));
                 }

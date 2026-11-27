@@ -36,9 +36,10 @@ import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.dao.postgresql.schema.PgIndexMode;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * The geographic operators and the geo index, proved against a real PostGIS — skipped when none is
@@ -204,7 +205,7 @@ class PgGeoTest {
             assertTrue(rs.next());
             assertTrue(rs.getString(1).contains("USING gist (((location)::geography))"), rs.getString(1));
         }
-        PgTable table = PgSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
+        SqlTable table = SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
         PgIndexSpec spec = PgIndexPlanner.plan(table, List.of(GEO_LOCATION), p -> p, "tenantId").get(0).spec()
                 .orElseThrow();
         try (Connection c = db.getConnection()) {
@@ -215,13 +216,13 @@ class PgGeoTest {
     }
 
     private String plan(IFilter filter) throws SQLException, ApiException {
-        PgTable table = PgSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
-        PgQuery query = new PgQueryBuilder(table, null).build(Optional.empty(), Optional.of(filter),
+        SqlTable table = SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
+        SqlQuery query = new PgQueryBuilder(table, null).build(Optional.empty(), Optional.of(filter),
                 Optional.empty(), Optional.empty());
         StringBuilder plan = new StringBuilder();
         try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
             s.execute("SET enable_seqscan = off");
-            try (PreparedStatement statement = c.prepareStatement("EXPLAIN SELECT 1 FROM places AS " + PgQuery.ALIAS
+            try (PreparedStatement statement = c.prepareStatement("EXPLAIN SELECT 1 FROM places AS " + SqlQuery.ALIAS
                     + " WHERE " + query.where() + " " + query.orderBy())) {
                 for (int i = 0; i < query.params().size(); i++) {
                     statement.setObject(i + 1, query.params().get(i));

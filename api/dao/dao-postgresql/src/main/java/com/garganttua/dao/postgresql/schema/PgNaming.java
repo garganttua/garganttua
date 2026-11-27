@@ -1,140 +1,47 @@
 package com.garganttua.dao.postgresql.schema;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
+
+import com.garganttua.dao.sql.schema.SqlNaming;
 
 /**
- * How DTO names become SQL identifiers — and how they are written safely into SQL.
- *
- * <p>
- * Every identifier is DOUBLE-QUOTED in generated SQL. That preserves case ({@code createdAt} stays
- * {@code createdAt}, where PostgreSQL would fold an unquoted name to lowercase), and it makes
- * reserved words usable as field names — a DTO with a field called {@code order}, {@code user} or
- * {@code group} is ordinary, and would be a syntax error unquoted.
- * </p>
- *
- * <p>
- * Identifiers are also the one place user-controlled text could reach SQL: a sort or filter names a
- * field. That text is never inserted as is — it is resolved against the {@link PgTable} first, and
- * only a column the model built can be quoted into a statement.
- * </p>
+ * How the PostgreSQL DAO names its tables, columns and indexes — kept for the code that computes those names itself
+ * (a migration, a hand-written query). The naming now lives in the relational core shared by the SQL DAOs,
+ * {@link SqlNaming}, which every dialect uses: the same DTO gets the same table and column names on every database.
  */
 public final class PgNaming {
 
-    /** Joins the segments of a flattened path: {@code address.city} becomes {@code address__city}. */
-    public static final String PATH_SEPARATOR = "__";
-
-    /** PostgreSQL truncates identifiers beyond 63 bytes — silently, so two long names could collide. */
-    public static final int MAX_IDENTIFIER_BYTES = 63;
-
-    private static final int HASH_CHARS = 8;
+    /** @see SqlNaming#PATH_SEPARATOR */
+    public static final String PATH_SEPARATOR = SqlNaming.PATH_SEPARATOR;
+    /** @see SqlNaming#MAX_IDENTIFIER_BYTES */
+    public static final int MAX_IDENTIFIER_BYTES = SqlNaming.MAX_IDENTIFIER_BYTES;
 
     private PgNaming() {
         // Static helpers
     }
 
-    /**
-     * Double-quotes an identifier, doubling any embedded quote.
-     *
-     * @param identifier the raw identifier
-     * @return the identifier as it must appear in SQL
-     */
+    /** @see SqlNaming#quote(String) */
     public static String quote(String identifier) {
-        return '"' + identifier.replace("\"", "\"\"") + '"';
+        return SqlNaming.quote(identifier);
     }
 
-    /**
-     * The column name of a (possibly flattened) field path.
-     *
-     * @param fieldPath the DTO field names, root first
-     * @return the column name, shortened if PostgreSQL would otherwise truncate it
-     */
+    /** @see SqlNaming#column(List) */
     public static String column(List<String> fieldPath) {
-        return fit(String.join(PATH_SEPARATOR, fieldPath));
+        return SqlNaming.column(fieldPath);
     }
 
-    /**
-     * The table name of a domain.
-     *
-     * @param domainName the domain name, as the api generates it ({@code users})
-     * @return the table name
-     */
+    /** @see SqlNaming#table(String) */
     public static String table(String domainName) {
-        return fit(domainName.toLowerCase(Locale.ROOT));
+        return SqlNaming.table(domainName);
     }
 
-    /**
-     * The name of the child table holding a collection field.
-     *
-     * @param table     the owning table
-     * @param fieldPath the collection field's path from the root entity
-     * @return the child table name
-     */
+    /** @see SqlNaming#childTable(String, List) */
     public static String childTable(String table, List<String> fieldPath) {
-        return fit(table + PATH_SEPARATOR + String.join(PATH_SEPARATOR, fieldPath));
+        return SqlNaming.childTable(table, fieldPath);
     }
 
-    /**
-     * The name of an index a domain declares.
-     *
-     * <p>
-     * MongoDB names an index per collection; PostgreSQL names it per SCHEMA, in the same namespace
-     * as the tables. Two domains declaring the same field unique derive the same index name, and
-     * {@code CREATE INDEX IF NOT EXISTS} would then silently skip the second one — so the name is
-     * prefixed with the table.
-     * </p>
-     *
-     * @param table     the table the index is on
-     * @param indexName the declared (or derived) index name
-     * @return the index name, shortened if PostgreSQL would otherwise truncate it
-     */
+    /** @see SqlNaming#index(String, String) */
     public static String index(String table, String indexName) {
-        return fit(table + PATH_SEPARATOR + indexName);
-    }
-
-    /**
-     * Keeps an identifier within PostgreSQL's 63-byte limit.
-     *
-     * <p>
-     * PostgreSQL does not reject a longer identifier, it TRUNCATES it — so two long flattened paths
-     * sharing a prefix would silently become the same column. A too-long name is cut and suffixed
-     * with a hash of the full name instead, which stays unique and stays stable across restarts.
-     * </p>
-     */
-    static String fit(String identifier) {
-        byte[] bytes = identifier.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length <= MAX_IDENTIFIER_BYTES) {
-            return identifier;
-        }
-        String hash = hash(identifier);
-        int keep = MAX_IDENTIFIER_BYTES - HASH_CHARS - 1;
-        StringBuilder cut = new StringBuilder();
-        int used = 0;
-        int i = 0;
-        while (i < identifier.length()) {
-            int cp = identifier.codePointAt(i);
-            int len = new String(Character.toChars(cp)).getBytes(StandardCharsets.UTF_8).length;
-            if (used + len > keep) {
-                break;
-            }
-            cut.appendCodePoint(cp);
-            used += len;
-            i += Character.charCount(cp);
-        }
-        return cut + "_" + hash;
-    }
-
-    private static String hash(String identifier) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(identifier.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest).substring(0, HASH_CHARS);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is mandatory on every JVM", e);
-        }
+        return SqlNaming.index(table, indexName);
     }
 }

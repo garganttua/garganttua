@@ -39,10 +39,10 @@ import com.garganttua.core.observability.LogEvent;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.observability.ObservableEvent;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
 
 /**
@@ -78,20 +78,20 @@ class PgSchemaManagerTest {
         private Point location;
     }
 
-    private static PgTable people(Class<?> dto) {
-        return PgSchemaModel.of("people", IClass.getClass(dto), "uuid", Map.of());
+    private static SqlTable people(Class<?> dto) {
+        return SqlSchemaModel.of("people", IClass.getClass(dto), "uuid", Map.of());
     }
 
-    private static PgTable orders() {
-        return PgSchemaModel.of("orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
+    private static SqlTable orders() {
+        return SqlSchemaModel.of("orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
                 Map.of("customer", "customers", "relatedOrders", "orders"));
     }
 
-    private static PgTable places() {
-        return PgSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
+    private static SqlTable places() {
+        return SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
     }
 
-    private static void ensure(DataSource db, SchemaMode mode, PgTable table) throws ApiException {
+    private static void ensure(DataSource db, SchemaMode mode, SqlTable table) throws ApiException {
         new PgSchemaManager(db, mode).ensure(table);
     }
 
@@ -112,16 +112,16 @@ class PgSchemaManagerTest {
         }
     }
 
-    private static void assertCompleteSchema(DataSource db, PgTable table) throws SQLException {
+    private static void assertCompleteSchema(DataSource db, SqlTable table) throws SQLException {
         Map<String, String> main = columns(db, table.name());
-        for (PgColumn column : table.columns()) {
+        for (SqlColumn column : table.columns()) {
             assertTrue(main.containsKey(column.name()),
                     () -> "main table " + table.name() + " lacks column " + column.name() + ": " + main);
         }
-        for (PgChildTable child : table.children()) {
+        for (SqlChildTable child : table.children()) {
             Map<String, String> stored = columns(db, child.name());
             assertFalse(stored.isEmpty(), () -> "child table " + child.name() + " was not created");
-            for (PgColumn column : child.valueColumns()) {
+            for (SqlColumn column : child.valueColumns()) {
                 assertTrue(stored.containsKey(column.name()),
                         () -> "child table " + child.name() + " lacks column " + column.name());
             }
@@ -215,7 +215,7 @@ class PgSchemaManagerTest {
         @DisplayName("adds a value column a child table gained")
         void addsChildColumn() throws Exception {
             DataSource db = PgTestDatabase.freshDatabase();
-            PgTable table = orders();
+            SqlTable table = orders();
             ensure(db, SchemaMode.CREATE, table);
             execute(db, "ALTER TABLE \"orders__lines\" DROP COLUMN \"price\"");
             ensure(db, SchemaMode.CREATE, table);
@@ -334,7 +334,7 @@ class PgSchemaManagerTest {
         @DisplayName("refuses an empty database, listing the missing DDL, and creates nothing")
         void refusesEmptyDatabase() throws Exception {
             DataSource db = PgTestDatabase.freshDatabase();
-            PgTable table = orders();
+            SqlTable table = orders();
             ApiException error = assertThrows(ApiException.class, () -> ensure(db, SchemaMode.VALIDATE, table));
             String message = error.getMessage();
             for (String ddl : PgSchemaExpectation.createStatements(table)) {

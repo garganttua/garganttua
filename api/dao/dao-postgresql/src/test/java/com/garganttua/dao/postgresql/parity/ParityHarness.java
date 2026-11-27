@@ -20,7 +20,7 @@ import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.dao.mongodb.MongoDao;
 import com.garganttua.dao.postgresql.PgDao;
-import com.garganttua.dao.postgresql.PgJson;
+import com.garganttua.dao.sql.SqlJson;
 import com.garganttua.dao.postgresql.PgSchemaRegistry;
 import com.garganttua.dao.postgresql.PgTestDatabase;
 import com.garganttua.dao.postgresql.TestDomains;
@@ -66,7 +66,7 @@ public final class ParityHarness {
     public record Outcome(Object mongo, Object pg, Throwable mongoError, Throwable pgError) {
     }
 
-    private static final ObjectMapper CANONICAL = PgJson.MAPPER.copy()
+    private static final ObjectMapper CANONICAL = SqlJson.MAPPER.copy()
             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
 
     private final Map<String, MongoDao> mongo = new LinkedHashMap<>();

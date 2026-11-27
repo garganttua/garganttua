@@ -41,9 +41,10 @@ import org.junit.jupiter.api.Test;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgDdl;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlDdl;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * The read side, proven against a real PostgreSQL. Rows are inserted with PLAIN SQL — the reader
@@ -190,14 +191,14 @@ class PgReaderTest {
         }
     }
 
-    private static PgTable model(String domain, Class<?> dto, Map<String, String> compositions) {
-        return PgSchemaModel.of(domain, IClass.getClass(dto), "uuid", compositions);
+    private static SqlTable model(String domain, Class<?> dto, Map<String, String> compositions) {
+        return SqlSchemaModel.of(domain, IClass.getClass(dto), "uuid", compositions);
     }
 
-    private Connection db(PgTable... tables) throws SQLException {
+    private Connection db(SqlTable... tables) throws SQLException {
         connection = PgTestDatabase.freshDatabase().getConnection();
-        for (PgTable table : tables) {
-            for (String ddl : PgDdl.create(table)) {
+        for (SqlTable table : tables) {
+            for (String ddl : SqlDdl.create(table)) {
                 exec(ddl);
             }
         }
@@ -217,7 +218,7 @@ class PgReaderTest {
         return type.cast(found.get(0));
     }
 
-    private static PgReader reader(PgTable table, Class<?> dto) {
+    private static PgReader reader(SqlTable table, Class<?> dto) {
         return new PgReader(table, IClass.getClass(dto), new PgSchemaRegistry());
     }
 
@@ -230,14 +231,14 @@ class PgReaderTest {
         @Test
         @DisplayName("read every scalar type back into the field's Java type")
         void everyScalarType() throws Exception {
-            PgTable table = model("scalars", Scalars.class, Map.of());
+            SqlTable table = model("scalars", Scalars.class, Map.of());
             db(table);
             exec("INSERT INTO scalars VALUES ('s1', 'hello', 'Z', 7, 8, 9000000000, 10, 11, 12, 1.5, 2.5, true, "
                     + "123.45, 99999999999999999999, '2026-09-21T10:15:30.123456Z', '2026-01-02T03:04:05Z', "
                     + "'2026-01-02T03:04:05+02:00', '2026-01-02T03:04:05Z', '2026-01-02T03:04:05', '2026-01-02', "
                     + "'03:04:05', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '\\x0102ff', 'GREEN')");
 
-            Scalars s = only(reader(table, Scalars.class).find(connection, PgQuery.all()), Scalars.class);
+            Scalars s = only(reader(table, Scalars.class).find(connection, SqlQuery.all()), Scalars.class);
 
             assertEquals("s1", s.uuid, "id");
             assertEquals("hello", s.text, "TEXT -> String");
@@ -268,10 +269,10 @@ class PgReaderTest {
         @Test
         @DisplayName("leave a primitive at its default and a boxed field null on SQL NULL")
         void nullsOnPrimitives() throws Exception {
-            PgTable table = model("scalars", Scalars.class, Map.of());
+            SqlTable table = model("scalars", Scalars.class, Map.of());
             db(table);
             exec("INSERT INTO scalars (uuid) VALUES ('s1')");
-            Scalars s = only(reader(table, Scalars.class).find(connection, PgQuery.all()), Scalars.class);
+            Scalars s = only(reader(table, Scalars.class).find(connection, SqlQuery.all()), Scalars.class);
             assertEquals(0, s.i, "a NULL must not fail a primitive field");
             assertNull(s.boxedI, "a NULL reads as null into a boxed field");
             assertNull(s.color, "a NULL enum reads as null");
@@ -280,11 +281,11 @@ class PgReaderTest {
         @Test
         @DisplayName("coerce a column narrower than the field: INTEGER into Long, NUMERIC into double")
         void coercion() throws Exception {
-            PgTable table = model("widened", Widened.class, Map.of());
+            SqlTable table = model("widened", Widened.class, Map.of());
             db();
             exec("CREATE TABLE widened (uuid TEXT PRIMARY KEY, count INTEGER, ratio NUMERIC)",
                     "INSERT INTO widened VALUES ('w1', 42, 0.25)");
-            Widened w = only(reader(table, Widened.class).find(connection, PgQuery.all()), Widened.class);
+            Widened w = only(reader(table, Widened.class).find(connection, SqlQuery.all()), Widened.class);
             assertEquals(Long.valueOf(42), w.count, "an INTEGER column must be widened into a Long field");
             assertEquals(0.25, w.ratio, "a NUMERIC column must read into a double field");
         }
@@ -292,11 +293,11 @@ class PgReaderTest {
         @Test
         @DisplayName("refuse an enum constant that no longer exists, naming the column")
         void unknownEnum() throws Exception {
-            PgTable table = model("scalars", Scalars.class, Map.of());
+            SqlTable table = model("scalars", Scalars.class, Map.of());
             db(table);
             exec("INSERT INTO scalars (uuid, color) VALUES ('s1', 'PURPLE')");
             ApiException e = assertThrows(ApiException.class,
-                    () -> reader(table, Scalars.class).find(connection, PgQuery.all()));
+                    () -> reader(table, Scalars.class).find(connection, SqlQuery.all()));
             assertTrue(e.getMessage().contains("color"), () -> "the message must name the column: " + e.getMessage());
         }
     }
@@ -308,11 +309,11 @@ class PgReaderTest {
         @Test
         @DisplayName("rebuild a flattened POJO from its prefixed columns")
         void flattened() throws Exception {
-            PgTable table = model("persons", Person.class, Map.of());
+            SqlTable table = model("persons", Person.class, Map.of());
             db(table);
             exec("INSERT INTO persons (uuid, name, address, address__city, address__zip) "
                     + "VALUES ('p1', 'Ann', TRUE, 'Dole', 39100)");
-            Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
+            Person p = only(reader(table, Person.class).find(connection, SqlQuery.all()), Person.class);
             assertNotNull(p.address, "the presence bit is TRUE, so address must exist");
             assertEquals("Dole", p.address.city);
             assertEquals(Integer.valueOf(39100), p.address.zip);
@@ -321,10 +322,10 @@ class PgReaderTest {
         @Test
         @DisplayName("leave an absent POJO as the constructor left it — null, or the field initialiser's")
         void absentIsUntouched() throws Exception {
-            PgTable table = model("persons", Person.class, Map.of());
+            SqlTable table = model("persons", Person.class, Map.of());
             db(table);
             exec("INSERT INTO persons (uuid, name) VALUES ('p1', 'Ann')");
-            Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
+            Person p = only(reader(table, Person.class).find(connection, SqlQuery.all()), Person.class);
             assertNull(p.address, "presence NULL: the address was absent and has no initialiser");
             assertNotNull(p.home, "presence NULL: home keeps its initialiser, as MongoDB keeps it for an absent key");
             assertNull(p.home.city);
@@ -333,10 +334,10 @@ class PgReaderTest {
         @Test
         @DisplayName("rebuild a present POJO whose fields are all null as an empty POJO, not null")
         void presentAllNullIsEmpty() throws Exception {
-            PgTable table = model("persons", Person.class, Map.of());
+            SqlTable table = model("persons", Person.class, Map.of());
             db(table);
             exec("INSERT INTO persons (uuid, address) VALUES ('p1', TRUE)");
-            Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
+            Person p = only(reader(table, Person.class).find(connection, SqlQuery.all()), Person.class);
             assertNotNull(p.address, "presence TRUE: the POJO existed, even with every field null");
             assertNull(p.address.city);
             assertNull(p.address.zip);
@@ -345,20 +346,20 @@ class PgReaderTest {
         @Test
         @DisplayName("ignore values stored under an absent POJO")
         void valuesUnderAbsentIgnored() throws Exception {
-            PgTable table = model("persons", Person.class, Map.of());
+            SqlTable table = model("persons", Person.class, Map.of());
             db(table);
             exec("INSERT INTO persons (uuid, address__city) VALUES ('p1', 'Dole')");
-            Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
+            Person p = only(reader(table, Person.class).find(connection, SqlQuery.all()), Person.class);
             assertNull(p.address, "the presence bit says absent: a stray column must not bring it to life");
         }
 
         @Test
         @DisplayName("keep a POJO with only some columns set, the others null")
         void partlyNull() throws Exception {
-            PgTable table = model("persons", Person.class, Map.of());
+            SqlTable table = model("persons", Person.class, Map.of());
             db(table);
             exec("INSERT INTO persons (uuid, home, home__city) VALUES ('p1', TRUE, 'Dole')");
-            Person p = only(reader(table, Person.class).find(connection, PgQuery.all()), Person.class);
+            Person p = only(reader(table, Person.class).find(connection, SqlQuery.all()), Person.class);
             assertNotNull(p.home, "the POJO is present");
             assertEquals("Dole", p.home.city);
             assertNull(p.home.zip);
@@ -372,11 +373,11 @@ class PgReaderTest {
         @Test
         @DisplayName("rebuild a recursive POJO, an untyped list and a generic map of lists")
         void jsonb() throws Exception {
-            PgTable table = model("trees", Tree.class, Map.of());
+            SqlTable table = model("trees", Tree.class, Map.of());
             db(table);
             exec("INSERT INTO trees VALUES ('t1', '{\"label\":\"a\",\"self\":{\"label\":\"b\",\"self\":null}}', "
                     + "'[[1.5,2],[3,4]]', '{\"k\":[{\"label\":\"x\",\"self\":null}]}')");
-            Tree t = only(reader(table, Tree.class).find(connection, PgQuery.all()), Tree.class);
+            Tree t = only(reader(table, Tree.class).find(connection, SqlQuery.all()), Tree.class);
             assertEquals("a", t.root.label);
             assertEquals("b", t.root.self.label, "the recursive POJO must be rebuilt at every depth");
             assertNull(t.root.self.self);
@@ -394,14 +395,14 @@ class PgReaderTest {
         private static final String PRESENT_BAG = "INSERT INTO bags (uuid, tags, numbers, sorted, codes, stock, "
                 + "lines, \"byCode\") VALUES ('b1', TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE)";
 
-        private PgTable bags() {
+        private SqlTable bags() {
             return model("bags", Bag.class, Map.of());
         }
 
         @Test
         @DisplayName("preserve list order, build the declared collection types, rebuild POJO lists and maps")
         void collections() throws Exception {
-            PgTable table = bags();
+            SqlTable table = bags();
             db(table);
             exec(PRESENT_BAG,
                     "INSERT INTO bags__tags VALUES ('b1', 2, 'c'), ('b1', 0, 'a'), ('b1', 1, 'b')",
@@ -411,7 +412,7 @@ class PgReaderTest {
                     "INSERT INTO bags__stock VALUES ('b1', 'x', 1), ('b1', 'y', 2)",
                     "INSERT INTO bags__lines VALUES ('b1', 1, TRUE, 'B', 2.00), ('b1', 0, TRUE, 'A', 1.00)",
                     "INSERT INTO \"bags__byCode\" VALUES ('b1', 'k', TRUE, 'K', 9.99)");
-            Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
+            Bag b = only(reader(table, Bag.class).find(connection, SqlQuery.all()), Bag.class);
 
             assertEquals(List.of("a", "b", "c"), b.tags, "elements must come back in _ord order");
             assertInstanceOf(LinkedHashSet.class, b.numbers, "a Set field reads as an order-keeping LinkedHashSet");
@@ -429,10 +430,10 @@ class PgReaderTest {
         @Test
         @DisplayName("read zero child rows of an absent collection as null, like MongoDB's absent key")
         void zeroRowsAbsentIsNull() throws Exception {
-            PgTable table = bags();
+            SqlTable table = bags();
             db(table);
             exec("INSERT INTO bags (uuid) VALUES ('b1')");
-            Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
+            Bag b = only(reader(table, Bag.class).find(connection, SqlQuery.all()), Bag.class);
             assertNull(b.tags, "presence NULL: the list was saved null");
             assertNull(b.stock, "presence NULL: the map was saved null");
             assertNull(b.codes);
@@ -442,11 +443,11 @@ class PgReaderTest {
         @Test
         @DisplayName("read a POJO element whose fields are all null as an element, and a null element as null")
         void pojoElementPresence() throws Exception {
-            PgTable table = bags();
+            SqlTable table = bags();
             db(table);
             exec("INSERT INTO bags (uuid, lines) VALUES ('b1', TRUE)",
                     "INSERT INTO bags__lines VALUES ('b1', 0, TRUE, NULL, NULL), ('b1', 1, NULL, NULL, NULL)");
-            Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
+            Bag b = only(reader(table, Bag.class).find(connection, SqlQuery.all()), Bag.class);
             assertEquals(2, b.lines.size());
             assertNotNull(b.lines.get(0), "_present TRUE: an all-null element is still an element");
             assertNull(b.lines.get(0).sku);
@@ -456,10 +457,10 @@ class PgReaderTest {
         @Test
         @DisplayName("read zero child rows of a present collection as EMPTY collections of the declared type")
         void zeroRowsIsEmpty() throws Exception {
-            PgTable table = bags();
+            SqlTable table = bags();
             db(table);
             exec(PRESENT_BAG);
-            Bag b = only(reader(table, Bag.class).find(connection, PgQuery.all()), Bag.class);
+            Bag b = only(reader(table, Bag.class).find(connection, SqlQuery.all()), Bag.class);
             assertNotNull(b.tags, "list must be empty, not null");
             assertTrue(b.tags.isEmpty());
             assertNotNull(b.numbers, "set must be empty, not null");
@@ -474,11 +475,11 @@ class PgReaderTest {
         @Test
         @DisplayName("give each owner of a page its own elements")
         void groupedByOwner() throws Exception {
-            PgTable table = bags();
+            SqlTable table = bags();
             db(table);
             exec("INSERT INTO bags (uuid, name, tags) VALUES ('b1', '1', TRUE), ('b2', '2', TRUE), ('b3', '3', TRUE)",
                     "INSERT INTO bags__tags VALUES ('b1', 0, 'one'), ('b3', 0, 'three'), ('b3', 1, 'tres')");
-            PgQuery byName = new PgQuery("TRUE", List.of(), "ORDER BY t.\"name\"", null, null, null);
+            SqlQuery byName = new SqlQuery("TRUE", List.of(), "ORDER BY t.\"name\"", null, null, null);
             List<Object> found = reader(table, Bag.class).find(connection, byName);
             assertEquals(List.of("one"), ((Bag) found.get(0)).tags);
             assertEquals(List.of(), ((Bag) found.get(1)).tags, "b2 has no rows: its list is empty, not b1's or b3's");
@@ -493,11 +494,11 @@ class PgReaderTest {
         @Test
         @DisplayName("load only the projected fields, but always the id")
         void projected() throws Exception {
-            PgTable table = model("persons", Person.class, Map.of());
+            SqlTable table = model("persons", Person.class, Map.of());
             db(table);
             exec("INSERT INTO persons (uuid, name, address, address__city, address__zip) "
                     + "VALUES ('p1', 'Ann', TRUE, 'Dole', 39100)");
-            PgQuery query = new PgQuery("TRUE", List.of(), "", null, null, List.of("address"));
+            SqlQuery query = new SqlQuery("TRUE", List.of(), "", null, null, List.of("address"));
             Person p = only(reader(table, Person.class).find(connection, query), Person.class);
             assertEquals("p1", p.uuid, "the id is always read");
             assertNull(p.name, "name was not projected and must not be read");
@@ -508,7 +509,7 @@ class PgReaderTest {
         @Test
         @DisplayName("select only the projected columns and read only the projected child tables")
         void projectedChildren() throws Exception {
-            PgTable table = model("bags", Bag.class, Map.of());
+            SqlTable table = model("bags", Bag.class, Map.of());
             db(table);
             exec("INSERT INTO bags (uuid, name, tags, lines) VALUES ('b1', 'n', TRUE, TRUE)",
                     "INSERT INTO bags__tags VALUES ('b1', 0, 'a')",
@@ -516,7 +517,7 @@ class PgReaderTest {
             PgReader reader = reader(table, Bag.class);
             assertEquals("t.\"uuid\", t.\"tags\"", reader.selectList(List.of("tags")),
                     "only the id and the collection's presence bit for a child projection");
-            Bag b = only(reader.find(connection, new PgQuery("TRUE", List.of(), "", null, null, List.of("tags"))),
+            Bag b = only(reader.find(connection, new SqlQuery("TRUE", List.of(), "", null, null, List.of("tags"))),
                     Bag.class);
             assertEquals(List.of("a"), b.tags);
             assertNull(b.lines, "lines was not projected: its child table must not be read");
@@ -528,8 +529,8 @@ class PgReaderTest {
     @DisplayName("compositions")
     class Compositions {
 
-        private final PgTable customers = model("customers", Customer.class, Map.of("sponsor", "customers"));
-        private final PgTable orders = model("orders", Order.class,
+        private final SqlTable customers = model("customers", Customer.class, Map.of("sponsor", "customers"));
+        private final SqlTable orders = model("orders", Order.class,
                 Map.of("customer", "customers", "customers", "customers", "customerId", "customers"));
 
         private void rows() throws SQLException {
@@ -547,7 +548,7 @@ class PgReaderTest {
             registry.register("customers", customers, IClass.getClass(Customer.class));
             registry.register("orders", orders, IClass.getClass(Order.class));
             Order o = only(new PgReader(orders, IClass.getClass(Order.class), registry)
-                    .find(connection, PgQuery.all()), Order.class);
+                    .find(connection, SqlQuery.all()), Order.class);
 
             assertNotNull(o.customer, "the referenced customer must be resolved");
             assertEquals("Ann", o.customer.name);
@@ -565,7 +566,7 @@ class PgReaderTest {
             PgSchemaRegistry registry = new PgSchemaRegistry();
             registry.register("customers", customers, IClass.getClass(Customer.class));
             Order o = only(new PgReader(orders, IClass.getClass(Order.class), registry)
-                    .find(connection, PgQuery.all()), Order.class);
+                    .find(connection, SqlQuery.all()), Order.class);
             assertNull(o.customer, "a reference to a missing row reads as null");
         }
 
@@ -573,7 +574,7 @@ class PgReaderTest {
         @DisplayName("leave references to an unregistered domain null, without failing")
         void unregistered() throws Exception {
             rows();
-            Order o = only(reader(orders, Order.class).find(connection, PgQuery.all()), Order.class);
+            Order o = only(reader(orders, Order.class).find(connection, SqlQuery.all()), Order.class);
             assertNull(o.customer, "an unregistered target cannot be resolved");
             assertNull(o.customers, "an unregistered target collection cannot be resolved");
             assertEquals("c2", o.customerId, "a uuid-typed reference needs no target to be read");
@@ -584,8 +585,8 @@ class PgReaderTest {
     @DisplayName("query execution")
     class Execution {
 
-        private PgTable ranked() throws SQLException {
-            PgTable table = model("ranked", Ranked.class, Map.of());
+        private SqlTable ranked() throws SQLException {
+            SqlTable table = model("ranked", Ranked.class, Map.of());
             db(table);
             exec("INSERT INTO ranked VALUES ('r1', 'a', 1), ('r2', 'b', 2), ('r3', 'c', 3), ('r4', 'd', 4), "
                     + "('r5', 'e', 5)");
@@ -595,8 +596,8 @@ class PgReaderTest {
         @Test
         @DisplayName("apply where, params, order by, limit and offset")
         void paging() throws Exception {
-            PgTable table = ranked();
-            PgQuery query = new PgQuery("t.\"rank\" >= ?", List.of(2), "ORDER BY t.\"rank\" DESC", 2, 1L, null);
+            SqlTable table = ranked();
+            SqlQuery query = new SqlQuery("t.\"rank\" >= ?", List.of(2), "ORDER BY t.\"rank\" DESC", 2, 1L, null);
             List<Object> found = reader(table, Ranked.class).find(connection, query);
             assertEquals(List.of(4, 3), found.stream().map(r -> ((Ranked) r).rank).toList(),
                     "ranks >= 2, descending, skip 1, take 2");
@@ -605,28 +606,28 @@ class PgReaderTest {
         @Test
         @DisplayName("count the rows matching the filter")
         void count() throws Exception {
-            PgTable table = ranked();
+            SqlTable table = ranked();
             PgReader reader = reader(table, Ranked.class);
-            assertEquals(4, reader.count(connection, new PgQuery("t.\"rank\" >= ?", List.of(2), "", 1, 0L, null)),
+            assertEquals(4, reader.count(connection, new SqlQuery("t.\"rank\" >= ?", List.of(2), "", 1, 0L, null)),
                     "count ignores the page");
-            assertEquals(5, reader.count(connection, PgQuery.all()));
+            assertEquals(5, reader.count(connection, SqlQuery.all()));
         }
 
         @Test
         @DisplayName("return an empty list when nothing matches")
         void nothing() throws Exception {
-            PgTable table = ranked();
+            SqlTable table = ranked();
             List<Object> found = reader(table, Ranked.class)
-                    .find(connection, new PgQuery("t.\"rank\" > ?", List.of(99), "", null, null, null));
+                    .find(connection, new SqlQuery("t.\"rank\" > ?", List.of(99), "", null, null, null));
             assertTrue(found.isEmpty());
         }
 
         @Test
         @DisplayName("refuse a negative page size")
         void negativeLimit() throws Exception {
-            PgTable table = ranked();
+            SqlTable table = ranked();
             assertThrows(ApiException.class, () -> reader(table, Ranked.class)
-                    .find(connection, new PgQuery("TRUE", List.of(), "", -1, null, null)));
+                    .find(connection, new SqlQuery("TRUE", List.of(), "", -1, null, null)));
         }
     }
 
@@ -637,7 +638,7 @@ class PgReaderTest {
         @Test
         @DisplayName("rebuild each element's collections from the rows whose _parent is its _id, in _ord order")
         void grandchildrenByParent() throws Exception {
-            PgTable table = model("shops", Shop.class, Map.of());
+            SqlTable table = model("shops", Shop.class, Map.of());
             db(table);
             // Ids chosen so that the two shops' rows interleave: grouping must follow _parent, not row order.
             exec("INSERT INTO shops (uuid, orders) VALUES ('s1', TRUE), ('s2', TRUE)",
@@ -648,7 +649,7 @@ class PgReaderTest {
                             + "VALUES ('s1', 12, 1, 'y'), ('s1', 12, 0, 'x')",
                     "INSERT INTO shops__orders__lines (_owner, _parent, _ord, _present, sku) "
                             + "VALUES ('s1', 12, 1, TRUE, 'K2'), ('s1', 10, 0, TRUE, 'K3'), ('s1', 12, 0, TRUE, 'K1')");
-            PgQuery byUuid = new PgQuery("TRUE", List.of(), "ORDER BY t.\"uuid\"", null, null, null);
+            SqlQuery byUuid = new SqlQuery("TRUE", List.of(), "ORDER BY t.\"uuid\"", null, null, null);
             List<Object> found = reader(table, Shop.class).find(connection, byUuid);
 
             Shop s1 = (Shop) found.get(0);
@@ -669,13 +670,13 @@ class PgReaderTest {
         @Test
         @DisplayName("rebuild a list of lists from the table holding the element itself")
         void listOfLists() throws Exception {
-            PgTable table = model("grids", Grid.class, Map.of());
+            SqlTable table = model("grids", Grid.class, Map.of());
             db(table);
             exec("INSERT INTO grids (uuid, rows) VALUES ('g1', TRUE)",
                     "INSERT INTO grids__rows (_id, _owner, _ord, _present) OVERRIDING SYSTEM VALUE "
                             + "VALUES (1, 'g1', 0, TRUE), (2, 'g1', 1, TRUE), (3, 'g1', 2, NULL)",
                     "INSERT INTO grids__rows___e (_owner, _parent, _ord, value) VALUES ('g1', 1, 1, 2), ('g1', 1, 0, 1)");
-            Grid g = only(reader(table, Grid.class).find(connection, PgQuery.all()), Grid.class);
+            Grid g = only(reader(table, Grid.class).find(connection, SqlQuery.all()), Grid.class);
             assertEquals(java.util.Arrays.asList(List.of(1, 2), List.of(), null), g.rows,
                     "inner lists in order; present without rows is empty; absent is null");
         }
@@ -683,7 +684,7 @@ class PgReaderTest {
         @Test
         @DisplayName("read every table of the tree with the page's ROOT ids, one statement per table")
         void selectByRootIds() {
-            PgTable table = model("shops", Shop.class, Map.of());
+            SqlTable table = model("shops", Shop.class, Map.of());
             assertEquals("SELECT \"_parent\", \"_ord\", \"_present\", \"sku\" FROM \"shops__orders__lines\" "
                     + "WHERE \"_owner\" = ANY(?) ORDER BY \"_parent\", \"_ord\"",
                     PgChildLoader.selectSql(table.child("orders.lines").orElseThrow()));
@@ -699,7 +700,7 @@ class PgReaderTest {
         @Test
         @DisplayName("select a geometry column as GeoJSON text")
         void selectedAsGeoJson() {
-            PgTable table = model("located", Located.class, Map.of());
+            SqlTable table = model("located", Located.class, Map.of());
             String list = reader(table, Located.class).selectList(null);
             assertTrue(list.contains("ST_AsGeoJSON(t.\"location\") AS \"location\""),
                     () -> "geometry must be selected through ST_AsGeoJSON: " + list);

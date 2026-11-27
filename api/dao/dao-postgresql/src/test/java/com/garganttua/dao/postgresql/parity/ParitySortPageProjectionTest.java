@@ -21,7 +21,7 @@ import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.dao.postgresql.parity.ParityHarness.Domain;
 import com.garganttua.dao.postgresql.parity.ParityHarness.Outcome;
-import com.garganttua.dao.postgresql.schema.PgNaming;
+import com.garganttua.dao.sql.schema.SqlNaming;
 
 /**
  * Parity of the sort, pagination and projection family: the same find, asked of MongoDB and of
@@ -215,8 +215,8 @@ class ParitySortPageProjectionTest {
             // The DAO declares TEXT columns without COLLATE: they inherit the database default, which on
             // a real server is rarely "C". Simulate an en_US-like default on the column itself.
             try (Connection c = h.pgDatabase().getConnection(); Statement st = c.createStatement()) {
-                st.execute("ALTER TABLE " + PgNaming.quote(PgNaming.table(ITEMS)) + " ALTER COLUMN "
-                        + PgNaming.quote(PgNaming.column(List.of("name"))) + " TYPE TEXT COLLATE \"und-x-icu\"");
+                st.execute("ALTER TABLE " + SqlNaming.quote(SqlNaming.table(ITEMS)) + " ALTER COLUMN "
+                        + SqlNaming.quote(SqlNaming.column(List.of("name"))) + " TYPE TEXT COLLATE \"und-x-icu\"");
             }
             ParityHarness.assertSame("sort name asc (ICU collation)",
                     uuidOrder(sorted(h, "name", SortDirection.asc)), true);

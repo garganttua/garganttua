@@ -30,16 +30,17 @@ import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.annotations.Reflected;
 import com.garganttua.dao.postgresql.schema.PgIndexMode;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * PostgreSQL-backed {@link IDao}: one domain, one main table, one child table per collection — a
  * relational mapping, one column per field.
  *
  * <p>
- * The shape of the tables is derived once from the domain's DTO by {@link PgSchemaModel} and is the
+ * The shape of the tables is derived once from the domain's DTO by {@link SqlSchemaModel} and is the
  * single contract of the four collaborators this class wires: {@link PgSchemaManager} (DDL),
  * {@link PgWriter} (upsert, delete), {@link PgReader} (select, rebuild) and {@link PgQueryBuilder}
  * (filters, sort, pagination, projection). None of them re-derives the mapping.
@@ -83,7 +84,7 @@ public class PgDao implements IDao {
     private volatile Wiring wiring;
 
     /** The collaborators of one registered domain — rebuilt as a whole if the domain re-registers. */
-    private record Wiring(PgTable table, PgWriter writer, PgReader reader, PgQueryBuilder queries) {
+    private record Wiring(SqlTable table, PgWriter writer, PgReader reader, PgQueryBuilder queries) {
     }
 
     /**
@@ -140,7 +141,7 @@ public class PgDao implements IDao {
         for (DtoComposition composition : dto.compositions()) {
             compositions.put(composition.field().getLastElement(), composition.collection());
         }
-        PgTable table = PgSchemaModel.of(this.domainName, dtoClass, uuidField, compositions);
+        SqlTable table = SqlSchemaModel.of(this.domainName, dtoClass, uuidField, compositions);
         List<PgIndexPlanner.Planned> indexes = planIndexes(domainDefinition, dto, table);
         try {
             new PgSchemaManager(this.dataSource, this.schemaMode).ensure(table);
@@ -163,7 +164,7 @@ public class PgDao implements IDao {
      * starting together do not race on the DDL. They are an optimisation: any failure leaves every
      * collection rewritten at every write, as before, with a WARN — never a refusal to start.
      */
-    private boolean ensureDigests(PgTable table) {
+    private boolean ensureDigests(SqlTable table) {
         if (table.children().isEmpty()) {
             return false;
         }
@@ -197,7 +198,7 @@ public class PgDao implements IDao {
      */
     @SuppressWarnings("rawtypes")
     private static List<PgIndexPlanner.Planned> planIndexes(IDomainDefinition domainDefinition,
-            IDtoDefinition<?> dto, PgTable table) {
+            IDtoDefinition<?> dto, SqlTable table) {
         IEntityDefinition<?> entity = domainDefinition.entityDefinition();
         if (entity == null) {
             return List.of();
@@ -229,7 +230,7 @@ public class PgDao implements IDao {
     public List<Object> find(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
             Optional<List<String>> projection) throws ApiException {
         Wiring w = wired();
-        PgQuery query = w.queries().build(pageable, filter, sort, projection);
+        SqlQuery query = w.queries().build(pageable, filter, sort, projection);
         return w.reader().singleStatement(query) ? single(c -> w.reader().find(c, query))
                 : inSnapshot(c -> w.reader().find(c, query));
     }
@@ -242,7 +243,7 @@ public class PgDao implements IDao {
     public Page findPage(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
             Optional<List<String>> projection) throws ApiException {
         Wiring w = wired();
-        PgQuery query = w.queries().build(pageable, filter, sort, projection);
+        SqlQuery query = w.queries().build(pageable, filter, sort, projection);
         PgReader.Paged paged = w.reader().singleStatement(query) ? single(c -> w.reader().findPage(c, query))
                 : inSnapshot(c -> w.reader().findPage(c, query));
         return new Page(paged.total(), paged.dtos());
@@ -277,7 +278,7 @@ public class PgDao implements IDao {
     @Override
     public long count(IFilter filter) throws ApiException {
         Wiring w = wired();
-        PgQuery query = w.queries().count(filter);
+        SqlQuery query = w.queries().count(filter);
         return single(c -> w.reader().count(c, query));
     }
 

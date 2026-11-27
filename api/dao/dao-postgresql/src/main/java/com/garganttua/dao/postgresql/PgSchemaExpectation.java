@@ -3,13 +3,13 @@ package com.garganttua.dao.postgresql;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgDdl;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlDdl;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.schema.SqlTypes;
 
 /**
  * What the database must contain for one table model: every table, with every column and its type.
@@ -64,48 +64,48 @@ final class PgSchemaExpectation {
      * @param table the model
      * @return the expected tables
      */
-    static List<Table> of(PgTable table) {
+    static List<Table> of(SqlTable table) {
         List<Table> tables = new ArrayList<>();
         List<Column> main = new ArrayList<>();
-        for (PgColumn column : table.columns()) {
-            main.add(new Column(column.name(), column.sqlType(), column.kind() != PgColumnKind.ID));
+        for (SqlColumn column : table.columns()) {
+            main.add(new Column(column.name(), column.sqlType(), column.kind() != SqlColumnKind.ID));
         }
-        tables.add(new Table(table.name(), PgDdl.createMain(table), main));
-        for (PgChildTable child : table.allChildren()) {
-            tables.add(new Table(child.name(), PgDdl.createChild(table, child), childColumns(child)));
+        tables.add(new Table(table.name(), SqlDdl.createMain(table), main));
+        for (SqlChildTable child : table.allChildren()) {
+            tables.add(new Table(child.name(), SqlDdl.createChild(table, child), childColumns(child)));
         }
         return tables;
     }
 
-    private static List<Column> childColumns(PgChildTable child) {
+    private static List<Column> childColumns(SqlChildTable child) {
         List<Column> columns = new ArrayList<>();
         // Structural, never addable: the identity a nested table's _parent references, and _parent itself.
         if (child.hasChildren()) {
-            columns.add(new Column(PgChildTable.ID, BIGINT, false));
+            columns.add(new Column(SqlChildTable.ID, BIGINT, false));
         }
-        columns.add(new Column(PgChildTable.OWNER, PgTypes.TEXT, false));
+        columns.add(new Column(SqlChildTable.OWNER, SqlTypes.TEXT, false));
         if (child.nested()) {
-            columns.add(new Column(PgChildTable.PARENT, BIGINT, false));
+            columns.add(new Column(SqlChildTable.PARENT, BIGINT, false));
         }
         if (child.ordered()) {
-            columns.add(new Column(PgChildTable.ORD, INTEGER, false));
+            columns.add(new Column(SqlChildTable.ORD, INTEGER, false));
         } else {
-            columns.add(new Column(PgChildTable.KEY,
-                    PgTypes.sqlTypeOf(child.keyType()).orElse(PgTypes.TEXT), false));
+            columns.add(new Column(SqlChildTable.KEY,
+                    SqlTypes.sqlTypeOf(child.keyType()).orElse(SqlTypes.TEXT), false));
         }
-        for (PgColumn column : child.valueColumns()) {
+        for (SqlColumn column : child.valueColumns()) {
             columns.add(new Column(column.name(), column.sqlType(), true));
         }
         return columns;
     }
 
     /** {@return the geometry fields of a model, by dotted path — for an actionable PostGIS message} */
-    static List<String> geometryFields(PgTable table) {
+    static List<String> geometryFields(SqlTable table) {
         List<String> fields = new ArrayList<>();
-        table.columns().stream().filter(c -> c.kind() == PgColumnKind.GEOMETRY)
+        table.columns().stream().filter(c -> c.kind() == SqlColumnKind.GEOMETRY)
                 .forEach(c -> fields.add(c.dottedPath()));
-        for (PgChildTable child : table.allChildren()) {
-            child.valueColumns().stream().filter(c -> c.kind() == PgColumnKind.GEOMETRY)
+        for (SqlChildTable child : table.allChildren()) {
+            child.valueColumns().stream().filter(c -> c.kind() == SqlColumnKind.GEOMETRY)
                     .forEach(c -> fields.add(child.dottedPath() + "[]"
                             + (c.fieldPath().isEmpty() ? "" : "." + c.dottedPath())));
         }
@@ -114,8 +114,8 @@ final class PgSchemaExpectation {
 
     /** {@return the additive statement adding a missing column} */
     static String addColumn(Table table, Column column) {
-        return "ALTER TABLE " + PgNaming.quote(table.name()) + " ADD COLUMN IF NOT EXISTS "
-                + PgNaming.quote(column.name()) + " " + column.sqlType();
+        return "ALTER TABLE " + SqlNaming.quote(table.name()) + " ADD COLUMN IF NOT EXISTS "
+                + SqlNaming.quote(column.name()) + " " + column.sqlType();
     }
 
     /**
@@ -123,8 +123,8 @@ final class PgSchemaExpectation {
      * report — never executed: retyping converts (or loses) stored data and is a reviewed decision.
      */
     static String alterType(Table table, Column column) {
-        String quoted = PgNaming.quote(column.name());
-        return "ALTER TABLE " + PgNaming.quote(table.name()) + " ALTER COLUMN " + quoted + " TYPE "
+        String quoted = SqlNaming.quote(column.name());
+        return "ALTER TABLE " + SqlNaming.quote(table.name()) + " ALTER COLUMN " + quoted + " TYPE "
                 + column.sqlType() + " USING " + quoted + "::" + column.sqlType();
     }
 
@@ -135,12 +135,12 @@ final class PgSchemaExpectation {
      * @param table the model
      * @return the statements, in execution order
      */
-    static List<String> createStatements(PgTable table) {
+    static List<String> createStatements(SqlTable table) {
         List<String> statements = new ArrayList<>();
         if (table.needsPostgis()) {
             statements.add(CREATE_POSTGIS);
         }
-        statements.addAll(PgDdl.create(table));
+        statements.addAll(SqlDdl.create(table));
         return statements;
     }
 }

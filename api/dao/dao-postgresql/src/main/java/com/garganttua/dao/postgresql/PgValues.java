@@ -21,8 +21,10 @@ import com.garganttua.api.binding.geojson.GeoJsonCodec;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.crypto.IKey;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.SqlJson;
+import com.garganttua.dao.sql.SqlKeyCodec;
 
 /**
  * Java values to JDBC bind values — ONE conversion, shared by the writer and the filter translator.
@@ -70,15 +72,15 @@ public final class PgValues {
      * @param column the column
      * @return the placeholder expression
      */
-    public static String placeholder(PgColumn column) {
-        return column.kind() == PgColumnKind.GEOMETRY ? "ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)" : "?";
+    public static String placeholder(SqlColumn column) {
+        return column.kind() == SqlColumnKind.GEOMETRY ? "ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)" : "?";
     }
 
     /**
      * A geometry as the GeoJSON text {@code ST_GeomFromGeoJSON} reads, written by {@link GeoJsonCodec} —
      * the same form the MongoDB DAO stores. A String is taken as GeoJSON already.
      */
-    private static String geoJson(PgColumn column, Object value) {
+    private static String geoJson(SqlColumn column, Object value) {
         if (value instanceof String text) {
             return text;
         }
@@ -101,15 +103,15 @@ public final class PgValues {
      * @return the bind value
      * @throws ApiException when the value cannot be represented in the column's type
      */
-    public static Object toJdbc(PgColumn column, Object value) throws ApiException {
+    public static Object toJdbc(SqlColumn column, Object value) throws ApiException {
         if (value == null) {
             return null;
         }
         try {
             return switch (column.kind()) {
                 case ID, COMPOSITION -> value.toString();
-                case JSONB -> jsonb(PgJson.MAPPER.writeValueAsString(value));
-                case IKEY -> jsonb(PgKeyCodec.toJson((IKey) value).toString());
+                case JSONB -> jsonb(SqlJson.MAPPER.writeValueAsString(value));
+                case IKEY -> jsonb(SqlKeyCodec.toJson((IKey) value).toString());
                 case GEOMETRY -> geoJson(column, value);
                 case SCALAR -> withinDecimal128(column, scalar(column.javaType(), value));
                 // The value is the structure itself: present when non-null. NULL, not FALSE, so an
@@ -131,7 +133,7 @@ public final class PgValues {
      * Refuses a decimal MongoDB could not hold. {@code BigInteger} is bound as a {@code BigDecimal},
      * so one check covers both.
      */
-    private static Object withinDecimal128(PgColumn column, Object bound) throws ApiException {
+    private static Object withinDecimal128(SqlColumn column, Object bound) throws ApiException {
         if (bound instanceof BigDecimal d && d.precision() > DECIMAL128_DIGITS) {
             String field = column.dottedPath().isEmpty() ? "A collection element"
                     : "Field '" + column.dottedPath() + "'";

@@ -44,9 +44,9 @@ import com.garganttua.core.crypto.KeyAlgorithm;
 import com.garganttua.core.crypto.KeyType;
 import com.garganttua.core.crypto.SignatureAlgorithm;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgDdl;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlDdl;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
 
 /**
  * The write side, proven against a real PostgreSQL: what {@link PgWriter} stores is read back with
@@ -201,14 +201,14 @@ class PgWriterTest {
 
     // --------------------------------------------------------------- helpers
 
-    private static PgTable model(String domain, IClass<?> dto, Map<String, String> compositions) {
-        return PgSchemaModel.of(domain, dto, "uuid", compositions);
+    private static SqlTable model(String domain, IClass<?> dto, Map<String, String> compositions) {
+        return SqlSchemaModel.of(domain, dto, "uuid", compositions);
     }
 
-    private static DataSource create(PgTable table) throws SQLException {
+    private static DataSource create(SqlTable table) throws SQLException {
         DataSource db = PgTestDatabase.freshDatabase();
         try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
-            for (String ddl : PgDdl.create(table)) {
+            for (String ddl : SqlDdl.create(table)) {
                 s.execute(ddl);
             }
         }
@@ -292,7 +292,7 @@ class PgWriterTest {
     @DisplayName("scalars")
     class ScalarColumns {
 
-        private final PgTable table = model("scalars", IClass.getClass(Scalars.class), Map.of());
+        private final SqlTable table = model("scalars", IClass.getClass(Scalars.class), Map.of());
 
         @Test
         @DisplayName("land in their typed columns with the value the DTO held")
@@ -376,7 +376,7 @@ class PgWriterTest {
     @DisplayName("MongoDB's limits, kept for parity")
     class Limits {
 
-        private final PgTable table = model("scalars", IClass.getClass(Scalars.class), Map.of());
+        private final SqlTable table = model("scalars", IClass.getClass(Scalars.class), Map.of());
 
         private Scalars scalars() {
             Scalars s = new Scalars();
@@ -443,7 +443,7 @@ class PgWriterTest {
     @DisplayName("structures")
     class Structures {
 
-        private final PgTable table = model("riches", IClass.getClass(Rich.class), Map.of());
+        private final SqlTable table = model("riches", IClass.getClass(Rich.class), Map.of());
 
         @Test
         @DisplayName("flatten an embedded POJO into its prefixed columns")
@@ -587,7 +587,7 @@ class PgWriterTest {
     @DisplayName("upsert")
     class Upsert {
 
-        private final PgTable table = model("riches", IClass.getClass(Rich.class), Map.of());
+        private final SqlTable table = model("riches", IClass.getClass(Rich.class), Map.of());
 
         @Test
         @DisplayName("twice REPLACES: the main row updated, removed elements gone, no duplicates")
@@ -629,7 +629,7 @@ class PgWriterTest {
         @Test
         @DisplayName("of a table with only an id does nothing on conflict")
         void idOnlyTable() throws Exception {
-            PgTable legacy = model("legacies", IClass.getClass(Legacy.class), Map.of());
+            SqlTable legacy = model("legacies", IClass.getClass(Legacy.class), Map.of());
             PgWriter writer = new PgWriter(legacy, new PgSchemaRegistry());
             assertTrue(writer.upsertSql().endsWith("DO NOTHING"), writer::upsertSql);
             DataSource db = create(legacy);
@@ -689,7 +689,7 @@ class PgWriterTest {
     @DisplayName("nested collections")
     class NestedCollections {
 
-        private final PgTable table = model("shops", IClass.getClass(Shop.class), Map.of());
+        private final SqlTable table = model("shops", IClass.getClass(Shop.class), Map.of());
 
         private Shop shop(String uuid, ShopOrder... orders) {
             Shop s = new Shop();
@@ -752,7 +752,7 @@ class PgWriterTest {
         @Test
         @DisplayName("write an element that IS a collection into the table holding the element itself")
         void collectionOfCollections() throws Exception {
-            PgTable grids = model("grids", IClass.getClass(Grid.class), Map.of());
+            SqlTable grids = model("grids", IClass.getClass(Grid.class), Map.of());
             DataSource db = create(grids);
             Grid g = new Grid();
             g.uuid = "g1";
@@ -776,7 +776,7 @@ class PgWriterTest {
     @DisplayName("delete")
     class Delete {
 
-        private final PgTable table = model("riches", IClass.getClass(Rich.class), Map.of());
+        private final SqlTable table = model("riches", IClass.getClass(Rich.class), Map.of());
 
         @Test
         @DisplayName("removes the row and cascades to its collections")
@@ -816,12 +816,12 @@ class PgWriterTest {
     @DisplayName("compositions")
     class Compositions {
 
-        private final PgTable table = model("invoices", IClass.getClass(Invoice.class),
+        private final SqlTable table = model("invoices", IClass.getClass(Invoice.class),
                 Map.of("customer", "customers", "payers", "customers"));
 
         private PgSchemaRegistry registry() {
             PgSchemaRegistry registry = new PgSchemaRegistry();
-            registry.register("customers", PgSchemaModel.of("customers", IClass.getClass(Customer.class), "id",
+            registry.register("customers", SqlSchemaModel.of("customers", IClass.getClass(Customer.class), "id",
                     Map.of()), IClass.getClass(Customer.class));
             return registry;
         }
@@ -873,7 +873,7 @@ class PgWriterTest {
         @Test
         @DisplayName("fall back to the owner's uuid field name for an unregistered target, as MongoDB does")
         void unregisteredTarget() throws Exception {
-            PgTable holders = model("holders", IClass.getClass(Holder.class), Map.of("legacy", "legacies", "ticket", "tickets"));
+            SqlTable holders = model("holders", IClass.getClass(Holder.class), Map.of("legacy", "legacies", "ticket", "tickets"));
             DataSource db = create(holders);
             Holder h = new Holder();
             h.uuid = "h1";
@@ -887,7 +887,7 @@ class PgWriterTest {
         @Test
         @DisplayName("refuse a bare String in a @Composed field, as MongoDB does")
         void stringReferenceRefused() throws Exception {
-            PgTable holders = model("holders", IClass.getClass(Holder.class), Map.of("legacy", "legacies", "ticket", "tickets"));
+            SqlTable holders = model("holders", IClass.getClass(Holder.class), Map.of("legacy", "legacies", "ticket", "tickets"));
             DataSource db = create(holders);
             Holder h = new Holder();
             h.uuid = "h1";
@@ -917,7 +917,7 @@ class PgWriterTest {
         @Test
         @DisplayName("is bound through ST_GeomFromGeoJSON (SQL only: no PostGIS in the test engine)")
         void geometryPlaceholder() {
-            PgTable places = model("places", IClass.getClass(Place.class), Map.of());
+            SqlTable places = model("places", IClass.getClass(Place.class), Map.of());
             String sql = new PgWriter(places, new PgSchemaRegistry()).upsertSql();
             assertTrue(sql.contains("ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)"), sql);
             assertTrue(sql.contains("\"where\" = EXCLUDED.\"where\""), sql);

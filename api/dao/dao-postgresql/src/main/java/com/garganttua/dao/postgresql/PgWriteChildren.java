@@ -18,13 +18,13 @@ import java.util.StringJoiner;
 import org.postgresql.util.PGobject;
 
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.dao.postgresql.schema.PgChildKind;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlChildKind;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.schema.SqlTypes;
 
 /**
  * Writes the rows of one collection or map field — and of every collection its elements hold, to
@@ -56,10 +56,10 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  */
 final class PgWriteChildren {
 
-    private final PgTable table;
+    private final SqlTable table;
     private final PgWriteReferences references;
 
-    PgWriteChildren(PgTable table, PgWriteReferences references) {
+    PgWriteChildren(SqlTable table, PgWriteReferences references) {
         this.table = table;
         this.references = references;
     }
@@ -84,7 +84,7 @@ final class PgWriteChildren {
      */
     @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
             justification = SuppressFBWarnings.GENERATED_SQL)
-    void write(Connection connection, PgChildTable child, Object ownerId, Object dto)
+    void write(Connection connection, SqlChildTable child, Object ownerId, Object dto)
             throws SQLException, ApiException {
         try (PreparedStatement delete = connection.prepareStatement(deleteSql(child))) {
             delete.setObject(1, ownerId);
@@ -94,7 +94,7 @@ final class PgWriteChildren {
     }
 
     /** Inserts the rows of one table for every holder, then — when its elements hold collections — the level below. */
-    private void writeLevel(Connection connection, PgChildTable child, Object ownerId, List<Holder> holders)
+    private void writeLevel(Connection connection, SqlChildTable child, Object ownerId, List<Holder> holders)
             throws SQLException, ApiException {
         List<Row> rows = rows(child, holders);
         if (rows.isEmpty()) {
@@ -104,7 +104,7 @@ final class PgWriteChildren {
         if (written.isEmpty()) {
             return;
         }
-        for (PgChildTable grandchild : child.children()) {
+        for (SqlChildTable grandchild : child.children()) {
             writeLevel(connection, grandchild, ownerId, written);
         }
     }
@@ -117,13 +117,13 @@ final class PgWriteChildren {
      */
     @SuppressFBWarnings(value = "SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING",
             justification = SuppressFBWarnings.GENERATED_SQL)
-    private List<Holder> insert(Connection connection, PgChildTable child, Object ownerId, List<Row> rows)
+    private List<Holder> insert(Connection connection, SqlChildTable child, Object ownerId, List<Row> rows)
             throws SQLException, ApiException {
         String sql = insertSql(child);
         try (PreparedStatement insert = child.hasChildren()
-                ? connection.prepareStatement(sql, new String[] { PgChildTable.ID })
+                ? connection.prepareStatement(sql, new String[] { SqlChildTable.ID })
                 : connection.prepareStatement(sql)) {
-            PgColumn keyColumn = child.ordered() ? null : keyColumn(child);
+            SqlColumn keyColumn = child.ordered() ? null : keyColumn(child);
             for (Row row : rows) {
                 bindRow(insert, child, keyColumn, ownerId, row);
                 insert.addBatch();
@@ -133,7 +133,7 @@ final class PgWriteChildren {
         }
     }
 
-    private void bindRow(PreparedStatement insert, PgChildTable child, PgColumn keyColumn, Object ownerId, Row row)
+    private void bindRow(PreparedStatement insert, SqlChildTable child, SqlColumn keyColumn, Object ownerId, Row row)
             throws SQLException, ApiException {
         insert.setObject(1, ownerId);
         int position = 2;
@@ -150,7 +150,7 @@ final class PgWriteChildren {
     }
 
     /** Pairs each inserted row with its generated id — pgjdbc returns them in batch order. */
-    private List<Holder> generated(PreparedStatement insert, PgChildTable child, List<Row> rows)
+    private List<Holder> generated(PreparedStatement insert, SqlChildTable child, List<Row> rows)
             throws SQLException, ApiException {
         List<Holder> out = new ArrayList<>(rows.size());
         int i = 0;
@@ -171,7 +171,7 @@ final class PgWriteChildren {
     }
 
     /** The rows of one table: every element of every holder's container, in order. */
-    private List<Row> rows(PgChildTable child, List<Holder> holders) throws ApiException {
+    private List<Row> rows(SqlChildTable child, List<Holder> holders) throws ApiException {
         List<Row> rows = new ArrayList<>();
         for (Holder holder : holders) {
             Object container = PgWriteSupport.valueAt(holder.object(), child.fieldPath());
@@ -187,10 +187,10 @@ final class PgWriteChildren {
         return rows;
     }
 
-    private void addElements(List<Row> rows, PgChildTable child, Long parent, Object container) throws ApiException {
+    private void addElements(List<Row> rows, SqlChildTable child, Long parent, Object container) throws ApiException {
         int ord = 0;
         for (Object element : elements(child, container)) {
-            if (element == null && child.kind() == PgChildKind.COMPOSITION_COLLECTION) {
+            if (element == null && child.kind() == SqlChildKind.COMPOSITION_COLLECTION) {
                 continue;
             }
             rows.add(new Row(parent, ord, element));
@@ -198,7 +198,7 @@ final class PgWriteChildren {
         }
     }
 
-    private void addEntries(List<Row> rows, PgChildTable child, Long parent, Object container) throws ApiException {
+    private void addEntries(List<Row> rows, SqlChildTable child, Long parent, Object container) throws ApiException {
         if (!(container instanceof Map<?, ?> map)) {
             throw new ApiException("Field '" + child.dottedPath() + "' of table '" + table.name()
                     + "' is mapped as a map but holds a " + container.getClass().getName());
@@ -206,13 +206,13 @@ final class PgWriteChildren {
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             if (entry.getKey() == null) {
                 throw new ApiException("Map field '" + child.dottedPath() + "' of table '" + table.name()
-                        + "' has a null key: a relational row needs one (" + PgChildTable.KEY + " is NOT NULL)");
+                        + "' has a null key: a relational row needs one (" + SqlChildTable.KEY + " is NOT NULL)");
             }
             rows.add(new Row(parent, entry.getKey(), entry.getValue()));
         }
     }
 
-    private void bindValues(PreparedStatement insert, int first, PgChildTable child, Object element)
+    private void bindValues(PreparedStatement insert, int first, SqlChildTable child, Object element)
             throws SQLException, ApiException {
         int index = first;
         List<Object> values = values(child, element);
@@ -223,10 +223,10 @@ final class PgWriteChildren {
     }
 
     /** The JDBC values of one element's value columns — exactly what its row is bound with. */
-    private List<Object> values(PgChildTable child, Object element) throws ApiException {
+    private List<Object> values(SqlChildTable child, Object element) throws ApiException {
         List<Object> values = new ArrayList<>(child.valueColumns().size());
-        for (PgColumn column : child.valueColumns()) {
-            Object value = column.kind() == PgColumnKind.COMPOSITION
+        for (SqlColumn column : child.valueColumns()) {
+            Object value = column.kind() == SqlColumnKind.COMPOSITION
                     ? references.uuidOf(child.composedCollection(), element)
                     : PgWriteSupport.valueAt(element, column.fieldPath());
             values.add(PgValues.toJdbc(column, value));
@@ -251,7 +251,7 @@ final class PgWriteChildren {
      * @return the SHA-256 of the rows, in hexadecimal
      * @throws ApiException when an element cannot be converted — as the insert would fail
      */
-    String digest(PgChildTable child, Object dto) throws ApiException {
+    String digest(SqlChildTable child, Object dto) throws ApiException {
         MessageDigest sha = sha256();
         digestLevel(sha, child, List.of(new Holder(null, dto)), new RowIds());
         return HexFormat.of().formatHex(sha.digest());
@@ -267,10 +267,10 @@ final class PgWriteChildren {
         }
     }
 
-    private void digestLevel(MessageDigest sha, PgChildTable child, List<Holder> holders, RowIds ids)
+    private void digestLevel(MessageDigest sha, SqlChildTable child, List<Holder> holders, RowIds ids)
             throws ApiException {
         List<Row> rows = rows(child, holders);
-        PgColumn keyColumn = child.ordered() ? null : keyColumn(child);
+        SqlColumn keyColumn = child.ordered() ? null : keyColumn(child);
         feed(sha, "table", child.name());
         feed(sha, "rows", rows.size());
         List<Holder> written = new ArrayList<>();
@@ -284,7 +284,7 @@ final class PgWriteChildren {
                 written.add(new Holder(ids.next(), row.element()));
             }
         }
-        for (PgChildTable grandchild : child.children()) {
+        for (SqlChildTable grandchild : child.children()) {
             digestLevel(sha, grandchild, written, ids);
         }
     }
@@ -318,7 +318,7 @@ final class PgWriteChildren {
     }
 
     /** The elements of a list, set or array, in iteration order. */
-    private List<Object> elements(PgChildTable child, Object container) throws ApiException {
+    private List<Object> elements(SqlChildTable child, Object container) throws ApiException {
         if (container instanceof Collection<?> collection) {
             return new ArrayList<>(collection);
         }
@@ -335,31 +335,31 @@ final class PgWriteChildren {
     }
 
     /** A column describing the map key, so the key converts like any other value. */
-    private static PgColumn keyColumn(PgChildTable child) {
-        String sqlType = PgTypes.sqlTypeOf(child.keyType()).orElse(PgTypes.TEXT);
-        return new PgColumn(PgChildTable.KEY, sqlType, PgColumnKind.SCALAR, List.of(), child.keyType());
+    private static SqlColumn keyColumn(SqlChildTable child) {
+        String sqlType = SqlTypes.sqlTypeOf(child.keyType()).orElse(SqlTypes.TEXT);
+        return new SqlColumn(SqlChildTable.KEY, sqlType, SqlColumnKind.SCALAR, List.of(), child.keyType());
     }
 
-    private static String deleteSql(PgChildTable child) {
-        return "DELETE FROM " + PgNaming.quote(child.name()) + " WHERE " + PgNaming.quote(PgChildTable.OWNER) + " = ?";
+    private static String deleteSql(SqlChildTable child) {
+        return "DELETE FROM " + SqlNaming.quote(child.name()) + " WHERE " + SqlNaming.quote(SqlChildTable.OWNER) + " = ?";
     }
 
     /** {@return the insert of one child table's row, package-visible for tests} */
-    static String insertSql(PgChildTable child) {
+    static String insertSql(SqlChildTable child) {
         StringJoiner names = new StringJoiner(", ");
         StringJoiner values = new StringJoiner(", ");
-        names.add(PgNaming.quote(PgChildTable.OWNER));
+        names.add(SqlNaming.quote(SqlChildTable.OWNER));
         values.add("?");
         if (child.nested()) {
-            names.add(PgNaming.quote(PgChildTable.PARENT));
+            names.add(SqlNaming.quote(SqlChildTable.PARENT));
             values.add("?");
         }
-        names.add(PgNaming.quote(child.ordered() ? PgChildTable.ORD : PgChildTable.KEY));
+        names.add(SqlNaming.quote(child.ordered() ? SqlChildTable.ORD : SqlChildTable.KEY));
         values.add("?");
-        for (PgColumn column : child.valueColumns()) {
-            names.add(PgNaming.quote(column.name()));
+        for (SqlColumn column : child.valueColumns()) {
+            names.add(SqlNaming.quote(column.name()));
             values.add(PgValues.placeholder(column));
         }
-        return "INSERT INTO " + PgNaming.quote(child.name()) + " (" + names + ") VALUES (" + values + ")";
+        return "INSERT INTO " + SqlNaming.quote(child.name()) + " (" + names + ") VALUES (" + values + ")";
     }
 }

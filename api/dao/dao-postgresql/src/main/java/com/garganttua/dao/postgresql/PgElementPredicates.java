@@ -5,8 +5,13 @@ import java.util.Collection;
 import java.util.List;
 
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.dao.postgresql.schema.PgChildKind;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
+import com.garganttua.dao.sql.schema.SqlChildKind;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.SqlCondition;
+import com.garganttua.dao.sql.SqlField;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlHop;
+import com.garganttua.dao.sql.SqlOperand;
 
 /**
  * Comparisons on a collection field, following MongoDB's array semantics over child tables — at any
@@ -19,7 +24,7 @@ import com.garganttua.dao.postgresql.schema.PgChildTable;
  * So a positive operator becomes {@code EXISTS (a child row matching)}, and {@code $ne} / {@code $nin}
  * become {@code NOT} of their positive counterpart ({@code $eq} / {@code $in}). A path crossing several
  * arrays ({@code orders.lines.sku}) is the same rule applied at every level: SOME order has SOME line
- * whose sku matches — one nested {@code EXISTS} per array ({@link PgHop#some}) — and {@code $ne} is
+ * whose sku matches — one nested {@code EXISTS} per array ({@link SqlHop#some}) — and {@code $ne} is
  * still the negation of the whole statement: NO order has a line whose sku matches.
  * </p>
  *
@@ -28,7 +33,7 @@ import com.garganttua.dao.postgresql.schema.PgChildTable;
  * an empty one ({@code []}, present). A comparison it satisfies with a missing value
  * ({@code $eq: null}, {@code $in} listing null) matches an absent collection, or an element that is
  * null — never an empty array; along a deeper path, an absent collection at ANY level on SOME branch
- * ({@link PgField.Element#missing}). {@code $empty} ({@code $exists: false}) on the collection itself
+ * ({@link SqlField.Element#missing}). {@code $empty} ({@code $exists: false}) on the collection itself
  * asks that it is absent on EVERY branch; on a path inside the elements it asks "no element has it",
  * which an empty array satisfies — MongoDB's own asymmetry, reproduced as is.
  * </p>
@@ -60,10 +65,10 @@ final class PgElementPredicates {
      * @return the predicate — always true or false, never NULL
      * @throws ApiException when the operator does not apply
      */
-    PgSql on(PgField.Element e, PgCondition c) throws ApiException {
+    SqlFragment on(SqlField.Element e, SqlCondition c) throws ApiException {
         return switch (c.op()) {
-            case "$ne" -> PgSql.not(positive(e, c.as(EQ)));
-            case "$nin" -> PgSql.not(positive(e, c.as(IN)));
+            case "$ne" -> SqlFragment.not(positive(e, c.as(EQ)));
+            case "$nin" -> SqlFragment.not(positive(e, c.as(IN)));
             case "$empty" -> empty(e);
             default -> positive(e, c);
         };
@@ -73,50 +78,50 @@ final class PgElementPredicates {
      * {@code $exists: false}: the collection (the map entry) is absent on every branch, or no element
      * holds the path.
      */
-    private PgSql empty(PgField.Element e) {
-        boolean mapValue = e.child().kind() == PgChildKind.MAP && e.operand().column().fieldPath().isEmpty();
+    private SqlFragment empty(SqlField.Element e) {
+        boolean mapValue = e.child().kind() == SqlChildKind.MAP && e.operand().column().fieldPath().isEmpty();
         if (e.whole() || mapValue) {
-            return PgHop.noneHolds(e.hops());
+            return SqlHop.noneHolds(e.hops());
         }
-        return PgSql.not(PgHop.some(e.hops(), e.operand().expr(false).then(" IS NOT NULL"), false));
+        return SqlFragment.not(SqlHop.some(e.hops(), e.operand().expr(false).then(" IS NOT NULL"), false));
     }
 
     /** Some element matches — or, for a comparison a missing value satisfies, the path is missing. */
-    private PgSql positive(PgField.Element e, PgCondition c) throws ApiException {
+    private SqlFragment positive(SqlField.Element e, SqlCondition c) throws ApiException {
         if (e.items() != null) {
             return arraysOfArrays(e, c);
         }
         if (e.whole() && isList(c.value()) && EQ.equals(c.op())) {
-            return PgHop.some(e.parents(), wholeArray(e.last(), e.operand(), (Collection<?>) c.value()), false);
+            return SqlHop.some(e.parents(), wholeArray(e.last(), e.operand(), (Collection<?>) c.value()), false);
         }
         if (e.whole() && IN.equals(c.op()) && c.values().stream().anyMatch(PgElementPredicates::isList)) {
             return inWithArrays(e, c);
         }
-        return PgHop.some(e.hops(), scalars.on(e.operand(), c), c.matchesMissing());
+        return SqlHop.some(e.hops(), scalars.on(e.operand(), c), c.matchesMissing());
     }
 
     /** {@code $in} listing whole arrays: each array is an exact match, the other values element matches. */
-    private PgSql inWithArrays(PgField.Element e, PgCondition c) throws ApiException {
-        List<PgSql> parts = new ArrayList<>();
+    private SqlFragment inWithArrays(SqlField.Element e, SqlCondition c) throws ApiException {
+        List<SqlFragment> parts = new ArrayList<>();
         List<Object> scalarsListed = new ArrayList<>();
         for (Object value : c.values()) {
             if (isList(value)) {
-                parts.add(PgHop.some(e.parents(), wholeArray(e.last(), e.operand(), (Collection<?>) value), false));
+                parts.add(SqlHop.some(e.parents(), wholeArray(e.last(), e.operand(), (Collection<?>) value), false));
             } else {
                 scalarsListed.add(value);
             }
         }
         if (!scalarsListed.isEmpty()) {
-            parts.add(positive(e, new PgCondition(IN, null, scalarsListed, c.field())));
+            parts.add(positive(e, new SqlCondition(IN, null, scalarsListed, c.field())));
         }
-        return PgSql.any(parts);
+        return SqlFragment.any(parts);
     }
 
     /**
      * A collection whose elements are arrays: a listed array matches an equal element, a missing value
      * matches an absent collection or a null element, and a scalar matches nothing.
      */
-    private PgSql arraysOfArrays(PgField.Element e, PgCondition c) throws ApiException {
+    private SqlFragment arraysOfArrays(SqlField.Element e, SqlCondition c) throws ApiException {
         List<Object> compared = switch (c.op()) {
             case EQ -> c.value() == null ? List.of() : List.of(c.value());
             case IN -> c.listedValues();
@@ -126,21 +131,21 @@ final class PgElementPredicates {
                 yield List.of();
             }
         };
-        List<PgSql> parts = new ArrayList<>();
+        List<SqlFragment> parts = new ArrayList<>();
         if (c.matchesMissing()) {
-            parts.add(PgHop.some(e.hops(), e.items().absent(), true));
+            parts.add(SqlHop.some(e.hops(), e.items().absent(), true));
         }
         for (Object value : compared) {
             if (isList(value)) {
                 Collection<?> list = (Collection<?>) value;
-                parts.add(PgHop.some(e.hops(), wholeArray(e.items(), e.operand(), list), false));
+                parts.add(SqlHop.some(e.hops(), wholeArray(e.items(), e.operand(), list), false));
                 if (list.isEmpty()) {
                     // [] also equals the collection itself when it is empty.
-                    parts.add(PgHop.some(e.parents(), wholeArray(e.last(), e.operand(), list), false));
+                    parts.add(SqlHop.some(e.parents(), wholeArray(e.last(), e.operand(), list), false));
                 }
             }
         }
-        return PgSql.any(parts);
+        return SqlFragment.any(parts);
     }
 
     /**
@@ -148,18 +153,18 @@ final class PgElementPredicates {
      * many rows as the list has elements, and at each position {@code _ord} a row equal to the listed
      * value. A predicate over the row HOLDING the collection.
      */
-    private PgSql wholeArray(PgHop hop, PgOperand operand, Collection<?> list) throws ApiException {
-        List<PgSql> parts = new ArrayList<>();
-        parts.add(PgSql.not(hop.absent()));
-        parts.add(hop.rows().wrap("(SELECT count(*) FROM (", ") AS n)").then(PgSql.of(" = ?", list.size())));
+    private SqlFragment wholeArray(SqlHop hop, SqlOperand operand, Collection<?> list) throws ApiException {
+        List<SqlFragment> parts = new ArrayList<>();
+        parts.add(SqlFragment.not(hop.absent()));
+        parts.add(hop.rows().wrap("(SELECT count(*) FROM (", ") AS n)").then(SqlFragment.of(" = ?", list.size())));
         int ord = 0;
         for (Object value : list) {
-            PgSql equal = scalars.on(operand, new PgCondition(EQ, value, List.of(), ""));
-            PgSql at = PgSql.of(hop.ref(PgChildTable.ORD) + " = ?", ord);
+            SqlFragment equal = scalars.on(operand, new SqlCondition(EQ, value, List.of(), ""));
+            SqlFragment at = SqlFragment.of(hop.ref(SqlChildTable.ORD) + " = ?", ord);
             ord++;
-            parts.add(hop.rows(PgSql.all(List.of(at, equal))).wrap("EXISTS (", ")"));
+            parts.add(hop.rows(SqlFragment.all(List.of(at, equal))).wrap("EXISTS (", ")"));
         }
-        return PgSql.all(parts);
+        return SqlFragment.all(parts);
     }
 
     private static boolean isList(Object value) {

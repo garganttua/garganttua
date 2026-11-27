@@ -11,8 +11,8 @@ import org.postgresql.util.PGobject;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
 
 /**
  * What the writer's parts share: reading a value down a field path, and binding a converted value.
@@ -116,17 +116,17 @@ final class PgWriteSupport {
      * @throws SQLException when the driver refuses the value
      * @throws ApiException when the value holds a NUL character
      */
-    static void bind(PreparedStatement statement, int index, PgColumn column, Object jdbcValue)
+    static void bind(PreparedStatement statement, int index, SqlColumn column, Object jdbcValue)
             throws SQLException, ApiException {
         refuseNul(column, jdbcValue);
-        if (column.kind() == PgColumnKind.GEOMETRY) {
+        if (column.kind() == SqlColumnKind.GEOMETRY) {
             statement.setObject(index, jdbcValue, Types.VARCHAR);
         } else {
             statement.setObject(index, jdbcValue);
         }
     }
 
-    private static void refuseNul(PgColumn column, Object jdbcValue) throws ApiException {
+    private static void refuseNul(SqlColumn column, Object jdbcValue) throws ApiException {
         boolean nul = jdbcValue instanceof String text ? text.indexOf('\0') >= 0
                 : jdbcValue instanceof PGobject json && escapesNul(json.getValue());
         if (nul) {

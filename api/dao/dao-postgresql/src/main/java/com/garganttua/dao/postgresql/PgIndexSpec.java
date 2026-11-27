@@ -5,11 +5,11 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.StringJoiner;
 
-import com.garganttua.dao.postgresql.schema.PgNaming;
+import com.garganttua.dao.sql.schema.SqlNaming;
 
 /**
  * One PostgreSQL index, as the DAO will issue it: an {@code EntityIndexRule} once its field has been
- * resolved to a column of the domain's {@code PgTable} and its kind turned into an access method.
+ * resolved to a column of the domain's {@code SqlTable} and its kind turned into an access method.
  *
  * @param name            the index name, unquoted, already prefixed with its table and within 63 bytes
  * @param table           the table it is on, unquoted — the main table or a child table
@@ -44,13 +44,13 @@ record PgIndexSpec(String name, String table, String method, List<String> keys, 
     String createSql() {
         StringJoiner keyList = new StringJoiner(", ", "(", ")");
         this.keys.forEach(keyList::add);
-        return "CREATE " + (this.unique ? "UNIQUE " : "") + "INDEX IF NOT EXISTS " + PgNaming.quote(this.name)
-                + " ON " + PgNaming.quote(this.table) + " USING " + this.method + " " + keyList
+        return "CREATE " + (this.unique ? "UNIQUE " : "") + "INDEX IF NOT EXISTS " + SqlNaming.quote(this.name)
+                + " ON " + SqlNaming.quote(this.table) + " USING " + this.method + " " + keyList
                 + predicate();
     }
 
     private String predicate() {
-        return this.predicateColumn == null ? "" : " WHERE " + PgNaming.quote(this.predicateColumn) + " IS NOT NULL";
+        return this.predicateColumn == null ? "" : " WHERE " + SqlNaming.quote(this.predicateColumn) + " IS NOT NULL";
     }
 
     /** {@return a one-line description of the index, for a log line} */
@@ -65,8 +65,8 @@ record PgIndexSpec(String name, String table, String method, List<String> keys, 
      */
     String duplicateQuery() {
         StringJoiner columns = new StringJoiner(", ");
-        this.groupColumns.forEach(c -> columns.add(PgNaming.quote(c)));
-        return "SELECT " + columns + ", count(*) FROM " + PgNaming.quote(this.table) + predicate()
+        this.groupColumns.forEach(c -> columns.add(SqlNaming.quote(c)));
+        return "SELECT " + columns + ", count(*) FROM " + SqlNaming.quote(this.table) + predicate()
                 + " GROUP BY " + columns + " HAVING count(*) > 1";
     }
 

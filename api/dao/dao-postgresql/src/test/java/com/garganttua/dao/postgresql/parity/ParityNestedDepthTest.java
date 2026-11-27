@@ -28,7 +28,7 @@ import org.junit.jupiter.api.TestInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.api.commons.sort.SortDirection;
-import com.garganttua.dao.postgresql.PgJson;
+import com.garganttua.dao.sql.SqlJson;
 import com.garganttua.dao.postgresql.parity.ParityHarness.Domain;
 import com.garganttua.dao.postgresql.parity.ParityHarness.Outcome;
 
@@ -91,7 +91,7 @@ class ParityNestedDepthTest {
         }
         List<Object> out = new ArrayList<>();
         for (Object row : rows) {
-            out.add(row == null ? null : PgJson.MAPPER.valueToTree(row).path("uuid").asText());
+            out.add(row == null ? null : SqlJson.MAPPER.valueToTree(row).path("uuid").asText());
         }
         return out;
     }
@@ -193,7 +193,7 @@ class ParityNestedDepthTest {
         List<String> keys = new ArrayList<>();
         List<String> ids = new ArrayList<>();
         for (Object row : rows) {
-            JsonNode node = PgJson.MAPPER.valueToTree(row);
+            JsonNode node = SqlJson.MAPPER.valueToTree(row);
             keys.add(sortKey(leaves(node, path.split("\\."), 0), asc));
             ids.add(node.path("uuid").asText());
         }

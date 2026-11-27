@@ -11,10 +11,13 @@ import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.garganttua.dao.postgresql.PgOperand.JsonType;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.SqlOperand.JsonType;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlTypes;
+import com.garganttua.dao.sql.SqlFilterNumbers;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlOperand;
 
 /**
  * Filter values against typed operands, with MongoDB's type bracketing.
@@ -58,7 +61,7 @@ final class PgFilterValues {
      * @param value   the placeholder and its bound value
      * @param bracket the value's type class
      */
-    record Bound(PgSql expr, PgSql value, Bracket bracket) {
+    record Bound(SqlFragment expr, SqlFragment value, Bracket bracket) {
     }
 
     private static final String NUMERIC_PLACEHOLDER = "?::numeric";
@@ -83,17 +86,17 @@ final class PgFilterValues {
     }
 
     /** {@return the type class of what a column stores} */
-    static Bracket of(PgColumn column) {
-        if (column.kind() == PgColumnKind.ID || column.kind() == PgColumnKind.COMPOSITION) {
+    static Bracket of(SqlColumn column) {
+        if (column.kind() == SqlColumnKind.ID || column.kind() == SqlColumnKind.COMPOSITION) {
             return Bracket.STRING;
         }
-        if (column.kind() != PgColumnKind.SCALAR) {
+        if (column.kind() != SqlColumnKind.SCALAR) {
             return Bracket.OTHER;
         }
         return switch (column.sqlType()) {
-            case PgTypes.TEXT -> Bracket.STRING;
+            case SqlTypes.TEXT -> Bracket.STRING;
             case "INTEGER", "BIGINT", "SMALLINT", "DOUBLE PRECISION", "REAL", "NUMERIC" -> Bracket.NUMBER;
-            case PgTypes.BOOLEAN -> Bracket.BOOLEAN;
+            case SqlTypes.BOOLEAN -> Bracket.BOOLEAN;
             case "TIMESTAMPTZ", "TIMESTAMP", "DATE", "TIME" -> Bracket.DATE;
             case "UUID" -> Bracket.UUID;
             case "BYTEA" -> Bracket.BINARY;
@@ -107,22 +110,22 @@ final class PgFilterValues {
      * @param o     the operand
      * @param op    one of {@code = > >= < <=}
      * @param value the non-null filter value
-     * @return the predicate — {@link PgSql#FALSE} when no stored value of the operand can satisfy it
+     * @return the predicate — {@link SqlFragment#FALSE} when no stored value of the operand can satisfy it
      */
-    static PgSql compare(PgOperand o, String op, Object value) {
+    static SqlFragment compare(SqlOperand o, String op, Object value) {
         if (!o.isJson() && of(o.column()) == Bracket.NUMBER && value instanceof Number n) {
-            return PgFilterNumbers.compare(o.expr(false), isFloat(o.column()), op, n);
+            return SqlFilterNumbers.compare(o.expr(false), isFloat(o.column()), op, n);
         }
         Optional<Bound> bound = bound(o, value);
         if (bound.isEmpty()) {
-            return PgSql.FALSE;
+            return SqlFragment.FALSE;
         }
         Bound b = bound.get();
         boolean ordering = !"=".equals(op);
         if (ordering && b.bracket() == Bracket.OTHER) {
-            return PgSql.FALSE;
+            return SqlFragment.FALSE;
         }
-        PgSql expr = ordering && b.bracket() == Bracket.STRING ? b.expr().then(COLLATE_C) : b.expr();
+        SqlFragment expr = ordering && b.bracket() == Bracket.STRING ? b.expr().then(COLLATE_C) : b.expr();
         return expr.then(" " + op + " ").then(b.value());
     }
 
@@ -133,7 +136,7 @@ final class PgFilterValues {
      * @param value the non-null filter value
      * @return the bound value, or empty when no stored value of the operand can equal it
      */
-    static Optional<Bound> bound(PgOperand o, Object value) {
+    static Optional<Bound> bound(SqlOperand o, Object value) {
         if (o.isJson()) {
             return json(o, value);
         }
@@ -141,25 +144,25 @@ final class PgFilterValues {
         if (bracket == Bracket.OTHER || bracket != of(o.column())) {
             return Optional.empty();
         }
-        PgSql expr = o.expr(false);
+        SqlFragment expr = o.expr(false);
         return switch (bracket) {
-            case NUMBER -> PgFilterNumbers.equality(isFloat(o.column()), (Number) value)
+            case NUMBER -> SqlFilterNumbers.equality(isFloat(o.column()), (Number) value)
                     .map(v -> new Bound(expr, v, bracket));
-            case STRING -> Optional.of(new Bound(expr, PgSql.of("?", text(value)), bracket));
-            case DATE -> date(o.column(), value).map(v -> new Bound(expr, PgSql.of("?", v), bracket));
-            default -> Optional.of(new Bound(expr, PgSql.of("?", value), bracket));
+            case STRING -> Optional.of(new Bound(expr, SqlFragment.of("?", text(value)), bracket));
+            case DATE -> date(o.column(), value).map(v -> new Bound(expr, SqlFragment.of("?", v), bracket));
+            default -> Optional.of(new Bound(expr, SqlFragment.of("?", value), bracket));
         };
     }
 
     /** A JSON value read as the filter value's type; anything else compared as JSON, for equality only. */
-    private static Optional<Bound> json(PgOperand o, Object value) {
+    private static Optional<Bound> json(SqlOperand o, Object value) {
         Bracket bracket = of(value);
         return switch (bracket) {
-            case NUMBER -> PgFilterNumbers.exact((Number) value)
-                    .map(d -> new Bound(o.jsonRead(JsonType.NUMBER), PgSql.of(NUMERIC_PLACEHOLDER, d), bracket));
-            case STRING -> Optional.of(new Bound(o.jsonRead(JsonType.STRING), PgSql.of("?", text(value)), bracket));
-            case BOOLEAN -> Optional.of(new Bound(o.jsonRead(JsonType.BOOLEAN), PgSql.of("?", value), bracket));
-            default -> Optional.of(new Bound(o.json(), PgSql.of("?", PgValues.toJdbc(o.column(), value)),
+            case NUMBER -> SqlFilterNumbers.exact((Number) value)
+                    .map(d -> new Bound(o.jsonRead(JsonType.NUMBER), SqlFragment.of(NUMERIC_PLACEHOLDER, d), bracket));
+            case STRING -> Optional.of(new Bound(o.jsonRead(JsonType.STRING), SqlFragment.of("?", text(value)), bracket));
+            case BOOLEAN -> Optional.of(new Bound(o.jsonRead(JsonType.BOOLEAN), SqlFragment.of("?", value), bracket));
+            default -> Optional.of(new Bound(o.json(), SqlFragment.of("?", PgValues.toJdbc(o.column(), value)),
                     Bracket.OTHER));
         };
     }
@@ -170,7 +173,7 @@ final class PgFilterValues {
     }
 
     /** {@return whether the column stores binary floating point} */
-    static boolean isFloat(PgColumn column) {
+    static boolean isFloat(SqlColumn column) {
         return "DOUBLE PRECISION".equals(column.sqlType()) || "REAL".equals(column.sqlType());
     }
 
@@ -180,7 +183,7 @@ final class PgFilterValues {
      * UTC instant, so any of them compares with a timestamp column; a DATE or TIME column only
      * takes its own class.
      */
-    private static Optional<Object> date(PgColumn column, Object value) {
+    private static Optional<Object> date(SqlColumn column, Object value) {
         Object converted = switch (column.sqlType()) {
             case "TIMESTAMPTZ" -> instant(value);
             case "TIMESTAMP" -> LocalDateTime.ofInstant(instant(value), ZoneOffset.UTC);

@@ -20,9 +20,10 @@ import org.geojson.Point;
 import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.core.mapper.annotations.FieldMappingRule;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgDdl;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlDdl;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * The domain, the rows and the helpers the query builder tests share.
@@ -80,12 +81,12 @@ final class PgQueryFixture {
 
     static final String INJECTED_NAME = "Robert'); DROP TABLE items; --";
 
-    static PgTable items() {
-        return PgSchemaModel.of("items", IClass.getClass(Item.class), "uuid", Map.of());
+    static SqlTable items() {
+        return SqlSchemaModel.of("items", IClass.getClass(Item.class), "uuid", Map.of());
     }
 
-    static PgTable places() {
-        return PgSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
+    static SqlTable places() {
+        return SqlSchemaModel.of("places", IClass.getClass(Place.class), "uuid", Map.of());
     }
 
     static PgQueryBuilder builder() {
@@ -100,7 +101,7 @@ final class PgQueryFixture {
     static DataSource seed() throws SQLException {
         DataSource db = PgTestDatabase.freshDatabase();
         try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
-            for (String ddl : PgDdl.create(items())) {
+            for (String ddl : SqlDdl.create(items())) {
                 s.execute(ddl);
             }
             row(c, "a", "Alice", 10, "ACTIVE", day(1), "Paris", 75000, "{\"label\":\"root\",\"weight\":10}");
@@ -165,7 +166,7 @@ final class PgQueryFixture {
     }
 
     /** Runs a query the way the reader will, and returns the matching ids in result order. */
-    static List<String> ids(DataSource db, PgQuery q) throws SQLException {
+    static List<String> ids(DataSource db, SqlQuery q) throws SQLException {
         String sql = "SELECT t.\"uuid\" FROM \"items\" t WHERE " + q.where() + " " + q.orderBy()
                 + (q.limit() == null ? "" : " LIMIT " + q.limit())
                 + (q.offset() == null ? "" : " OFFSET " + q.offset());

@@ -5,7 +5,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlTable;
 
 /**
  * The relational shape of every domain served by one database, so a DAO can follow a reference.
@@ -26,7 +26,7 @@ public final class PgSchemaRegistry {
      * @param table    the relational shape
      * @param dtoClass the DTO the rows map to
      */
-    public record Entry(PgTable table, IClass<?> dtoClass) {
+    public record Entry(SqlTable table, IClass<?> dtoClass) {
     }
 
     private final Map<String, Entry> byDomain = new ConcurrentHashMap<>();
@@ -38,7 +38,7 @@ public final class PgSchemaRegistry {
      * @param table      its relational shape
      * @param dtoClass   its DTO class
      */
-    public void register(String domainName, PgTable table, IClass<?> dtoClass) {
+    public void register(String domainName, SqlTable table, IClass<?> dtoClass) {
         byDomain.put(domainName, new Entry(table, dtoClass));
     }
 

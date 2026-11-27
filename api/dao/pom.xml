@@ -12,6 +12,7 @@
 	<description>Data-access abstractions for entity persistence (parent module).</description>
 
 	<modules>
+		<module>dao-sql</module>
 		<module>dao-mongodb</module>
 		<module>dao-postgresql</module>
 	</modules>

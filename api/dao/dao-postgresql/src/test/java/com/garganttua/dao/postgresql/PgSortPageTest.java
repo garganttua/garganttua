@@ -20,9 +20,10 @@ import com.garganttua.api.commons.pageable.IPageable;
 import com.garganttua.api.commons.pageable.Pageable;
 import com.garganttua.api.commons.sort.Sort;
 import com.garganttua.api.commons.sort.SortDirection;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
- * Sort, pagination and projection of {@link PgQueryBuilder} ({@link PgSortClause}, {@link PgBsonOrder}):
+ * Sort, pagination and projection of {@link PgQueryBuilder} ({@link PgSortClause}, {@link SqlBsonOrder}):
  * the SQL shape where it is the point (no field name ever reaches the SQL, the uuid tiebreaker), and
  * the real order on {@link PgQueryFixture#seed} otherwise. A page of size 0 is used to read everything
  * with the uuid tiebreaker, so ties come back in a known order.
@@ -40,7 +41,7 @@ class PgSortPageTest {
         db = PgQueryFixture.seed();
     }
 
-    private static PgQuery query(Pageable page, String field, SortDirection direction) throws ApiException {
+    private static SqlQuery query(Pageable page, String field, SortDirection direction) throws ApiException {
         return PgQueryFixture.builder().build(Optional.ofNullable(page), Optional.empty(),
                 Optional.ofNullable(field == null ? null : new Sort(field, direction)), Optional.empty());
     }
@@ -136,7 +137,7 @@ class PgSortPageTest {
         @Test
         @DisplayName("the offset is computed in long arithmetic: a page far beyond the data is empty")
         void longOffset() throws Exception {
-            PgQuery q = query(new Pageable(Integer.MAX_VALUE, 2), "total", SortDirection.asc);
+            SqlQuery q = query(new Pageable(Integer.MAX_VALUE, 2), "total", SortDirection.asc);
             assertEquals(2L * Integer.MAX_VALUE, q.offset());
             assertTrue(PgQueryFixture.ids(db, q).isEmpty());
         }
@@ -154,7 +155,7 @@ class PgSortPageTest {
             StringBuilder seen = new StringBuilder();
             for (int page = 0; page < 3; page++) {
                 IPageable p = new Pageable(page, 2);
-                PgQuery q = PgQueryFixture.builder().build(Optional.of(p), Optional.empty(),
+                SqlQuery q = PgQueryFixture.builder().build(Optional.of(p), Optional.empty(),
                         Optional.of(new Sort("tags", SortDirection.asc)), Optional.empty());
                 PgQueryFixture.ids(db, q).forEach(seen::append);
             }
@@ -169,7 +170,7 @@ class PgSortPageTest {
         @Test
         @DisplayName("a dotted path projects its head field, as MongoDao.applyProjection does")
         void heads() throws Exception {
-            PgQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.empty(), Optional.empty(),
+            SqlQuery q = PgQueryFixture.builder().build(Optional.empty(), Optional.empty(), Optional.empty(),
                     Optional.of(List.of("address.city", "address.nope", "identifier", "nope")));
             assertEquals(List.of("address", "uuid", "nope"), q.projection());
             assertFalse(q.projection().contains("address.city"));

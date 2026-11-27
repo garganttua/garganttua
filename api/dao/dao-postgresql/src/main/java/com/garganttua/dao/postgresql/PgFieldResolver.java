@@ -4,12 +4,17 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
-import com.garganttua.dao.postgresql.schema.PgChildKind;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlChildKind;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlField;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlHop;
+import com.garganttua.dao.sql.SqlOperand;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Resolves a filter's field name (a dotted DTO path, used as is, like MongoDB does) to where it lives
@@ -17,10 +22,10 @@ import com.garganttua.dao.postgresql.schema.PgTable;
  *
  * <p>
  * This is the only door from filter text to SQL identifiers: every identifier that reaches a
- * statement comes from the {@link PgTable}, never from the filter, so a field name cannot inject SQL.
+ * statement comes from the {@link SqlTable}, never from the filter, so a field name cannot inject SQL.
  * A name the model does not know is not an error: MongoDB has no schema, and a field no document
  * holds is simply ABSENT from all of them — {@code $eq null} matches everything, {@code $eq x}
- * nothing. Such a name resolves to {@link PgField.Opaque#MISSING}, which needs no identifier at all.
+ * nothing. Such a name resolves to {@link SqlField.Opaque#MISSING}, which needs no identifier at all.
  * The same holds for a path into a scalar ({@code name.first}) or into an unknown leaf of an embedded
  * object.
  * </p>
@@ -40,10 +45,10 @@ final class PgFieldResolver {
     /** The DBRef field MongoDB stores a reference's id under. */
     static final String DBREF_ID = "$id";
 
-    private final PgTable table;
+    private final SqlTable table;
     private final PgPathLocator locator;
 
-    PgFieldResolver(PgTable table) {
+    PgFieldResolver(SqlTable table) {
         this.table = table;
         this.locator = new PgPathLocator(table, CHILD_ALIAS, false);
     }
@@ -52,39 +57,39 @@ final class PgFieldResolver {
      * Resolves a field name.
      *
      * @param field the dotted field path from the filter
-     * @return where it lives — {@link PgField.Opaque#MISSING} when the model has no such field
+     * @return where it lives — {@link SqlField.Opaque#MISSING} when the model has no such field
      */
-    PgField resolve(String field) {
-        Optional<PgField> reference = reference(field);
+    SqlField resolve(String field) {
+        Optional<SqlField> reference = reference(field);
         if (reference.isPresent()) {
             return reference.get();
         }
-        Optional<PgOperand> main = inColumns(table.columns(), PgQuery.ALIAS, field);
+        Optional<SqlOperand> main = inColumns(table.columns(), SqlQuery.ALIAS, field);
         if (main.isPresent()) {
-            return new PgField.Scalar(main.get());
+            return new SqlField.Scalar(main.get());
         }
         Optional<PgPathLocator.Located> located = locator.locate(field);
         if (located.isPresent()) {
             return located.get().rest() == null ? whole(located.get()) : inElement(located.get());
         }
-        return table.presence(field).<PgField>map(p -> PgField.Opaque.of(isNull(PgQuery.ALIAS, p)))
-                .orElse(PgField.Opaque.MISSING);
+        return table.presence(field).<SqlField>map(p -> SqlField.Opaque.of(isNull(SqlQuery.ALIAS, p)))
+                .orElse(SqlField.Opaque.MISSING);
     }
 
     /**
      * A {@code @Composed} reference. MongoDB stores it as a DBRef sub-document {@code {$ref, $id}}: the
      * field itself is an object (it equals no string), and {@code field.$id} is the referenced uuid.
      */
-    private Optional<PgField> reference(String field) {
-        for (PgColumn column : table.columns()) {
-            if (column.kind() != PgColumnKind.COMPOSITION) {
+    private Optional<SqlField> reference(String field) {
+        for (SqlColumn column : table.columns()) {
+            if (column.kind() != SqlColumnKind.COMPOSITION) {
                 continue;
             }
             if (column.dottedPath().equals(field)) {
-                return Optional.of(PgField.Opaque.of(isNull(PgQuery.ALIAS, column)));
+                return Optional.of(SqlField.Opaque.of(isNull(SqlQuery.ALIAS, column)));
             }
             if (field.equals(column.dottedPath() + "." + DBREF_ID)) {
-                return Optional.of(new PgField.Scalar(PgOperand.of(PgQuery.ALIAS, column)));
+                return Optional.of(new SqlField.Scalar(SqlOperand.of(SqlQuery.ALIAS, column)));
             }
         }
         return Optional.empty();
@@ -95,73 +100,73 @@ final class PgFieldResolver {
      * are compared element by element; anything else is an object, of which only presence can be
      * asked — absent on EVERY branch for {@code $exists: false}, on SOME branch for {@code $eq null}.
      */
-    private PgField whole(PgPathLocator.Located at) {
-        List<PgHop> hops = at.hops();
-        PgHop last = at.last();
-        PgChildTable child = last.child();
+    private SqlField whole(PgPathLocator.Located at) {
+        List<SqlHop> hops = at.hops();
+        SqlHop last = at.last();
+        SqlChildTable child = last.child();
         if (last.keyed()) {
             if (scalarValues(child)) {
-                return new PgField.Element(hops, value(last), false, null);
+                return new SqlField.Element(hops, value(last), false, null);
             }
-            PgSql noValue = last.rows(PgSql.of(last.ref(PgChildTable.PRESENT) + " IS NOT NULL"))
+            SqlFragment noValue = last.rows(SqlFragment.of(last.ref(SqlChildTable.PRESENT) + " IS NOT NULL"))
                     .wrap("NOT EXISTS (", ")");
-            return new PgField.Opaque(PgHop.noneHolds(hops), PgHop.someMisses(hops, noValue));
+            return new SqlField.Opaque(SqlHop.noneHolds(hops), SqlHop.someMisses(hops, noValue));
         }
         return switch (child.kind()) {
-            case SCALAR_COLLECTION -> new PgField.Element(hops, value(last), true, null);
+            case SCALAR_COLLECTION -> new SqlField.Element(hops, value(last), true, null);
             case NESTED_COLLECTION -> nestedArrays(hops);
             case POJO_COLLECTION -> objects(hops);
-            case MAP, COMPOSITION_COLLECTION -> new PgField.Opaque(PgHop.noneHolds(hops),
-                    PgHop.someMisses(hops, last.absent()));
+            case MAP, COMPOSITION_COLLECTION -> new SqlField.Opaque(SqlHop.noneHolds(hops),
+                    SqlHop.someMisses(hops, last.absent()));
         };
     }
 
     /** A collection whose elements are collections: compared as arrays when they hold scalars. */
-    private PgField nestedArrays(List<PgHop> hops) {
-        Optional<PgHop> items = locator.items(hops)
-                .filter(i -> i.child().kind() == PgChildKind.SCALAR_COLLECTION);
-        return items.<PgField>map(i -> new PgField.Element(hops, value(i), true, i))
+    private SqlField nestedArrays(List<SqlHop> hops) {
+        Optional<SqlHop> items = locator.items(hops)
+                .filter(i -> i.child().kind() == SqlChildKind.SCALAR_COLLECTION);
+        return items.<SqlField>map(i -> new SqlField.Element(hops, value(i), true, i))
                 .orElseGet(() -> objects(hops));
     }
 
     /** A collection of objects: absent, or holding a null element, is what {@code $eq null} matches. */
-    private static PgField objects(List<PgHop> hops) {
-        PgHop last = hops.get(hops.size() - 1);
-        PgSql nullElement = last.rows(PgSql.of(last.ref(PgChildTable.PRESENT) + " IS NULL"))
+    private static SqlField objects(List<SqlHop> hops) {
+        SqlHop last = hops.get(hops.size() - 1);
+        SqlFragment nullElement = last.rows(SqlFragment.of(last.ref(SqlChildTable.PRESENT) + " IS NULL"))
                 .wrap("EXISTS (", ")");
-        return new PgField.Opaque(PgHop.noneHolds(hops),
-                PgHop.someMisses(hops, PgSql.any(List.of(last.absent(), nullElement))));
+        return new SqlField.Opaque(SqlHop.noneHolds(hops),
+                SqlHop.someMisses(hops, SqlFragment.any(List.of(last.absent(), nullElement))));
     }
 
     /**
      * A path inside the elements of a collection ({@code lines.sku}, {@code orders.lines.sku}) or inside
      * the value of a map entry ({@code stock.apple.qty}).
      */
-    private static PgField inElement(PgPathLocator.Located at) {
-        PgHop last = at.last();
-        PgChildTable child = last.child();
-        Optional<PgOperand> operand = switch (child.kind()) {
+    private static SqlField inElement(PgPathLocator.Located at) {
+        SqlHop last = at.last();
+        SqlChildTable child = last.child();
+        Optional<SqlOperand> operand = switch (child.kind()) {
             case COMPOSITION_COLLECTION -> DBREF_ID.equals(at.rest()) ? Optional.of(value(last)) : Optional.empty();
             case POJO_COLLECTION, MAP -> inColumns(child.valueColumns(), last.alias(), at.rest());
             default -> Optional.empty();
         };
-        return operand.<PgField>map(o -> new PgField.Element(at.hops(), o, false, null))
-                .orElse(PgField.Opaque.MISSING);
+        return operand.<SqlField>map(o -> new SqlField.Element(at.hops(), o, false, null))
+                .orElse(SqlField.Opaque.MISSING);
     }
 
     /** {@return the single value column of a scalar collection, under the hop's alias} */
-    private static PgOperand value(PgHop hop) {
-        return PgOperand.of(hop.alias(), hop.child().valueColumns().get(0));
+    private static SqlOperand value(SqlHop hop) {
+        return SqlOperand.of(hop.alias(), hop.child().valueColumns().get(0));
     }
 
     /** {@return whether a map's values are scalars: one value column, the value itself} */
-    static boolean scalarValues(PgChildTable child) {
+    static boolean scalarValues(SqlChildTable child) {
         return child.elementTable().isEmpty() && child.valueColumns().size() == 1
                 && child.valueColumns().get(0).fieldPath().isEmpty();
     }
 
-    private static PgSql isNull(String alias, PgColumn column) {
-        return PgSql.of(alias + "." + PgNaming.quote(column.name()) + " IS NULL");
+    private static SqlFragment isNull(String alias, SqlColumn column) {
+        return SqlFragment.of(alias + "." + SqlNaming.quote(column.name()) + " IS NULL");
     }
 
     /**
@@ -173,20 +178,20 @@ final class PgFieldResolver {
      * @param field   the path, relative to the columns' owner
      * @return the operand, or empty when no column matches
      */
-    static Optional<PgOperand> inColumns(List<PgColumn> columns, String alias, String field) {
-        List<PgColumn> values = columns.stream()
-                .filter(c -> c.kind() != PgColumnKind.PRESENCE && c.kind() != PgColumnKind.COMPOSITION).toList();
-        for (PgColumn column : values) {
+    static Optional<SqlOperand> inColumns(List<SqlColumn> columns, String alias, String field) {
+        List<SqlColumn> values = columns.stream()
+                .filter(c -> c.kind() != SqlColumnKind.PRESENCE && c.kind() != SqlColumnKind.COMPOSITION).toList();
+        for (SqlColumn column : values) {
             if (column.dottedPath().equals(field)) {
-                return Optional.of(PgOperand.of(alias, column));
+                return Optional.of(SqlOperand.of(alias, column));
             }
         }
-        for (PgColumn column : values) {
+        for (SqlColumn column : values) {
             String prefix = column.dottedPath() + ".";
-            if (column.kind() == PgColumnKind.JSONB && !column.dottedPath().isEmpty()
+            if (column.kind() == SqlColumnKind.JSONB && !column.dottedPath().isEmpty()
                     && field.startsWith(prefix) && field.length() > prefix.length()) {
                 List<String> path = Arrays.asList(field.substring(prefix.length()).split("\\.", -1));
-                return Optional.of(new PgOperand(alias, column, path));
+                return Optional.of(new SqlOperand(alias, column, path));
             }
         }
         return Optional.empty();

@@ -24,11 +24,11 @@ import org.junit.jupiter.api.Test;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgDdl;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlDdl;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
 
 /**
  * The pieces every part of the DAO shares, checked against the real engine.
@@ -41,8 +41,8 @@ class PgFoundationTest {
         com.garganttua.core.bootstrap.dsl.Bootstrap.builder();
     }
 
-    private static PgTable orders() {
-        return PgSchemaModel.of("orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
+    private static SqlTable orders() {
+        return SqlSchemaModel.of("orders", IClass.getClass(PgSchemaModelTest.Order.class), "uuid",
                 Map.of("customer", "customers", "relatedOrders", "orders"));
     }
 
@@ -53,10 +53,10 @@ class PgFoundationTest {
         @Test
         @DisplayName("creates every table and column of the model on the real engine")
         void createsTheModel() throws Exception {
-            PgTable table = orders();
+            SqlTable table = orders();
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
-                for (String ddl : PgDdl.create(table)) {
+                for (String ddl : SqlDdl.create(table)) {
                     s.execute(ddl);
                 }
                 Set<String> columns = new HashSet<>();
@@ -66,11 +66,11 @@ class PgFoundationTest {
                         columns.add(r.getString(1));
                     }
                 }
-                for (PgColumn column : table.columns()) {
+                for (SqlColumn column : table.columns()) {
                     assertTrue(columns.contains(column.name()), () -> "missing column " + column.name());
                 }
                 for (var child : table.children()) {
-                    try (ResultSet r = s.executeQuery("SELECT count(*) FROM " + PgNaming.quote(child.name()))) {
+                    try (ResultSet r = s.executeQuery("SELECT count(*) FROM " + SqlNaming.quote(child.name()))) {
                         assertTrue(r.next(), () -> "missing child table " + child.name());
                     }
                 }
@@ -83,7 +83,7 @@ class PgFoundationTest {
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
                 for (int round = 0; round < 2; round++) {
-                    for (String ddl : PgDdl.create(orders())) {
+                    for (String ddl : SqlDdl.create(orders())) {
                         s.execute(ddl);
                     }
                 }
@@ -93,10 +93,10 @@ class PgFoundationTest {
         @Test
         @DisplayName("cascades an owner's delete to its collections")
         void deleteCascadesToChildren() throws Exception {
-            PgTable table = orders();
+            SqlTable table = orders();
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
-                for (String ddl : PgDdl.create(table)) {
+                for (String ddl : SqlDdl.create(table)) {
                     s.execute(ddl);
                 }
                 s.execute("INSERT INTO \"orders\" (\"uuid\") VALUES ('o1')");
@@ -117,10 +117,10 @@ class PgFoundationTest {
         @Test
         @DisplayName("creates tables three levels deep, and a root delete cascades through all of them")
         void nestedTablesCascade() throws Exception {
-            PgTable shops = PgSchemaModel.of("shops", IClass.getClass(PgSchemaModelTest.Shop.class), "uuid", Map.of());
+            SqlTable shops = SqlSchemaModel.of("shops", IClass.getClass(PgSchemaModelTest.Shop.class), "uuid", Map.of());
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
-                for (String ddl : PgDdl.create(shops)) {
+                for (String ddl : SqlDdl.create(shops)) {
                     s.execute(ddl);
                 }
                 s.execute("INSERT INTO \"shops\" (\"uuid\") VALUES ('s1')");
@@ -153,14 +153,14 @@ class PgFoundationTest {
         @Test
         @DisplayName("creates the table of an element that is itself a collection")
         void collectionOfCollections() throws Exception {
-            PgTable grids = PgSchemaModel.of("grids", IClass.getClass(PgSchemaModelTest.Grid.class), "uuid", Map.of());
+            SqlTable grids = SqlSchemaModel.of("grids", IClass.getClass(PgSchemaModelTest.Grid.class), "uuid", Map.of());
             DataSource db = PgTestDatabase.freshDatabase();
             try (Connection c = db.getConnection(); Statement s = c.createStatement()) {
-                for (String ddl : PgDdl.create(grids)) {
+                for (String ddl : SqlDdl.create(grids)) {
                     s.execute(ddl);
                 }
                 for (var child : grids.allChildren()) {
-                    try (ResultSet r = s.executeQuery("SELECT count(*) FROM " + PgNaming.quote(child.name()))) {
+                    try (ResultSet r = s.executeQuery("SELECT count(*) FROM " + SqlNaming.quote(child.name()))) {
                         assertTrue(r.next(), () -> "missing " + child.name());
                     }
                 }
@@ -172,7 +172,7 @@ class PgFoundationTest {
     @DisplayName("value conversion")
     class Values {
 
-        private PgColumn column(String path) {
+        private SqlColumn column(String path) {
             return orders().column(path).orElseThrow();
         }
 

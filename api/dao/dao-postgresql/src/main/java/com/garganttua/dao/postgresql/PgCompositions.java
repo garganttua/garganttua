@@ -15,9 +15,13 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.IField;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlBeans;
+import com.garganttua.dao.sql.SqlCollections;
+import com.garganttua.dao.sql.SqlLoadedRow;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Turns the uuids stored for {@code @Composed} fields into the referenced DTOs, one level deep.
@@ -56,14 +60,14 @@ final class PgCompositions {
 
     private static final Logger LOG = Logger.getLogger(PgCompositions.class);
 
-    private final PgTable table;
+    private final SqlTable table;
     private final IClass<?> dtoClass;
     private final PgSchemaRegistry registry;
-    private final PgBeans beans;
+    private final SqlBeans beans;
     private final boolean resolve;
     private final Set<String> warned = ConcurrentHashMap.newKeySet();
 
-    PgCompositions(PgTable table, IClass<?> dtoClass, PgSchemaRegistry registry, PgBeans beans, boolean resolve) {
+    PgCompositions(SqlTable table, IClass<?> dtoClass, PgSchemaRegistry registry, SqlBeans beans, boolean resolve) {
         this.table = table;
         this.dtoClass = dtoClass;
         this.registry = registry;
@@ -78,7 +82,7 @@ final class PgCompositions {
      * @param child a {@code COMPOSITION_COLLECTION} child table
      * @return whether to load it
      */
-    boolean needsRows(PgChildTable child) {
+    boolean needsRows(SqlChildTable child) {
         return resolve || child.elementType() == null || child.elementType().represents(String.class);
     }
 
@@ -89,12 +93,12 @@ final class PgCompositions {
      * @param rows       the page, references collected
      * @throws ApiException when a referenced table cannot be read
      */
-    void resolve(Connection connection, List<PgLoadedRow> rows) throws ApiException {
+    void resolve(Connection connection, List<SqlLoadedRow> rows) throws ApiException {
         Map<String, Map<String, Object>> resolved = fetch(connection, rows);
         for (Map.Entry<String, String> composition : table.compositions().entrySet()) {
             String path = composition.getKey();
             Map<String, Object> targets = resolved.get(composition.getValue());
-            for (PgLoadedRow row : rows) {
+            for (SqlLoadedRow row : rows) {
                 if (row.references().containsKey(path)) {
                     setSingle(row, path, targets);
                 } else if (row.referenceLists().containsKey(path)) {
@@ -104,7 +108,7 @@ final class PgCompositions {
         }
     }
 
-    private void setSingle(PgLoadedRow row, String path, Map<String, Object> targets) throws ApiException {
+    private void setSingle(SqlLoadedRow row, String path, Map<String, Object> targets) throws ApiException {
         String uuid = row.references().get(path);
         if (uuid == null) {
             // No reference was saved: MongoDB omits the key and leaves the field as constructed.
@@ -118,8 +122,8 @@ final class PgCompositions {
         }
     }
 
-    private void setCollection(PgLoadedRow row, String path, Map<String, Object> targets) throws ApiException {
-        PgChildTable child = table.child(path).orElseThrow(() -> new ApiException(
+    private void setCollection(SqlLoadedRow row, String path, Map<String, Object> targets) throws ApiException {
+        SqlChildTable child = table.child(path).orElseThrow(() -> new ApiException(
                 "Composition collection '" + path + "' of table '" + table.name() + "' has no child table"));
         List<String> uuids = row.referenceLists().get(path);
         List<Object> elements = new ArrayList<>(uuids.size());
@@ -130,7 +134,7 @@ final class PgCompositions {
         } else {
             return;
         }
-        Object built = PgCollections.collection(child.collectionType(), child.elementType(), elements);
+        Object built = SqlCollections.collection(child.collectionType(), child.elementType(), elements);
         beans.set(row.instance(), child.fieldPath(), built, false);
     }
 
@@ -143,7 +147,7 @@ final class PgCompositions {
      *
      * @return target domain to (uuid to DTO); a domain that is absent could not or need not be resolved
      */
-    private Map<String, Map<String, Object>> fetch(Connection connection, List<PgLoadedRow> rows)
+    private Map<String, Map<String, Object>> fetch(Connection connection, List<SqlLoadedRow> rows)
             throws ApiException {
         Map<String, Map<String, Object>> resolved = new HashMap<>();
         if (!resolve) {
@@ -161,7 +165,7 @@ final class PgCompositions {
     }
 
     /** The uuids to read, by target domain — only for fields that hold DTOs, not bare uuids. */
-    private Map<String, Set<String>> wanted(List<PgLoadedRow> rows) throws ApiException {
+    private Map<String, Set<String>> wanted(List<SqlLoadedRow> rows) throws ApiException {
         Map<String, Set<String>> wanted = new HashMap<>();
         for (Map.Entry<String, String> composition : table.compositions().entrySet()) {
             String path = composition.getKey();
@@ -171,7 +175,7 @@ final class PgCompositions {
             if (holdsUuid(held)) {
                 continue;
             }
-            for (PgLoadedRow row : rows) {
+            for (SqlLoadedRow row : rows) {
                 if (collection) {
                     uuids.addAll(row.referenceLists().getOrDefault(path, List.of()));
                 } else if (row.references().get(path) != null) {
@@ -185,8 +189,8 @@ final class PgCompositions {
 
     private Map<String, Object> read(Connection connection, PgSchemaRegistry.Entry target, Set<String> uuids)
             throws ApiException {
-        PgTable targetTable = target.table();
-        String where = PgQuery.ALIAS + "." + PgNaming.quote(targetTable.id().name()) + " = ANY(?)";
+        SqlTable targetTable = target.table();
+        String where = SqlQuery.ALIAS + "." + SqlNaming.quote(targetTable.id().name()) + " = ANY(?)";
         Object ids;
         try {
             ids = connection.createArrayOf("text", uuids.toArray());
@@ -196,7 +200,7 @@ final class PgCompositions {
         }
         PgReader reader = new PgReader(targetTable, target.dtoClass(), registry, false);
         Map<String, Object> byUuid = new HashMap<>();
-        for (Object dto : reader.find(connection, new PgQuery(where, List.of(ids), "", null, null, null))) {
+        for (Object dto : reader.find(connection, new SqlQuery(where, List.of(ids), "", null, null, null))) {
             Optional<Object> uuid = beans.get(dto, targetTable.id().fieldPath());
             uuid.ifPresent(u -> byUuid.put(u.toString(), dto));
         }

@@ -16,8 +16,8 @@ import javax.sql.DataSource;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.dao.postgresql.PgSchemaInspector.StoredColumn;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
 
 /**
@@ -76,7 +76,7 @@ public final class PgSchemaManager {
      *                      structural column missing from an existing child table, a database
      *                      error); in VALIDATE mode, when anything is missing or mistyped
      */
-    public void ensure(PgTable table) throws ApiException {
+    public void ensure(SqlTable table) throws ApiException {
         Objects.requireNonNull(table, "table");
         try (Connection connection = dataSource.getConnection()) {
             if (mode == SchemaMode.VALIDATE) {
@@ -113,7 +113,7 @@ public final class PgSchemaManager {
 
     @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
             justification = SuppressFBWarnings.GENERATED_SQL)
-    private static void create(Connection connection, PgTable table) throws SQLException, ApiException {
+    private static void create(Connection connection, SqlTable table) throws SQLException, ApiException {
         lock(connection, table.name());
         if (table.needsPostgis()) {
             // Last lock taken, always: no two sessions can then wait on each other's table lock.
@@ -132,7 +132,7 @@ public final class PgSchemaManager {
         }
     }
 
-    private static void createPostgis(Connection connection, PgTable table) throws ApiException {
+    private static void createPostgis(Connection connection, SqlTable table) throws ApiException {
         try (Statement statement = connection.createStatement()) {
             statement.execute(PgSchemaExpectation.CREATE_POSTGIS);
         } catch (SQLException e) {
@@ -159,7 +159,7 @@ public final class PgSchemaManager {
             } else if (!PgSchemaInspector.matches(column.sqlType(), actual)) {
                 log.warn("Column {}.{} is stored as {} but the model expects {}: left as is — CREATE mode "
                         + "never retypes a column; migrate it deliberately if the model is right",
-                        PgNaming.quote(expected.name()), PgNaming.quote(column.name()), actual.describe(),
+                        SqlNaming.quote(expected.name()), SqlNaming.quote(column.name()), actual.describe(),
                         column.sqlType());
             }
         }
@@ -178,8 +178,8 @@ public final class PgSchemaManager {
         try (Statement statement = connection.createStatement()) {
             statement.execute(PgSchemaExpectation.addColumn(expected, column));
         }
-        log.info("Added column {}.{} {} — the model gained this field", PgNaming.quote(expected.name()),
-                PgNaming.quote(column.name()), column.sqlType());
+        log.info("Added column {}.{} {} — the model gained this field", SqlNaming.quote(expected.name()),
+                SqlNaming.quote(column.name()), column.sqlType());
     }
 
     private static void lock(Connection connection, String name) throws SQLException {

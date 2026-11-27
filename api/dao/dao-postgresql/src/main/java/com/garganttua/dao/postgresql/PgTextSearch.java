@@ -6,12 +6,15 @@ import java.util.Optional;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.IFilter;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.schema.SqlTypes;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlQuery;
+import com.garganttua.dao.sql.SqlTextQuery;
 
 /**
  * MongoDB's {@code $text} over a wildcard ({@code "$**"}) text index, reproduced without any index.
@@ -30,7 +33,7 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * </p>
  *
  * <p>
- * The search string is decomposed by {@link PgTextQuery}; words go through the {@code english}
+ * The search string is decomposed by {@link SqlTextQuery}; words go through the {@code english}
  * text-search configuration — MongoDB's default language — for the same stemming and stop words.
  * Diacritics are folded with {@code translate()} on both sides. Case folding of the document is
  * PostgreSQL's {@code lower()} / text-search lowercasing, which follows the database's
@@ -102,25 +105,25 @@ final class PgTextSearch {
      * @return the predicate — never NULL
      * @throws ApiException when there is no search string
      */
-    static PgSql predicate(PgTable table, Object search) {
+    static SqlFragment predicate(SqlTable table, Object search) {
         if (search == null) {
             throw new ApiException("$text filter requires a search string");
         }
-        PgTextQuery query = PgTextQuery.parse(search.toString());
+        SqlTextQuery query = SqlTextQuery.parse(search.toString());
         if (query.positive().isEmpty()) {
-            return PgSql.FALSE;
+            return SqlFragment.FALSE;
         }
-        List<PgSql> conditions = new ArrayList<>();
-        conditions.add(PgSql.of("to_tsvector(" + CONFIG + ", translate(s.d, ?, ?)) @@ ",
-                PgTextQuery.DELIMITERS, PgTextQuery.DELIMITER_SPACES).then(tsquery(query)));
+        List<SqlFragment> conditions = new ArrayList<>();
+        conditions.add(SqlFragment.of("to_tsvector(" + CONFIG + ", translate(s.d, ?, ?)) @@ ",
+                SqlTextQuery.DELIMITERS, SqlTextQuery.DELIMITER_SPACES).then(tsquery(query)));
         for (String phrase : query.phrases()) {
-            conditions.add(PgSql.of("strpos(lower(s.d), lower(?)) > 0", phrase));
+            conditions.add(SqlFragment.of("strpos(lower(s.d), lower(?)) > 0", phrase));
         }
         for (String phrase : query.negatedPhrases()) {
-            conditions.add(PgSql.of("strpos(lower(s.d), lower(?)) = 0", phrase));
+            conditions.add(SqlFragment.of("strpos(lower(s.d), lower(?)) = 0", phrase));
         }
-        return PgSql.of("EXISTS (SELECT 1 FROM (SELECT translate(" + document(table) + ", ?, ?) AS d) s WHERE ",
-                PgTextQuery.FOLD_FROM, PgTextQuery.FOLD_TO).then(PgSql.join(" AND ", conditions)).then(")");
+        return SqlFragment.of("EXISTS (SELECT 1 FROM (SELECT translate(" + document(table) + ", ?, ?) AS d) s WHERE ",
+                SqlTextQuery.FOLD_FROM, SqlTextQuery.FOLD_TO).then(SqlFragment.join(" AND ", conditions)).then(")");
     }
 
     /**
@@ -133,8 +136,8 @@ final class PgTextSearch {
      * @return the folded text expression
      */
     static String folded(String columnRef) {
-        return "translate(" + columnRef + ", " + literal(PgTextQuery.FOLD_FROM) + ", "
-                + literal(PgTextQuery.FOLD_TO) + ")";
+        return "translate(" + columnRef + ", " + literal(SqlTextQuery.FOLD_FROM) + ", "
+                + literal(SqlTextQuery.FOLD_TO) + ")";
     }
 
     /**
@@ -146,7 +149,7 @@ final class PgTextSearch {
      */
     static String indexedVector(String columnRef) {
         return "to_tsvector(" + CONFIG + ", translate(" + folded(columnRef) + ", "
-                + literal(PgTextQuery.DELIMITERS) + ", " + literal(PgTextQuery.DELIMITER_SPACES) + "))";
+                + literal(SqlTextQuery.DELIMITERS) + ", " + literal(SqlTextQuery.DELIMITER_SPACES) + "))";
     }
 
     /**
@@ -167,65 +170,65 @@ final class PgTextSearch {
      * @param search the search string
      * @return the predicate — never NULL
      */
-    static PgSql predicateOnIndexed(PgColumn column, Object search) {
+    static SqlFragment predicateOnIndexed(SqlColumn column, Object search) {
         if (search == null) {
             throw new ApiException("$text filter requires a search string");
         }
-        PgTextQuery query = PgTextQuery.parse(search.toString());
+        SqlTextQuery query = SqlTextQuery.parse(search.toString());
         if (query.positive().isEmpty()) {
-            return PgSql.FALSE;
+            return SqlFragment.FALSE;
         }
-        String ref = PgQuery.ALIAS + "." + PgNaming.quote(column.name());
-        List<PgSql> conditions = new ArrayList<>();
-        conditions.add(PgSql.of(indexedVector(ref) + " @@ ").then(tsquery(query)));
+        String ref = SqlQuery.ALIAS + "." + SqlNaming.quote(column.name());
+        List<SqlFragment> conditions = new ArrayList<>();
+        conditions.add(SqlFragment.of(indexedVector(ref) + " @@ ").then(tsquery(query)));
         for (String phrase : query.phrases()) {
-            conditions.add(PgSql.of("strpos(lower(" + folded(ref) + "), lower(?)) > 0", phrase));
+            conditions.add(SqlFragment.of("strpos(lower(" + folded(ref) + "), lower(?)) > 0", phrase));
         }
         for (String phrase : query.negatedPhrases()) {
-            conditions.add(PgSql.of("coalesce(strpos(lower(" + folded(ref) + "), lower(?)), 0) = 0", phrase));
+            conditions.add(SqlFragment.of("coalesce(strpos(lower(" + folded(ref) + "), lower(?)), 0) = 0", phrase));
         }
-        return PgSql.join(" AND ", conditions).wrap("(", ")");
+        return SqlFragment.join(" AND ", conditions).wrap("(", ")");
     }
 
     /** ANY positive term, and none of the negated ones; a stop word alone is empty and ignored. */
-    private static PgSql tsquery(PgTextQuery query) {
-        List<PgSql> any = new ArrayList<>();
+    private static SqlFragment tsquery(SqlTextQuery query) {
+        List<SqlFragment> any = new ArrayList<>();
         for (String term : query.positive()) {
-            any.add(PgSql.of("plainto_tsquery(" + CONFIG + ", ?)", term));
+            any.add(SqlFragment.of("plainto_tsquery(" + CONFIG + ", ?)", term));
         }
-        PgSql result = PgSql.join(" || ", any).wrap("(", ")");
+        SqlFragment result = SqlFragment.join(" || ", any).wrap("(", ")");
         for (String term : query.negated()) {
-            result = result.then(PgSql.of(" && !!plainto_tsquery(" + CONFIG + ", ?)", term));
+            result = result.then(SqlFragment.of(" && !!plainto_tsquery(" + CONFIG + ", ?)", term));
         }
         return result.wrap("(", ")");
     }
 
     /** Every string of the entity, as one SQL text expression over the main row. */
-    private static String document(PgTable table) {
+    private static String document(SqlTable table) {
         List<String> parts = new ArrayList<>();
-        for (PgColumn column : table.columns()) {
-            strings(column, PgQuery.ALIAS).ifPresent(parts::add);
+        for (SqlColumn column : table.columns()) {
+            strings(column, SqlQuery.ALIAS).ifPresent(parts::add);
         }
-        String owner = PgQuery.ALIAS + "." + PgNaming.quote(table.id().name());
-        for (PgChildTable child : table.allChildren()) {
+        String owner = SqlQuery.ALIAS + "." + SqlNaming.quote(table.id().name());
+        for (SqlChildTable child : table.allChildren()) {
             List<String> values = new ArrayList<>();
-            for (PgColumn column : child.valueColumns()) {
+            for (SqlColumn column : child.valueColumns()) {
                 strings(column, OWNER_ALIAS).ifPresent(values::add);
             }
             if (!values.isEmpty()) {
                 parts.add("(SELECT string_agg(concat_ws(" + SEPARATOR + ", " + String.join(", ", values) + "), "
-                        + SEPARATOR + ") FROM " + PgNaming.quote(child.name()) + " " + OWNER_ALIAS + " WHERE "
-                        + OWNER_ALIAS + "." + PgNaming.quote(PgChildTable.OWNER) + " = " + owner + ")");
+                        + SEPARATOR + ") FROM " + SqlNaming.quote(child.name()) + " " + OWNER_ALIAS + " WHERE "
+                        + OWNER_ALIAS + "." + SqlNaming.quote(SqlChildTable.OWNER) + " = " + owner + ")");
             }
         }
         return "concat_ws(" + SEPARATOR + ", " + String.join(", ", parts) + ")";
     }
 
     /** The strings one column contributes, when it holds any. */
-    private static Optional<String> strings(PgColumn column, String alias) {
-        String ref = alias + "." + PgNaming.quote(column.name());
+    private static Optional<String> strings(SqlColumn column, String alias) {
+        String ref = alias + "." + SqlNaming.quote(column.name());
         return switch (column.kind()) {
-            case ID, SCALAR -> PgTypes.TEXT.equals(column.sqlType())
+            case ID, SCALAR -> SqlTypes.TEXT.equals(column.sqlType())
                     ? Optional.of(ref) : Optional.empty();
             case JSONB, IKEY -> Optional.of("(SELECT string_agg(j.v #>> '{}', " + SEPARATOR
                     + ") FROM jsonb_path_query(" + ref + ", 'strict $.**') AS j(v) WHERE jsonb_typeof(j.v) = 'string')");

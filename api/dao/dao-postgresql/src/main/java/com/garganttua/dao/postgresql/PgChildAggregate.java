@@ -6,11 +6,11 @@ import java.util.Locale;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTypes;
 
 /**
  * A collection read INSIDE the main query: the rows of a child table — and, nested in each of them, the
@@ -26,7 +26,7 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * <p>
  * A row is a JSON array laid out as the child table's own select list —
  * {@code [_id?, _owner|_parent, _ord|_key, values…]} — followed by the aggregates of its own child
- * tables. Every cell is TEXT, written so that it decodes back exactly ({@link PgCells#of(List, List)}):
+ * tables. Every cell is TEXT, written so that it decodes back exactly ({@link SqlCells#of(List, List)}):
  * a temporal as an integer count (microseconds since the epoch, days since 1970-01-01, microseconds
  * since midnight), which keeps years beyond 9999 and before year 1 exact; binary as hexadecimal; a
  * geometry as GeoJSON; anything else as its text output.
@@ -50,7 +50,7 @@ final class PgChildAggregate {
      * @param child a child table
      * @return {@code true} when every row has at most {@link #MAX_ARGUMENTS} cells and nested aggregates
      */
-    static boolean fits(PgChildTable child) {
+    static boolean fits(SqlChildTable child) {
         if (cellCount(child) + child.children().size() > MAX_ARGUMENTS) {
             return false;
         }
@@ -74,30 +74,30 @@ final class PgChildAggregate {
      * @param ctes     receives the CTE definitions, in dependency order
      * @param names    receives the CTE name of each top-level table, same order as {@code tops}
      */
-    static void ctes(List<PgChildTable> tops, String page, String pageId, List<String> ctes, List<String> names) {
+    static void ctes(List<SqlChildTable> tops, String page, String pageId, List<String> ctes, List<String> names) {
         AtomicInteger counter = new AtomicInteger();
-        for (PgChildTable top : tops) {
+        for (SqlChildTable top : tops) {
             names.add(cte(top, page, pageId, ctes, counter));
         }
     }
 
     /** Defines the CTE of one table — after those of the tables below it; {@return its name} */
-    private static String cte(PgChildTable child, String page, String pageId, List<String> ctes,
+    private static String cte(SqlChildTable child, String page, String pageId, List<String> ctes,
             AtomicInteger counter) {
         List<String> below = new ArrayList<>();
-        for (PgChildTable grandchild : child.children()) {
+        for (SqlChildTable grandchild : child.children()) {
             below.add(cte(grandchild, page, pageId, ctes, counter));
         }
-        String name = PgNaming.quote("_agg_" + counter.incrementAndGet());
+        String name = SqlNaming.quote("_agg_" + counter.incrementAndGet());
         StringJoiner cells = new StringJoiner(", ");
         if (child.hasChildren()) {
-            cells.add(text(ALIAS, PgChildTable.ID, BIGINT, PgColumnKind.SCALAR));
+            cells.add(text(ALIAS, SqlChildTable.ID, BIGINT, SqlColumnKind.SCALAR));
         }
-        String scope = child.nested() ? PgChildTable.PARENT : PgChildTable.OWNER;
-        cells.add(text(ALIAS, scope, child.nested() ? BIGINT : PgTypes.TEXT, PgColumnKind.SCALAR));
-        String position = child.ordered() ? PgChildTable.ORD : PgChildTable.KEY;
-        cells.add(text(ALIAS, position, positionType(child), PgColumnKind.SCALAR));
-        for (PgColumn column : child.valueColumns()) {
+        String scope = child.nested() ? SqlChildTable.PARENT : SqlChildTable.OWNER;
+        cells.add(text(ALIAS, scope, child.nested() ? BIGINT : SqlTypes.TEXT, SqlColumnKind.SCALAR));
+        String position = child.ordered() ? SqlChildTable.ORD : SqlChildTable.KEY;
+        cells.add(text(ALIAS, position, positionType(child), SqlColumnKind.SCALAR));
+        for (SqlColumn column : child.valueColumns()) {
             cells.add(text(ALIAS, column.name(), column.sqlType(), column.kind()));
         }
         StringBuilder joins = new StringBuilder();
@@ -105,43 +105,43 @@ final class PgChildAggregate {
             String join = "j" + i;
             cells.add(join + ".agg");
             joins.append(" LEFT JOIN ").append(below.get(i)).append(' ').append(join).append(" ON ").append(join)
-                    .append(".k = ").append(ALIAS).append('.').append(PgNaming.quote(PgChildTable.ID));
+                    .append(".k = ").append(ALIAS).append('.').append(SqlNaming.quote(SqlChildTable.ID));
         }
-        String scopeRef = ALIAS + "." + PgNaming.quote(scope);
+        String scopeRef = ALIAS + "." + SqlNaming.quote(scope);
         // Joined to the page FIRST: the planner then starts from the page's few rows and reaches the table by
         // its owner index, instead of joining the whole table to the aggregates below and filtering last.
         ctes.add(name + " AS (SELECT " + scopeRef + " AS k, json_agg(json_build_array(" + cells + ") ORDER BY "
-                + ALIAS + "." + PgNaming.quote(position) + ") AS agg FROM " + page + " p JOIN "
-                + PgNaming.quote(child.name()) + " " + ALIAS + " ON " + ALIAS + "." + PgNaming.quote(PgChildTable.OWNER)
+                + ALIAS + "." + SqlNaming.quote(position) + ") AS agg FROM " + page + " p JOIN "
+                + SqlNaming.quote(child.name()) + " " + ALIAS + " ON " + ALIAS + "." + SqlNaming.quote(SqlChildTable.OWNER)
                 + " = p." + pageId + joins + " GROUP BY " + scopeRef + ")");
         return name;
     }
 
     /** {@return the number of cells of a row — what precedes the nested aggregates} */
-    static int cellCount(PgChildTable child) {
+    static int cellCount(SqlChildTable child) {
         return (child.hasChildren() ? 1 : 0) + 2 + child.valueColumns().size();
     }
 
     /** {@return the SQL type of each cell of a row, in order} */
-    static List<String> sqlTypes(PgChildTable child) {
+    static List<String> sqlTypes(SqlChildTable child) {
         List<String> types = new ArrayList<>();
         if (child.hasChildren()) {
             types.add(BIGINT);
         }
-        types.add(child.nested() ? BIGINT : PgTypes.TEXT);
+        types.add(child.nested() ? BIGINT : SqlTypes.TEXT);
         types.add(positionType(child));
-        for (PgColumn column : child.valueColumns()) {
+        for (SqlColumn column : child.valueColumns()) {
             types.add(column.sqlType());
         }
         return types;
     }
 
-    private static String positionType(PgChildTable child) {
-        return child.ordered() ? INTEGER : PgTypes.sqlTypeOf(child.keyType()).orElse(PgTypes.TEXT);
+    private static String positionType(SqlChildTable child) {
+        return child.ordered() ? INTEGER : SqlTypes.sqlTypeOf(child.keyType()).orElse(SqlTypes.TEXT);
     }
 
     /**
-     * One cell as the TEXT the aggregate carries, written so that {@link PgCells#of(List, List)} decodes it
+     * One cell as the TEXT the aggregate carries, written so that {@link SqlCells#of(List, List)} decodes it
      * back exactly.
      *
      * @param alias   the row's alias
@@ -150,9 +150,9 @@ final class PgChildAggregate {
      * @param kind    its kind
      * @return the expression
      */
-    static String text(String alias, String column, String sqlType, PgColumnKind kind) {
-        String ref = alias + "." + PgNaming.quote(column);
-        if (kind == PgColumnKind.GEOMETRY) {
+    static String text(String alias, String column, String sqlType, SqlColumnKind kind) {
+        String ref = alias + "." + SqlNaming.quote(column);
+        if (kind == SqlColumnKind.GEOMETRY) {
             return "ST_AsGeoJSON(" + ref + ")";
         }
         return switch (sqlType.toUpperCase(Locale.ROOT)) {

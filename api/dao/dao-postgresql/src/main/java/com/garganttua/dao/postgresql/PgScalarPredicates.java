@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.garganttua.api.commons.ApiException;
+import com.garganttua.dao.sql.SqlCondition;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlOperand;
 
 /**
  * The predicate of one comparison on one single-valued operand, with MongoDB's null and type semantics.
@@ -13,7 +16,7 @@ import com.garganttua.api.commons.ApiException;
  * on the other. In SQL, {@code col <> 5} is NULL — not true — where {@code col} is NULL, so the row
  * is dropped; MongoDB's {@code $ne: 5} DOES match a document without the field. So every negative
  * operator is the negation of its positive form, with NULL counted as "does not match"
- * ({@link PgSql#not}): {@code $ne} is NOT {@code $eq}, {@code $nin} is NOT {@code $in}. The ordering
+ * ({@link SqlFragment#not}): {@code $ne} is NOT {@code $eq}, {@code $nin} is NOT {@code $in}. The ordering
  * operators exclude NULL in both worlds.
  * </p>
  *
@@ -50,18 +53,18 @@ final class PgScalarPredicates {
      * @return the predicate
      * @throws ApiException when the operator does not apply to the operand
      */
-    PgSql on(PgOperand o, PgCondition c) throws ApiException {
+    SqlFragment on(SqlOperand o, SqlCondition c) throws ApiException {
         return switch (c.op()) {
             case "$eq" -> c.value() == null ? isNull(o) : positive(o, "=", c.value());
-            case "$ne" -> c.value() == null ? isNotNull(o) : PgSql.not(positive(o, "=", c.value()));
-            case "$gt" -> c.value() == null ? PgSql.FALSE : positive(o, ">", c.value());
-            case "$lt" -> c.value() == null ? PgSql.FALSE : positive(o, "<", c.value());
+            case "$ne" -> c.value() == null ? isNotNull(o) : SqlFragment.not(positive(o, "=", c.value()));
+            case "$gt" -> c.value() == null ? SqlFragment.FALSE : positive(o, ">", c.value());
+            case "$lt" -> c.value() == null ? SqlFragment.FALSE : positive(o, "<", c.value());
             case "$gte" -> c.value() == null ? isNull(o) : positive(o, ">=", c.value());
             case "$lte" -> c.value() == null ? isNull(o) : positive(o, "<=", c.value());
             case "$regex" -> regex(o, c);
             case "$empty" -> isNull(o);
             case "$in" -> in(o, c);
-            case "$nin" -> PgSql.not(in(o, c));
+            case "$nin" -> SqlFragment.not(in(o, c));
             case "$geoWithin", "$geoWithinSphere" -> geo.within(o, c);
             case "$geoIntersects" -> geo.intersects(o, c);
             case "$near", "$nearSphere" -> geo.near(o, c);
@@ -70,11 +73,11 @@ final class PgScalarPredicates {
     }
 
     /** {@code o IS NULL} — also the "absent" test Mongo's {@code $exists: false} performs. */
-    PgSql isNull(PgOperand o) {
+    SqlFragment isNull(SqlOperand o) {
         return o.expr(false).then(" IS NULL");
     }
 
-    private PgSql isNotNull(PgOperand o) {
+    private SqlFragment isNotNull(SqlOperand o) {
         return o.expr(false).then(" IS NOT NULL");
     }
 
@@ -82,23 +85,23 @@ final class PgScalarPredicates {
      * {@code o <op> value}; on a JSON operand, also true when the JSON value is an array one of whose
      * elements satisfies it — MongoDB's array semantics, applied inside documents.
      */
-    private PgSql positive(PgOperand o, String op, Object value) {
-        PgSql direct = PgFilterValues.compare(o, op, value);
+    private SqlFragment positive(SqlOperand o, String op, Object value) {
+        SqlFragment direct = PgFilterValues.compare(o, op, value);
         if (!o.isJson()) {
             return direct;
         }
-        PgSql inElement = PgFilterValues.compare(PgOperand.jsonElement(JSON_ELEMENT_ALIAS), op, value);
-        if (PgSql.FALSE.equals(inElement)) {
+        SqlFragment inElement = PgFilterValues.compare(SqlOperand.jsonElement(JSON_ELEMENT_ALIAS), op, value);
+        if (SqlFragment.FALSE.equals(inElement)) {
             return direct;
         }
-        PgSql json = o.json();
-        PgSql elements = json.wrap("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(",
+        SqlFragment json = o.json();
+        SqlFragment elements = json.wrap("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(",
                 ") = 'array' THEN ").then(json).then(" END) AS " + JSON_ELEMENT_ALIAS + "(v) WHERE ")
                 .then(inElement).then(")");
-        return PgSql.any(List.of(direct, elements));
+        return SqlFragment.any(List.of(direct, elements));
     }
 
-    private PgSql regex(PgOperand o, PgCondition c) throws ApiException {
+    private SqlFragment regex(SqlOperand o, SqlCondition c) throws ApiException {
         return PgRegex.on(o, c, domain);
     }
 
@@ -106,8 +109,8 @@ final class PgScalarPredicates {
      * Some listed value matches — or, when null is listed, the field is missing. Values of another
      * type class than the operand's are dropped: they can equal nothing.
      */
-    private PgSql in(PgOperand o, PgCondition c) {
-        List<PgSql> parts = new ArrayList<>();
+    private SqlFragment in(SqlOperand o, SqlCondition c) {
+        List<SqlFragment> parts = new ArrayList<>();
         if (c.listsNull()) {
             parts.add(isNull(o));
         }
@@ -115,15 +118,15 @@ final class PgScalarPredicates {
             for (Object value : c.listedValues()) {
                 parts.add(positive(o, "=", value));
             }
-            return PgSql.any(parts);
+            return SqlFragment.any(parts);
         }
-        List<PgSql> binds = new ArrayList<>();
+        List<SqlFragment> binds = new ArrayList<>();
         for (Object value : c.listedValues()) {
             PgFilterValues.bound(o, value).ifPresent(b -> binds.add(b.value()));
         }
         if (!binds.isEmpty()) {
-            parts.add(o.expr(false).then(" IN (").then(PgSql.join(", ", binds)).then(")"));
+            parts.add(o.expr(false).then(" IN (").then(SqlFragment.join(", ", binds)).then(")"));
         }
-        return PgSql.any(parts);
+        return SqlFragment.any(parts);
     }
 }

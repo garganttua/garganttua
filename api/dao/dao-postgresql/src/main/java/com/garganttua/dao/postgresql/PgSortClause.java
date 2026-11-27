@@ -8,13 +8,17 @@ import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.core.observability.Logger;
-import com.garganttua.dao.postgresql.schema.PgChildKind;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlChildKind;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.schema.SqlTypes;
+import com.garganttua.dao.sql.SqlBsonOrder;
+import com.garganttua.dao.sql.SqlHop;
+import com.garganttua.dao.sql.SqlPathSortKey;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Builds the {@code ORDER BY} of a read so that PostgreSQL returns rows in the order MongoDB would.
@@ -33,7 +37,7 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * EMPTY array sorts before a missing one; its elements live in a child table, hence a correlated
  * subquery;</li>
  * <li>a whole <b>embedded POJO</b> or <b>map</b> is compared as a BSON sub-document
- * ({@link PgBsonOrder});</li>
+ * ({@link SqlBsonOrder});</li>
  * <li>{@code _id} is MongoDB's name of the uuid;</li>
  * <li>an <b>unknown</b> field is missing on every document for MongoDB — all rows tie — so it adds
  * no key at all (a schema-less store cannot refuse it, so neither does this one);</li>
@@ -51,12 +55,12 @@ final class PgSortClause {
 
     private static final String BINARY_COLLATION = " COLLATE \"C\"";
 
-    private final PgTable table;
+    private final SqlTable table;
     private final PgPathLocator locator;
 
-    PgSortClause(PgTable table) {
+    PgSortClause(SqlTable table) {
         this.table = table;
-        // Keys inlined: an ORDER BY carries no bind values. "h" keeps its aliases apart from PgBsonOrder's.
+        // Keys inlined: an ORDER BY carries no bind values. "h" keeps its aliases apart from SqlBsonOrder's.
         this.locator = new PgPathLocator(table, "h", true);
     }
 
@@ -92,11 +96,11 @@ final class PgSortClause {
             // Same test as MongoDao: anything but asc sorts descending.
             boolean ascending = sort.getDirection() == SortDirection.asc;
             byId = MONGO_ID.equals(field) || table.id().dottedPath().equals(field);
-            keys.addAll(byId ? List.of(PgBsonOrder.ref(PgQuery.ALIAS, table.id()) + BINARY_COLLATION
+            keys.addAll(byId ? List.of(SqlBsonOrder.ref(SqlQuery.ALIAS, table.id()) + BINARY_COLLATION
                     + direction(ascending)) : keys(field, ascending));
         }
         if (paged && !byId) {
-            keys.add(PgBsonOrder.ref(PgQuery.ALIAS, table.id()) + BINARY_COLLATION + " ASC");
+            keys.add(SqlBsonOrder.ref(SqlQuery.ALIAS, table.id()) + BINARY_COLLATION + " ASC");
         }
         return keys.isEmpty() ? "" : "ORDER BY " + String.join(", ", keys);
     }
@@ -111,22 +115,22 @@ final class PgSortClause {
 
     /** The keys of a field, resolved most specific first; none for an unknown field. */
     private List<String> keys(String field, boolean ascending) throws ApiException {
-        Optional<PgColumn> column = table.column(field);
+        Optional<SqlColumn> column = table.column(field);
         if (column.isPresent()) {
             return columnKeys(column.get(), ascending);
         }
-        PgBsonOrder bson = new PgBsonOrder(table);
-        Optional<PgChildTable> child = table.children().stream().filter(c -> c.dottedPath().equals(field))
+        SqlBsonOrder bson = new SqlBsonOrder(table);
+        Optional<SqlChildTable> child = table.children().stream().filter(c -> c.dottedPath().equals(field))
                 .findFirst();
         if (child.isPresent()) {
             return childKeys(bson, child.get(), ascending);
         }
-        Optional<PgColumn> presence = table.presence(field);
+        Optional<SqlColumn> presence = table.presence(field);
         if (presence.isPresent()) {
             refuseNested(field);
-            PgColumn p = presence.get();
-            return List.of(bson.document(PgQuery.ALIAS, table.columns(), p.fieldPath(),
-                    PgBsonOrder.ref(PgQuery.ALIAS, p)).orNull() + direction(ascending));
+            SqlColumn p = presence.get();
+            return List.of(bson.document(SqlQuery.ALIAS, table.columns(), p.fieldPath(),
+                    SqlBsonOrder.ref(SqlQuery.ALIAS, p)).orNull() + direction(ascending));
         }
         Optional<PgPathLocator.Located> located = locator.locate(field);
         if (located.isPresent()) {
@@ -139,27 +143,27 @@ final class PgSortClause {
     }
 
     /** A single main-table column, keyed so its order is BSON's. */
-    private List<String> columnKeys(PgColumn column, boolean ascending) throws ApiException {
-        if (PgBsonOrder.rank(column).isEmpty()) {
-            throw new PgBsonOrder(table).unsortable(column);
+    private List<String> columnKeys(SqlColumn column, boolean ascending) throws ApiException {
+        if (SqlBsonOrder.rank(column).isEmpty()) {
+            throw new SqlBsonOrder(table).unsortable(column);
         }
-        String ref = PgBsonOrder.ref(PgQuery.ALIAS, column);
+        String ref = SqlBsonOrder.ref(SqlQuery.ALIAS, column);
         String dir = direction(ascending);
-        if (PgBsonOrder.floating(column)) {
+        if (SqlBsonOrder.floating(column)) {
             return List.of("(" + ref + " <> 'NaN')" + dir, ref + dir);
         }
-        if (PgTypes.BYTEA.equals(column.sqlType())) {
+        if (SqlTypes.BYTEA.equals(column.sqlType())) {
             return List.of("octet_length(" + ref + ")" + dir, ref + dir);
         }
         return List.of(ref + ("TEXT".equals(column.sqlType()) ? BINARY_COLLATION : "") + dir);
     }
 
     /** A whole collection (by its smallest / largest element) or a whole map (as a sub-document). */
-    private List<String> childKeys(PgBsonOrder bson, PgChildTable child, boolean ascending) throws ApiException {
+    private List<String> childKeys(SqlBsonOrder bson, SqlChildTable child, boolean ascending) throws ApiException {
         refuseNested(child.dottedPath());
-        Optional<PgColumn> presence = table.presence(child.dottedPath());
-        String presenceRef = presence.map(p -> PgBsonOrder.ref(PgQuery.ALIAS, p)).orElse("TRUE");
-        if (child.kind() == PgChildKind.MAP) {
+        Optional<SqlColumn> presence = table.presence(child.dottedPath());
+        String presenceRef = presence.map(p -> SqlBsonOrder.ref(SqlQuery.ALIAS, p)).orElse("TRUE");
+        if (child.kind() == SqlChildKind.MAP) {
             return List.of(bson.map(child, presenceRef).orNull() + direction(ascending));
         }
         String c = bson.alias("c");
@@ -167,7 +171,7 @@ final class PgSortClause {
         // MongoDB: an EMPTY array sorts below a missing field (and so, descending, after it).
         String e = bson.alias("c");
         keys.add("CASE WHEN " + presenceRef + " IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "
-                + PgNaming.quote(child.name()) + " " + e + " WHERE " + bson.owner(e) + ") THEN 0 ELSE 1 END"
+                + SqlNaming.quote(child.name()) + " " + e + " WHERE " + bson.owner(e) + ") THEN 0 ELSE 1 END"
                 + (ascending ? " ASC" : " DESC"));
         keys.add(extreme(bson, child, c, bson.element(child, c), ascending));
         return keys;
@@ -177,25 +181,25 @@ final class PgSortClause {
      * A path through the child tables — inside the elements of a collection ({@code lines.qty}),
      * across several collections ({@code orders.lines.qty}), onto a map entry ({@code stock.paris.qty}),
      * or a collection nested in an element ({@code lines.tags}): smallest / largest over every value
-     * reachable ({@link PgPathSortKey}). MongoDB gives an empty array no special place here — its key is
+     * reachable ({@link SqlPathSortKey}). MongoDB gives an empty array no special place here — its key is
      * simply missing.
      */
-    private List<String> pathKeys(PgBsonOrder bson, PgPathLocator.Located at, String field, boolean ascending)
+    private List<String> pathKeys(SqlBsonOrder bson, PgPathLocator.Located at, String field, boolean ascending)
             throws ApiException {
-        PgHop last = at.last();
-        PgChildTable child = last.child();
-        PgBsonOrder.Encoded element;
+        SqlHop last = at.last();
+        SqlChildTable child = last.child();
+        SqlBsonOrder.Encoded element;
         if (at.rest() == null) {
             // A nested collection of scalars sorts by its extreme element; one of objects, a map or a
             // reference collection would need BSON array-of-document order across levels. A map ENTRY is
             // a plain sub-document.
-            boolean scalars = child.kind() == PgChildKind.SCALAR_COLLECTION;
+            boolean scalars = child.kind() == SqlChildKind.SCALAR_COLLECTION;
             if (child.hasChildren() || (!scalars && !last.keyed())) {
                 throw nestedUnsortable(field);
             }
             element = bson.element(child, last.alias());
         } else {
-            Optional<PgColumn> column = child.valueColumns().stream()
+            Optional<SqlColumn> column = child.valueColumns().stream()
                     .filter(v -> v.dottedPath().equals(at.rest())).findFirst();
             if (column.isEmpty()) {
                 refuseInsideJson(at.rest(), child.valueColumns());
@@ -204,13 +208,13 @@ final class PgSortClause {
             }
             element = elementValue(bson, last, column.get(), field);
         }
-        return List.of(PgPathSortKey.of(bson, at.hops(), element, direction(ascending)));
+        return List.of(SqlPathSortKey.of(bson, at.hops(), element, direction(ascending)));
     }
 
     /** One value column of an element — or, for a presence bit, the POJO it marks, as a sub-document. */
-    private PgBsonOrder.Encoded elementValue(PgBsonOrder bson, PgHop hop, PgColumn target, String field)
+    private SqlBsonOrder.Encoded elementValue(SqlBsonOrder bson, SqlHop hop, SqlColumn target, String field)
             throws ApiException {
-        if (target.kind() != PgColumnKind.PRESENCE) {
+        if (target.kind() != SqlColumnKind.PRESENCE) {
             return bson.scalar(hop.alias(), target);
         }
         // A POJO of the element holding a collection: that collection is a nested table, not a column.
@@ -220,7 +224,7 @@ final class PgSortClause {
             throw nestedUnsortable(field);
         }
         return bson.document(hop.alias(), hop.child().valueColumns(), target.fieldPath(),
-                PgBsonOrder.ref(hop.alias(), target));
+                SqlBsonOrder.ref(hop.alias(), target));
     }
 
     /**
@@ -242,21 +246,21 @@ final class PgSortClause {
     }
 
     /** {@code (SELECT smallest-or-largest element)}: a null element is the smallest of all. */
-    private String extreme(PgBsonOrder bson, PgChildTable child, String c, PgBsonOrder.Encoded element,
+    private String extreme(SqlBsonOrder bson, SqlChildTable child, String c, SqlBsonOrder.Encoded element,
             boolean ascending) {
         String k = bson.alias("k");
         String dir = direction(ascending);
-        return "(SELECT " + k + ".e FROM (SELECT " + element.orNull() + " AS e FROM " + PgNaming.quote(child.name())
+        return "(SELECT " + k + ".e FROM (SELECT " + element.orNull() + " AS e FROM " + SqlNaming.quote(child.name())
                 + " " + c + " WHERE " + bson.owner(c) + ") AS " + k + " ORDER BY " + k + ".e" + dir + " LIMIT 1)"
                 + dir;
     }
 
     /** A path into a JSONB (or geometry) value: MongoDB would sort on it, but its BSON order is not reproduced. */
-    private void refuseInsideJson(String path, List<PgColumn> columns) throws ApiException {
-        for (PgColumn column : columns) {
-            if (column.kind() != PgColumnKind.PRESENCE && PgBsonOrder.rank(column).isEmpty()
+    private void refuseInsideJson(String path, List<SqlColumn> columns) throws ApiException {
+        for (SqlColumn column : columns) {
+            if (column.kind() != SqlColumnKind.PRESENCE && SqlBsonOrder.rank(column).isEmpty()
                     && !column.fieldPath().isEmpty() && path.startsWith(column.dottedPath() + ".")) {
-                throw new PgBsonOrder(table).unsortable(column);
+                throw new SqlBsonOrder(table).unsortable(column);
             }
         }
     }

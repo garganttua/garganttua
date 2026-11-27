@@ -17,6 +17,11 @@
 			<artifactId>garganttua-api-commons</artifactId>
 		</dependency>
 
+		<!-- The relational core shared by the SQL DAOs: this module is its PostgreSQL dialect. -->
+		<dependency>
+			<groupId>com.garganttua</groupId>
+			<artifactId>garganttua-api-dao-sql</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>com.garganttua</groupId>
 			<artifactId>garganttua-api-binding-postgresql</artifactId>

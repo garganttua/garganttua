@@ -32,9 +32,10 @@ import com.garganttua.api.commons.pageable.Pageable;
 import com.garganttua.api.commons.sort.Sort;
 import com.garganttua.api.commons.sort.SortDirection;
 import com.garganttua.core.reflection.IClass;
-import com.garganttua.dao.postgresql.schema.PgDdl;
-import com.garganttua.dao.postgresql.schema.PgSchemaModel;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlDdl;
+import com.garganttua.dao.sql.schema.SqlSchemaModel;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
  * Filters, sorts and text search on paths crossing SEVERAL child tables, proved on the real engine.
@@ -142,13 +143,13 @@ class PgNestedQueryTest {
         }
     }
 
-    private static PgTable model(String domain, Class<?> dto) {
-        return PgSchemaModel.of(domain, IClass.getClass(dto), "uuid", Map.of());
+    private static SqlTable model(String domain, Class<?> dto) {
+        return SqlSchemaModel.of(domain, IClass.getClass(dto), "uuid", Map.of());
     }
 
     private static void create(Connection c, String domain, Class<?> dto) throws SQLException {
         try (Statement s = c.createStatement()) {
-            for (String ddl : PgDdl.create(model(domain, dto))) {
+            for (String ddl : SqlDdl.create(model(domain, dto))) {
                 s.execute(ddl);
             }
         }
@@ -252,7 +253,7 @@ class PgNestedQueryTest {
         return new PgQueryBuilder(model(domain, dto), IClass.getClass(dto));
     }
 
-    private static List<String> run(String domain, PgQuery q) throws SQLException {
+    private static List<String> run(String domain, SqlQuery q) throws SQLException {
         String sql = "SELECT t.uuid FROM " + domain + " t WHERE " + q.where() + " " + q.orderBy();
         List<String> ids = new ArrayList<>();
         try (Connection c = db.getConnection(); PreparedStatement p = c.prepareStatement(sql)) {
@@ -269,7 +270,7 @@ class PgNestedQueryTest {
     }
 
     private static void assertMatches(String domain, IFilter filter, String... expected) throws Exception {
-        PgQuery q = builder(domain).build(Optional.empty(), Optional.of(filter), Optional.empty(), Optional.empty());
+        SqlQuery q = builder(domain).build(Optional.empty(), Optional.of(filter), Optional.empty(), Optional.empty());
         assertEquals(Set.of(expected), new HashSet<>(run(domain, q)), () -> "wrong rows; WHERE was: " + q.where());
     }
 

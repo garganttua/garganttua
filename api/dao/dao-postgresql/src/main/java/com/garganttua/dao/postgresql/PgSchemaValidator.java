@@ -11,10 +11,10 @@ import java.util.Map;
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.dao.postgresql.PgSchemaInspector.StoredColumn;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgDdl;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlDdl;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
 
 /**
@@ -45,7 +45,7 @@ final class PgSchemaValidator {
      * @throws ApiException listing every problem and its fix, when the schema is incomplete
      * @throws SQLException if the catalog cannot be read
      */
-    static void validate(Connection connection, PgTable table) throws ApiException, SQLException {
+    static void validate(Connection connection, SqlTable table) throws ApiException, SQLException {
         PgSchemaValidator validator = new PgSchemaValidator();
         validator.checkExtension(connection, table);
         for (PgSchemaExpectation.Table expected : PgSchemaExpectation.of(table)) {
@@ -61,18 +61,18 @@ final class PgSchemaValidator {
      * The owner index of a nested table is a performance matter, not a correctness one: it is advised,
      * never required — a schema migrated before it existed must keep starting.
      */
-    private static void adviseOwnerIndexes(Connection connection, PgTable table) throws SQLException {
+    private static void adviseOwnerIndexes(Connection connection, SqlTable table) throws SQLException {
         List<String> missing = new ArrayList<>();
         try (PreparedStatement exists = connection.prepareStatement(
                 "SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?")) {
-            for (PgChildTable child : table.allChildren()) {
+            for (SqlChildTable child : table.allChildren()) {
                 if (!child.nested()) {
                     continue;
                 }
-                exists.setString(1, PgNaming.index(child.name(), PgChildTable.OWNER));
+                exists.setString(1, SqlNaming.index(child.name(), SqlChildTable.OWNER));
                 try (ResultSet rs = exists.executeQuery()) {
                     if (!rs.next()) {
-                        missing.add(PgDdl.ownerIndex(child) + ";");
+                        missing.add(SqlDdl.ownerIndex(child) + ";");
                     }
                 }
             }
@@ -84,7 +84,7 @@ final class PgSchemaValidator {
         }
     }
 
-    private void checkExtension(Connection connection, PgTable table) throws SQLException {
+    private void checkExtension(Connection connection, SqlTable table) throws SQLException {
         if (table.needsPostgis()
                 && !PgSchemaInspector.hasExtension(connection, PgSchemaExpectation.POSTGIS)) {
             problems.add("extension '" + PgSchemaExpectation.POSTGIS + "' is not installed (geometry fields: "
@@ -95,7 +95,7 @@ final class PgSchemaValidator {
 
     private void checkTable(PgSchemaExpectation.Table expected, Map<String, StoredColumn> stored) {
         if (stored.isEmpty()) {
-            problems.add("table " + PgNaming.quote(expected.name()) + " does not exist");
+            problems.add("table " + SqlNaming.quote(expected.name()) + " does not exist");
             fixes.add(expected.create() + ";");
             return;
         }
@@ -114,10 +114,10 @@ final class PgSchemaValidator {
     }
 
     private static String qualified(PgSchemaExpectation.Table table, PgSchemaExpectation.Column column) {
-        return PgNaming.quote(table.name()) + "." + PgNaming.quote(column.name());
+        return SqlNaming.quote(table.name()) + "." + SqlNaming.quote(column.name());
     }
 
-    private String report(PgTable table) {
+    private String report(SqlTable table) {
         StringBuilder message = new StringBuilder()
                 .append("The database schema does not match the model of table '").append(table.name())
                 .append("', and schema mode ").append(SchemaMode.VALIDATE)

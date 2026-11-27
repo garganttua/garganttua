@@ -8,16 +8,19 @@ import java.util.List;
 import java.util.Optional;
 
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.dao.postgresql.schema.PgChildKind;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgColumnKind;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
-import com.garganttua.dao.postgresql.schema.PgTypes;
+import com.garganttua.dao.sql.schema.SqlChildKind;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlColumnKind;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.schema.SqlTypes;
+import com.garganttua.dao.sql.SqlFragment;
+import com.garganttua.dao.sql.SqlHop;
+import com.garganttua.dao.sql.SqlQuery;
 
 /**
- * Follows a dotted field path down the tree of child tables, one {@link PgHop} per collection or map
+ * Follows a dotted field path down the tree of child tables, one {@link SqlHop} per collection or map
  * entry it crosses — at any depth.
  *
  * <p>
@@ -26,7 +29,7 @@ import com.garganttua.dao.postgresql.schema.PgTypes;
  * ({@code List<List<String>>}) is NOT descended into by a field name — MongoDB does not traverse
  * nested arrays for a dotted path either. A map whose values are collections
  * ({@code Map<String, List<Book>>}) is crossed through its key, then through the table of the entry's
- * value ({@link PgChildTable#elementTable}).
+ * value ({@link SqlChildTable#elementTable}).
  * </p>
  *
  * <p>
@@ -43,21 +46,21 @@ final class PgPathLocator {
      * @param rest the rest of the path inside the last hop's element; null when the path names the
      *             last hop's collection itself, or the value of the map entry it reached
      */
-    record Located(List<PgHop> hops, String rest) {
+    record Located(List<SqlHop> hops, String rest) {
 
         Located {
             hops = List.copyOf(hops);
         }
 
         /** {@return the last hop} */
-        PgHop last() {
+        SqlHop last() {
             return hops.get(hops.size() - 1);
         }
     }
 
     private static final String EQUALS = " = ";
 
-    private final PgTable table;
+    private final SqlTable table;
     private final String aliasPrefix;
     private final boolean inlineKeys;
 
@@ -68,7 +71,7 @@ final class PgPathLocator {
      * @param inlineKeys  whether map keys are inlined as literals (for an {@code ORDER BY}) instead of
      *                    bound
      */
-    PgPathLocator(PgTable table, String aliasPrefix, boolean inlineKeys) {
+    PgPathLocator(SqlTable table, String aliasPrefix, boolean inlineKeys) {
         this.table = table;
         this.aliasPrefix = aliasPrefix;
         this.inlineKeys = inlineKeys;
@@ -82,7 +85,7 @@ final class PgPathLocator {
      *         key of the map
      */
     Optional<Located> locate(String field) {
-        Optional<PgChildTable> top = deepest(table.children(), field);
+        Optional<SqlChildTable> top = deepest(table.children(), field);
         if (top.isEmpty()) {
             return Optional.empty();
         }
@@ -95,40 +98,40 @@ final class PgPathLocator {
      * @param holder the hop whose elements are collections
      * @return the hop to their items, or empty when the elements are not collections
      */
-    Optional<PgHop> items(List<PgHop> holder) {
-        PgHop last = holder.get(holder.size() - 1);
+    Optional<SqlHop> items(List<SqlHop> holder) {
+        SqlHop last = holder.get(holder.size() - 1);
         return last.child().elementTable().map(items -> hop(holder, items));
     }
 
-    private Optional<Located> descend(List<PgHop> hops, PgChildTable child, String rest) {
-        if (child.kind() == PgChildKind.MAP && rest != null) {
+    private Optional<Located> descend(List<SqlHop> hops, SqlChildTable child, String rest) {
+        if (child.kind() == SqlChildKind.MAP && rest != null) {
             return entry(hops, child, rest);
         }
         hops.add(hop(hops, child));
         if (rest == null) {
             return Optional.of(new Located(hops, null));
         }
-        if (child.kind() == PgChildKind.NESTED_COLLECTION) {
+        if (child.kind() == SqlChildKind.NESTED_COLLECTION) {
             // A list of maps is a list of sub-documents, traversed by key; a list of lists is not traversed.
-            Optional<PgChildTable> items = child.elementTable().filter(e -> e.kind() == PgChildKind.MAP);
+            Optional<SqlChildTable> items = child.elementTable().filter(e -> e.kind() == SqlChildKind.MAP);
             return items.isPresent() ? descend(hops, items.get(), rest) : Optional.of(new Located(hops, rest));
         }
         return inside(hops, child, rest);
     }
 
     /** A map crossed through the key the path names: its entry, then what the entry's value holds. */
-    private Optional<Located> entry(List<PgHop> hops, PgChildTable map, String rest) {
+    private Optional<Located> entry(List<SqlHop> hops, SqlChildTable map, String rest) {
         boolean scalarValues = map.elementTable().isEmpty() && map.valueColumns().size() == 1
                 && map.valueColumns().get(0).fieldPath().isEmpty();
         int dot = rest.indexOf('.');
         String key = scalarValues || dot < 0 ? rest : rest.substring(0, dot);
         String after = scalarValues || dot < 0 ? null : rest.substring(dot + 1);
-        Optional<PgHop> keyed = keyed(hops, map, key);
+        Optional<SqlHop> keyed = keyed(hops, map, key);
         if (keyed.isEmpty()) {
             return Optional.empty();
         }
         hops.add(keyed.get());
-        Optional<PgChildTable> value = map.elementTable();
+        Optional<SqlChildTable> value = map.elementTable();
         if (value.isPresent()) {
             // The entry's value is itself a collection: its rows live in the element table.
             return descend(hops, value.get(), after);
@@ -137,9 +140,9 @@ final class PgPathLocator {
     }
 
     /** A path inside a POJO element: into a collection it holds, or onto its own columns. */
-    private Optional<Located> inside(List<PgHop> hops, PgChildTable holder, String rest) {
-        List<PgChildTable> held = holder.children().stream().filter(c -> !c.fieldPath().isEmpty()).toList();
-        Optional<PgChildTable> next = deepest(held, rest);
+    private Optional<Located> inside(List<SqlHop> hops, SqlChildTable holder, String rest) {
+        List<SqlChildTable> held = holder.children().stream().filter(c -> !c.fieldPath().isEmpty()).toList();
+        Optional<SqlChildTable> next = deepest(held, rest);
         if (next.isPresent()) {
             return descend(hops, next.get(), remainder(next.get(), rest));
         }
@@ -147,16 +150,16 @@ final class PgPathLocator {
     }
 
     /** A hop over every row of a collection, under the row the previous hop (or the root) reached. */
-    private PgHop hop(List<PgHop> hops, PgChildTable child) {
+    private SqlHop hop(List<SqlHop> hops, SqlChildTable child) {
         String alias = alias(hops.size() + 1);
-        return new PgHop(child, alias, scope(hops, alias), absent(hops, child, alias), false);
+        return new SqlHop(child, alias, scope(hops, alias), absent(hops, child, alias), false);
     }
 
     /** A hop onto one map entry: the rows of the map, narrowed to the key. */
-    private Optional<PgHop> keyed(List<PgHop> hops, PgChildTable map, String key) {
+    private Optional<SqlHop> keyed(List<SqlHop> hops, SqlChildTable map, String key) {
         String alias = alias(hops.size() + 1);
-        PgColumn keyColumn = new PgColumn(PgChildTable.KEY, PgTypes.sqlTypeOf(map.keyType()).orElse(PgTypes.TEXT),
-                PgColumnKind.SCALAR, List.of(), map.keyType());
+        SqlColumn keyColumn = new SqlColumn(SqlChildTable.KEY, SqlTypes.sqlTypeOf(map.keyType()).orElse(SqlTypes.TEXT),
+                SqlColumnKind.SCALAR, List.of(), map.keyType());
         Object value;
         try {
             value = PgValues.toJdbc(keyColumn, key);
@@ -164,24 +167,24 @@ final class PgPathLocator {
             // A key that cannot be a key of this map (text against an Integer-keyed map) is in no document.
             return Optional.empty();
         }
-        String ref = alias + "." + PgNaming.quote(PgChildTable.KEY);
-        PgSql narrowed = inlineKeys
-                ? PgSql.of(" AND " + ref + EQUALS + literal(String.valueOf(value), keyColumn.sqlType()))
-                : PgSql.of(" AND " + ref + EQUALS + PgValues.placeholder(keyColumn), value);
-        PgSql scope = scope(hops, alias).then(narrowed);
-        PgSql keyAbsent = PgSql.of("SELECT 1 FROM " + PgNaming.quote(map.name()) + " " + alias + " WHERE ")
+        String ref = alias + "." + SqlNaming.quote(SqlChildTable.KEY);
+        SqlFragment narrowed = inlineKeys
+                ? SqlFragment.of(" AND " + ref + EQUALS + literal(String.valueOf(value), keyColumn.sqlType()))
+                : SqlFragment.of(" AND " + ref + EQUALS + PgValues.placeholder(keyColumn), value);
+        SqlFragment scope = scope(hops, alias).then(narrowed);
+        SqlFragment keyAbsent = SqlFragment.of("SELECT 1 FROM " + SqlNaming.quote(map.name()) + " " + alias + " WHERE ")
                 .then(scope).wrap("NOT EXISTS (", ")");
-        return Optional.of(new PgHop(map, alias, scope, keyAbsent, true));
+        return Optional.of(new SqlHop(map, alias, scope, keyAbsent, true));
     }
 
     /** {@code _owner} to the root row for the first level, {@code _parent} to the row above for the others. */
-    private PgSql scope(List<PgHop> hops, String alias) {
+    private SqlFragment scope(List<SqlHop> hops, String alias) {
         if (hops.isEmpty()) {
-            return PgSql.of(alias + "." + PgNaming.quote(PgChildTable.OWNER) + EQUALS + PgQuery.ALIAS + "."
-                    + PgNaming.quote(table.id().name()));
+            return SqlFragment.of(alias + "." + SqlNaming.quote(SqlChildTable.OWNER) + EQUALS + SqlQuery.ALIAS + "."
+                    + SqlNaming.quote(table.id().name()));
         }
-        return PgSql.of(alias + "." + PgNaming.quote(PgChildTable.PARENT) + EQUALS
-                + hops.get(hops.size() - 1).ref(PgChildTable.ID));
+        return SqlFragment.of(alias + "." + SqlNaming.quote(SqlChildTable.PARENT) + EQUALS
+                + hops.get(hops.size() - 1).ref(SqlChildTable.ID));
     }
 
     /**
@@ -189,20 +192,20 @@ final class PgPathLocator {
      * row, or among the element columns of the parent table; for the table of an element that IS a
      * collection, the element's own presence bit. Without a bit, no row at all.
      */
-    private PgSql absent(List<PgHop> hops, PgChildTable child, String alias) {
+    private SqlFragment absent(List<SqlHop> hops, SqlChildTable child, String alias) {
         Optional<String> bit;
         if (hops.isEmpty()) {
-            bit = table.presence(child.dottedPath()).map(p -> PgQuery.ALIAS + "." + PgNaming.quote(p.name()));
+            bit = table.presence(child.dottedPath()).map(p -> SqlQuery.ALIAS + "." + SqlNaming.quote(p.name()));
         } else {
-            PgHop holder = hops.get(hops.size() - 1);
+            SqlHop holder = hops.get(hops.size() - 1);
             List<String> path = child.fieldPath();
-            bit = path.isEmpty() ? Optional.of(holder.ref(PgChildTable.PRESENT))
+            bit = path.isEmpty() ? Optional.of(holder.ref(SqlChildTable.PRESENT))
                     : holder.child().valueColumns().stream()
-                            .filter(c -> c.kind() == PgColumnKind.PRESENCE && c.fieldPath().equals(path))
+                            .filter(c -> c.kind() == SqlColumnKind.PRESENCE && c.fieldPath().equals(path))
                             .findFirst().map(c -> holder.ref(c.name()));
         }
-        return bit.map(b -> PgSql.of(b + " IS NULL")).orElseGet(() -> PgSql.of("SELECT 1 FROM "
-                + PgNaming.quote(child.name()) + " " + alias + " WHERE ").then(scope(hops, alias))
+        return bit.map(b -> SqlFragment.of(b + " IS NULL")).orElseGet(() -> SqlFragment.of("SELECT 1 FROM "
+                + SqlNaming.quote(child.name()) + " " + alias + " WHERE ").then(scope(hops, alias))
                 .wrap("NOT EXISTS (", ")"));
     }
 
@@ -211,19 +214,19 @@ final class PgPathLocator {
     }
 
     /** The table among {@code candidates} whose (relative) path is the field or its deepest proper prefix. */
-    private static Optional<PgChildTable> deepest(List<PgChildTable> candidates, String field) {
+    private static Optional<SqlChildTable> deepest(List<SqlChildTable> candidates, String field) {
         return candidates.stream()
                 .filter(c -> field.equals(relative(c)) || field.startsWith(relative(c) + "."))
                 .max(Comparator.comparingInt(c -> relative(c).length()));
     }
 
     /** {@return the path after a table's own, or null when the field names the table itself} */
-    private static String remainder(PgChildTable child, String field) {
+    private static String remainder(SqlChildTable child, String field) {
         String own = relative(child);
         return field.length() == own.length() ? null : field.substring(own.length() + 1);
     }
 
-    private static String relative(PgChildTable child) {
+    private static String relative(SqlChildTable child) {
         return String.join(".", child.fieldPath());
     }
 
@@ -231,6 +234,6 @@ final class PgPathLocator {
     private static String literal(String text, String sqlType) {
         String hex = HexFormat.of().formatHex(text.getBytes(StandardCharsets.UTF_8));
         String decoded = "convert_from(decode('" + hex + "', 'hex'), 'UTF8')";
-        return PgTypes.TEXT.equals(sqlType) ? decoded : "CAST(" + decoded + " AS " + sqlType + ")";
+        return SqlTypes.TEXT.equals(sqlType) ? decoded : "CAST(" + decoded + " AS " + sqlType + ")";
     }
 }

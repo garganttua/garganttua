@@ -7,8 +7,11 @@ import java.util.Set;
 
 import com.garganttua.api.commons.ApiException;
 import com.garganttua.api.commons.filter.IFilter;
-import com.garganttua.dao.postgresql.schema.PgColumn;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlColumn;
+import com.garganttua.dao.sql.schema.SqlTable;
+import com.garganttua.dao.sql.SqlCondition;
+import com.garganttua.dao.sql.SqlField;
+import com.garganttua.dao.sql.SqlFragment;
 
 /**
  * Translates an {@link IFilter} tree into a {@code WHERE} expression over the main table {@code t}.
@@ -45,13 +48,13 @@ final class PgFilterTranslator {
             "$empty", "$in", "$nin", "$text", "$geoWithin", "$geoWithinSphere", "$geoIntersects", "$near",
             "$nearSphere");
 
-    private final PgTable table;
+    private final SqlTable table;
     private final PgFieldResolver resolver;
     private final PgScalarPredicates scalars;
     private final PgElementPredicates elements;
-    private final Optional<PgColumn> textColumn;
+    private final Optional<SqlColumn> textColumn;
 
-    PgFilterTranslator(PgTable table) {
+    PgFilterTranslator(SqlTable table) {
         this(table, Optional.empty());
     }
 
@@ -60,7 +63,7 @@ final class PgFilterTranslator {
      * @param textColumn the column a declared text index covers, which {@code $text} then searches
      *                   alone; empty to search every string of the entity
      */
-    PgFilterTranslator(PgTable table, Optional<PgColumn> textColumn) {
+    PgFilterTranslator(SqlTable table, Optional<SqlColumn> textColumn) {
         this.table = table;
         this.textColumn = textColumn == null ? Optional.empty() : textColumn;
         this.resolver = new PgFieldResolver(table);
@@ -75,7 +78,7 @@ final class PgFilterTranslator {
      * @return the {@code WHERE} expression and its values
      * @throws ApiException when the filter is malformed (an unknown FIELD is not an error: it is absent)
      */
-    PgSql translate(IFilter filter) throws ApiException {
+    SqlFragment translate(IFilter filter) throws ApiException {
         PgTextSearch.validate(filter);
         PgGeoPredicates.nearOrder(table, filter);
         return translate(filter, false);
@@ -92,9 +95,9 @@ final class PgFilterTranslator {
         return PgGeoPredicates.nearOrder(table, filter);
     }
 
-    private PgSql translate(IFilter filter, boolean negated) throws ApiException {
+    private SqlFragment translate(IFilter filter, boolean negated) throws ApiException {
         if (filter == null || filter.getName() == null) {
-            return PgSql.TRUE;
+            return SqlFragment.TRUE;
         }
         return switch (filter.getName()) {
             case "$and" -> logical(filter, "$and", negated);
@@ -105,20 +108,20 @@ final class PgFilterTranslator {
         };
     }
 
-    private PgSql logical(IFilter filter, String operator, boolean negated) throws ApiException {
+    private SqlFragment logical(IFilter filter, String operator, boolean negated) throws ApiException {
         List<IFilter> subs = filter.getFilters();
         if (subs == null || subs.size() < 2) {
             throw new ApiException("Logical operator " + operator + " requires at least 2 sub-filters");
         }
-        List<PgSql> parts = new ArrayList<>();
+        List<SqlFragment> parts = new ArrayList<>();
         for (IFilter sub : subs) {
             parts.add(translate(sub, negated));
         }
-        PgSql joined = PgSql.join("$and".equals(operator) ? " AND " : " OR ", parts).wrap("(", ")");
+        SqlFragment joined = SqlFragment.join("$and".equals(operator) ? " AND " : " OR ", parts).wrap("(", ")");
         return "$nor".equals(operator) ? joined.wrap("NOT ", "") : joined;
     }
 
-    private PgSql field(IFilter filter, boolean negated) throws ApiException {
+    private SqlFragment field(IFilter filter, boolean negated) throws ApiException {
         if (!(filter.getValue() instanceof String fieldName)) {
             throw new ApiException("$field filter requires a field name as value");
         }
@@ -126,13 +129,13 @@ final class PgFilterTranslator {
         if (subs == null || subs.size() != 1) {
             throw new ApiException("$field filter requires exactly 1 comparison sub-filter");
         }
-        PgCondition condition = condition(fieldName, subs.get(0));
-        PgSql predicate = "$text".equals(condition.op()) ? text(condition) : compare(condition);
+        SqlCondition condition = condition(fieldName, subs.get(0));
+        SqlFragment predicate = "$text".equals(condition.op()) ? text(condition) : compare(condition);
         return negated ? predicate.wrap("COALESCE((", "), FALSE)") : predicate;
     }
 
     /** Lifts one comparison out of the tree, with MongoFilterConverter's validation. */
-    private static PgCondition condition(String fieldName, IFilter comparison) throws ApiException {
+    private static SqlCondition condition(String fieldName, IFilter comparison) throws ApiException {
         String op = comparison.getName();
         if (op == null || !COMPARISONS.contains(op)) {
             throw new ApiException("Unsupported comparison operator: " + op);
@@ -147,15 +150,15 @@ final class PgFilterTranslator {
                 values.add(value.getValue());
             }
         }
-        return new PgCondition(op, comparison.getValue(), values, fieldName);
+        return new SqlCondition(op, comparison.getValue(), values, fieldName);
     }
 
-    private PgSql compare(PgCondition condition) throws ApiException {
-        PgField field = resolver.resolve(condition.field());
+    private SqlFragment compare(SqlCondition condition) throws ApiException {
+        SqlField field = resolver.resolve(condition.field());
         return switch (field) {
-            case PgField.Scalar s -> scalars.on(s.operand(), condition);
-            case PgField.Element e -> elements.on(e, condition);
-            case PgField.Opaque o -> opaque(o, condition);
+            case SqlField.Scalar s -> scalars.on(s.operand(), condition);
+            case SqlField.Element e -> elements.on(e, condition);
+            case SqlField.Opaque o -> opaque(o, condition);
         };
     }
 
@@ -165,29 +168,29 @@ final class PgFilterTranslator {
      * equals an object, so MongoDB answers from presence alone: the "missing value" answer where it
      * is absent (or null), the "different value" answer where it is there.
      */
-    private static PgSql opaque(PgField.Opaque o, PgCondition c) throws ApiException {
+    private static SqlFragment opaque(SqlField.Opaque o, SqlCondition c) throws ApiException {
         return switch (c.op()) {
             case "$empty" -> o.absent();
-            case "$eq", "$gte", "$lte" -> c.value() == null ? o.nullish() : PgSql.FALSE;
-            case "$ne" -> c.value() == null ? PgSql.not(o.nullish()) : PgSql.TRUE;
-            case "$in" -> c.listsNull() ? o.nullish() : PgSql.FALSE;
-            case "$nin" -> c.listsNull() ? PgSql.not(o.nullish()) : PgSql.TRUE;
+            case "$eq", "$gte", "$lte" -> c.value() == null ? o.nullish() : SqlFragment.FALSE;
+            case "$ne" -> c.value() == null ? SqlFragment.not(o.nullish()) : SqlFragment.TRUE;
+            case "$in" -> c.listsNull() ? o.nullish() : SqlFragment.FALSE;
+            case "$nin" -> c.listsNull() ? SqlFragment.not(o.nullish()) : SqlFragment.TRUE;
             case "$regex" -> requireValue(c, "$regex filter on field '" + c.field() + "' requires a pattern");
             case "$geoWithin", "$geoWithinSphere", "$geoIntersects", "$near", "$nearSphere" -> requireValue(c,
                     c.op() + " filter on field '" + c.field() + "' requires a GeoJSON geometry value");
-            default -> PgSql.FALSE;
+            default -> SqlFragment.FALSE;
         };
     }
 
     /** MongoFilterConverter fails on a missing operand whatever the field: so must this. */
-    private static PgSql requireValue(PgCondition c, String message) throws ApiException {
+    private static SqlFragment requireValue(SqlCondition c, String message) throws ApiException {
         if (c.value() == null) {
             throw new ApiException(message);
         }
-        return PgSql.FALSE;
+        return SqlFragment.FALSE;
     }
 
-    private PgSql text(PgCondition c) throws ApiException {
+    private SqlFragment text(SqlCondition c) throws ApiException {
         return textColumn.isPresent() ? PgTextSearch.predicateOnIndexed(textColumn.get(), c.value())
                 : PgTextSearch.predicate(table, c.value());
     }

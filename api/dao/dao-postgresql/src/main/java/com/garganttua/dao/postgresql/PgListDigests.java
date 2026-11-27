@@ -11,9 +11,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.garganttua.core.observability.Logger;
-import com.garganttua.dao.postgresql.schema.PgChildTable;
-import com.garganttua.dao.postgresql.schema.PgNaming;
-import com.garganttua.dao.postgresql.schema.PgTable;
+import com.garganttua.dao.sql.schema.SqlChildTable;
+import com.garganttua.dao.sql.schema.SqlNaming;
+import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
 
 /**
@@ -103,13 +103,13 @@ final class PgListDigests {
      *
      * @param table the model
      */
-    static Map<PgChildTable, String> columns(PgTable table) {
-        Map<PgChildTable, String> columns = new LinkedHashMap<>();
-        for (PgChildTable child : table.children()) {
+    static Map<SqlChildTable, String> columns(SqlTable table) {
+        Map<SqlChildTable, String> columns = new LinkedHashMap<>();
+        for (SqlChildTable child : table.children()) {
             List<String> path = new ArrayList<>();
             path.add(DIGEST_PREFIX);
             path.addAll(child.absolutePath());
-            columns.put(child, PgNaming.column(path));
+            columns.put(child, SqlNaming.column(path));
         }
         return columns;
     }
@@ -126,7 +126,7 @@ final class PgListDigests {
      */
     @SuppressFBWarnings(value = "SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE",
             justification = SuppressFBWarnings.GENERATED_SQL)
-    static boolean ensure(Connection connection, PgTable table, SchemaMode mode) throws SQLException {
+    static boolean ensure(Connection connection, SqlTable table, SchemaMode mode) throws SQLException {
         if (table.children().isEmpty()) {
             return false;
         }
@@ -162,42 +162,42 @@ final class PgListDigests {
      * Sorts what is not in place: {@code missing} — without it the digests cannot be used at all —
      * and {@code outdated} — a trigger of ALPHA30, correct but without its {@code WHEN}, replaced.
      */
-    private static void inspect(Connection connection, PgTable table, List<String> missing, List<String> outdated)
+    private static void inspect(Connection connection, SqlTable table, List<String> missing, List<String> outdated)
             throws SQLException {
-        Map<PgChildTable, String> columns = columns(table);
+        Map<SqlChildTable, String> columns = columns(table);
         for (String column : columns.values()) {
             if (!exists(connection, COLUMN_EXISTS, table.name(), column)) {
-                missing.add("ALTER TABLE " + PgNaming.quote(table.name()) + " ADD COLUMN IF NOT EXISTS "
-                        + PgNaming.quote(column) + " TEXT");
+                missing.add("ALTER TABLE " + SqlNaming.quote(table.name()) + " ADD COLUMN IF NOT EXISTS "
+                        + SqlNaming.quote(column) + " TEXT");
             }
         }
         if (!exists(connection, FUNCTION_EXISTS, FUNCTION)) {
             missing.add(CREATE_FUNCTION);
         }
-        for (Map.Entry<PgChildTable, String> top : columns.entrySet()) {
-            for (PgChildTable child : subtree(top.getKey())) {
+        for (Map.Entry<SqlChildTable, String> top : columns.entrySet()) {
+            for (SqlChildTable child : subtree(top.getKey())) {
                 triggers(connection, table, child, top.getValue(), missing, outdated);
             }
         }
     }
 
-    private static void triggers(Connection connection, PgTable table, PgChildTable child, String digestColumn,
+    private static void triggers(Connection connection, SqlTable table, SqlChildTable child, String digestColumn,
             List<String> missing, List<String> outdated) throws SQLException {
         String arguments = "('" + table.name().replace("'", "''") + "', '" + digestColumn.replace("'", "''") + "', '"
                 + table.id().name().replace("'", "''") + "')";
-        trigger(connection, child, PgNaming.index(child.name(), TRIGGER_SUFFIX),
-                " AFTER INSERT OR UPDATE OR DELETE ON " + PgNaming.quote(child.name()) + " FOR EACH ROW" + WHEN
+        trigger(connection, child, SqlNaming.index(child.name(), TRIGGER_SUFFIX),
+                " AFTER INSERT OR UPDATE OR DELETE ON " + SqlNaming.quote(child.name()) + " FOR EACH ROW" + WHEN
                         + " EXECUTE FUNCTION " + FUNCTION + arguments,
                 missing, outdated);
-        trigger(connection, child, PgNaming.index(child.name(), TRUNCATE_TRIGGER_SUFFIX),
-                " AFTER TRUNCATE ON " + PgNaming.quote(child.name()) + " FOR EACH STATEMENT" + WHEN
+        trigger(connection, child, SqlNaming.index(child.name(), TRUNCATE_TRIGGER_SUFFIX),
+                " AFTER TRUNCATE ON " + SqlNaming.quote(child.name()) + " FOR EACH STATEMENT" + WHEN
                         + " EXECUTE FUNCTION " + FUNCTION + arguments,
                 missing, outdated);
     }
 
-    private static void trigger(Connection connection, PgChildTable child, String name, String definition,
+    private static void trigger(Connection connection, SqlChildTable child, String name, String definition,
             List<String> missing, List<String> outdated) throws SQLException {
-        String create = "CREATE TRIGGER " + PgNaming.quote(name) + definition;
+        String create = "CREATE TRIGGER " + SqlNaming.quote(name) + definition;
         try (PreparedStatement statement = connection.prepareStatement(TRIGGER_STATE)) {
             statement.setString(1, child.name());
             statement.setString(2, name);
@@ -205,7 +205,7 @@ final class PgListDigests {
                 if (!rs.next()) {
                     missing.add(create);
                 } else if (!rs.getBoolean(1)) {
-                    outdated.add("DROP TRIGGER " + PgNaming.quote(name) + " ON " + PgNaming.quote(child.name()));
+                    outdated.add("DROP TRIGGER " + SqlNaming.quote(name) + " ON " + SqlNaming.quote(child.name()));
                     outdated.add(create);
                 }
             }
@@ -213,10 +213,10 @@ final class PgListDigests {
     }
 
     /** A top-level child table and every table below it. */
-    private static List<PgChildTable> subtree(PgChildTable top) {
-        List<PgChildTable> out = new ArrayList<>();
+    private static List<SqlChildTable> subtree(SqlChildTable top) {
+        List<SqlChildTable> out = new ArrayList<>();
         out.add(top);
-        for (PgChildTable child : top.children()) {
+        for (SqlChildTable child : top.children()) {
             out.addAll(subtree(child));
         }
         return out;
