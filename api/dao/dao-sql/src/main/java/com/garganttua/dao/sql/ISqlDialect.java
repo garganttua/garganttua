@@ -168,4 +168,14 @@ public interface ISqlDialect {
 
     /** {@return the digest capability}, empty when the database does not provide it: every write rewrites every collection. */
     Optional<ISqlListDigests> listDigests();
+
+    // ------------------------------------------------------------------
+    // Transactions
+    // ------------------------------------------------------------------
+
+    /**
+     * {@return the statement that opens a read-only snapshot in a just-begun transaction} — for a read of several
+     * statements, which must not see a write committed between two of them; empty when a transaction already is one.
+     */
+    Optional<String> snapshotStatement();
 }

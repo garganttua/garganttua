@@ -1,47 +1,32 @@
 package com.garganttua.dao.postgresql;
 
-import com.garganttua.dao.sql.SqlWriter;
-import com.garganttua.dao.sql.SqlReader;
-import com.garganttua.dao.sql.SqlChildAggregate;
-import com.garganttua.dao.sql.SqlQueryBuilder;
-import com.garganttua.dao.sql.SqlSchemaRegistry;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 
 import javax.sql.DataSource;
 
 import com.garganttua.api.commons.ApiException;
-import com.garganttua.api.commons.dao.IDao;
-import com.garganttua.api.commons.definition.DtoComposition;
 import com.garganttua.api.commons.definition.IDomainDefinition;
 import com.garganttua.api.commons.definition.IDtoDefinition;
 import com.garganttua.api.commons.definition.IEntityDefinition;
 import com.garganttua.api.commons.entity.EntityIndexRule;
 import com.garganttua.api.commons.entity.annotations.UnicityScope;
-import com.garganttua.api.commons.filter.IFilter;
-import com.garganttua.api.commons.pageable.IPageable;
-import com.garganttua.api.commons.service.Page;
-import com.garganttua.api.commons.sort.ISort;
 import com.garganttua.core.observability.Logger;
 import com.garganttua.core.reflection.IClass;
 import com.garganttua.core.reflection.ObjectAddress;
 import com.garganttua.core.reflection.annotations.Reflected;
 import com.garganttua.dao.postgresql.schema.PgIndexMode;
-import com.garganttua.dao.sql.schema.SqlSchemaModel;
-import com.garganttua.dao.sql.schema.SqlTable;
 import com.garganttua.dao.postgresql.schema.SchemaMode;
-import com.garganttua.dao.sql.SqlQuery;
+import com.garganttua.dao.sql.AbstractSqlDao;
+import com.garganttua.dao.sql.SqlQueryBuilder;
+import com.garganttua.dao.sql.schema.SqlTable;
 
 /**
- * PostgreSQL-backed {@link IDao}: one domain, one main table, one child table per collection — a
+ * PostgreSQL-backed {@link com.garganttua.api.commons.dao.IDao}: one domain, one main table, one child table per collection — a
  * relational mapping, one column per field.
  *
  * <p>
@@ -73,24 +58,12 @@ import com.garganttua.dao.sql.SqlQuery;
  * </p>
  */
 @Reflected
-public class PgDao implements IDao {
+public class PgDao extends AbstractSqlDao {
 
     private static final Logger log = Logger.getLogger(PgDao.class);
 
-    private final DataSource dataSource;
-    private final String domainName;
-    private final SqlSchemaRegistry registry;
     private final SchemaMode schemaMode;
     private final PgIndexMode indexMode;
-
-    /** The transaction a read of several statements runs in: one snapshot, nothing written. */
-    private static final String SNAPSHOT = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY";
-
-    private volatile Wiring wiring;
-
-    /** The collaborators of one registered domain — rebuilt as a whole if the domain re-registers. */
-    private record Wiring(SqlTable table, SqlWriter writer, SqlReader reader, SqlQueryBuilder queries) {
-    }
 
     /**
      * A DAO with its own registry, creating its tables if they are missing.
@@ -125,55 +98,26 @@ public class PgDao implements IDao {
      */
     public PgDao(DataSource dataSource, String domainName, PgSchemaRegistry registry, SchemaMode schemaMode,
             PgIndexMode indexMode) {
-        this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
-        this.domainName = Objects.requireNonNull(domainName, "domainName");
-        this.registry = Objects.requireNonNull(registry, "registry");
+        super(PgDialect.INSTANCE, dataSource, domainName, Objects.requireNonNull(registry, "registry"));
         this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode");
         this.indexMode = Objects.requireNonNull(indexMode, "indexMode");
     }
 
     @SuppressWarnings("rawtypes")
     @Override
-    public void registerDomain(IDomainDefinition domainDefinition) {
-        if (domainDefinition == null || domainDefinition.dtoDefinitions() == null
-                || domainDefinition.dtoDefinitions().isEmpty()) {
-            return;
-        }
-        IDtoDefinition<?> dto = (IDtoDefinition<?>) domainDefinition.dtoDefinitions().get(0);
-        IClass<?> dtoClass = dto.dtoClass();
-        String uuidField = dto.uuid() == null ? null : dto.uuid().getLastElement();
-        Map<String, String> compositions = new LinkedHashMap<>();
-        for (DtoComposition composition : dto.compositions()) {
-            compositions.put(composition.field().getLastElement(), composition.collection());
-        }
-        SqlTable table = SqlSchemaModel.of(PgDialect.INSTANCE, this.domainName, dtoClass, uuidField, compositions);
+    protected Prepared prepare(SqlTable table, IDomainDefinition domainDefinition, IDtoDefinition<?> dto)
+            throws ApiException {
         List<PgIndexPlanner.Planned> indexes = planIndexes(domainDefinition, dto, table);
-        try {
-            new PgSchemaManager(this.dataSource, this.schemaMode).ensure(table);
-            new PgIndexManager(this.indexMode, this.schemaMode).ensure(this.dataSource, this.domainName, indexes);
-        } catch (ApiException e) {
-            // registerDomain cannot throw a checked exception: surface it unchecked, with its message.
-            throw new IllegalStateException("PostgreSQL schema of domain '" + this.domainName
-                    + "' is not usable: " + e.getMessage(), e);
-        }
-        this.registry.register(this.domainName, table, dtoClass);
-        this.wiring = new Wiring(table, new SqlWriter(table, this.registry, ensureDigests(table)),
-                new SqlReader(table, dtoClass, this.registry),
-                new SqlQueryBuilder(table, dtoClass, PgIndexPlanner.textColumn(table, indexes)));
-        log.debug("PostgreSQL domain '{}' mapped to table '{}' ({} columns, {} child tables)",
-                this.domainName, table.name(), table.columns().size(), table.children().size());
+        new PgSchemaManager(dataSource(), this.schemaMode).ensure(table);
+        new PgIndexManager(this.indexMode, this.schemaMode).ensure(dataSource(), domainName(), indexes);
+        return new Prepared(ensureDigests(table), PgIndexPlanner.textColumn(table, indexes));
     }
 
-    /**
-     * Installs the list digests (CREATE) or checks them (VALIDATE), under an advisory lock so instances
-     * starting together do not race on the DDL. They are an optimisation: any failure leaves every
-     * collection rewritten at every write, as before, with a WARN — never a refusal to start.
-     */
     private boolean ensureDigests(SqlTable table) {
         if (table.children().isEmpty()) {
             return false;
         }
-        try (Connection connection = this.dataSource.getConnection()) {
+        try (Connection connection = dataSource().getConnection()) {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             try (PreparedStatement lock = connection.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
@@ -195,12 +139,6 @@ public class PgDao implements IDao {
         }
     }
 
-    /**
-     * The indexes the ENTITY declares, resolved against this table — and the tenant's, which the framework
-     * adds to every read of a tenant caller ({@code gg_<tenant>_system_standard_idx}); the uuid needs none,
-     * the primary key is on it. Entity field names are translated to DTO fields first: every query this DAO
-     * emits speaks in DTO fields, so an index on anything else would never be used.
-     */
     @SuppressWarnings("rawtypes")
     private static List<PgIndexPlanner.Planned> planIndexes(IDomainDefinition domainDefinition,
             IDtoDefinition<?> dto, SqlTable table) {
@@ -225,134 +163,4 @@ public class PgDao implements IDao {
         }, dto.tenantId() == null ? null : dto.tenantId().toString());
     }
 
-    @Override
-    public List<Object> find(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort)
-            throws ApiException {
-        return find(pageable, filter, sort, Optional.empty());
-    }
-
-    @Override
-    public List<Object> find(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
-            Optional<List<String>> projection) throws ApiException {
-        Wiring w = wired();
-        SqlQuery query = w.queries().build(pageable, filter, sort, projection);
-        return w.reader().singleStatement(query) ? single(c -> w.reader().find(c, query))
-                : inSnapshot(c -> w.reader().find(c, query));
-    }
-
-    /**
-     * The page and the total its filter matches, in ONE statement — {@code count(*) OVER ()} on the page —
-     * where the default made a read and a count.
-     */
-    @Override
-    public Page findPage(Optional<IPageable> pageable, Optional<IFilter> filter, Optional<ISort> sort,
-            Optional<List<String>> projection) throws ApiException {
-        Wiring w = wired();
-        SqlQuery query = w.queries().build(pageable, filter, sort, projection);
-        SqlReader.Paged paged = w.reader().singleStatement(query) ? single(c -> w.reader().findPage(c, query))
-                : inSnapshot(c -> w.reader().findPage(c, query));
-        return new Page(paged.total(), paged.dtos());
-    }
-
-    @Override
-    public Object save(Object object) throws ApiException {
-        Wiring w = wired();
-        Work<Object> write = c -> {
-            w.writer().upsert(c, object);
-            return null;
-        };
-        // An entity without collections is one statement: atomic on its own, no BEGIN nor COMMIT.
-        if (w.table().children().isEmpty()) {
-            single(write);
-        } else {
-            inTransaction(write);
-        }
-        return object;
-    }
-
-    @Override
-    public void delete(Object object) throws ApiException {
-        Wiring w = wired();
-        // One statement — the collections go by ON DELETE CASCADE, inside it: atomic on its own.
-        single(c -> {
-            w.writer().delete(c, object);
-            return null;
-        });
-    }
-
-    @Override
-    public long count(IFilter filter) throws ApiException {
-        Wiring w = wired();
-        SqlQuery query = w.queries().count(filter);
-        return single(c -> w.reader().count(c, query));
-    }
-
-    private Wiring wired() throws ApiException {
-        Wiring w = this.wiring;
-        if (w == null) {
-            throw new ApiException("PostgreSQL DAO of domain '" + this.domainName
-                    + "' used before registerDomain: its table shape is not known yet.");
-        }
-        return w;
-    }
-
-    /** A unit of work on one connection. */
-    @FunctionalInterface
-    private interface Work<T> {
-        T run(Connection connection) throws ApiException, SQLException;
-    }
-
-    /** Runs a write atomically: everything commits, or nothing does. */
-    private <T> T inTransaction(Work<T> work) throws ApiException {
-        return transactional(work, false);
-    }
-
-    /**
-     * Runs a read of several statements on one consistent snapshot. The isolation is set for THIS
-     * transaction only ({@code SET TRANSACTION}), which costs one statement and leaves the pooled
-     * connection's session as it found it — {@code setTransactionIsolation} costs a round trip to set and
-     * another to restore.
-     */
-    private <T> T inSnapshot(Work<T> work) throws ApiException {
-        return transactional(work, true);
-    }
-
-    /**
-     * Runs ONE statement in autocommit. A single statement is atomic and sees one snapshot on its own:
-     * wrapped in a transaction it would only cost a {@code BEGIN} and a {@code COMMIT} more.
-     */
-    private <T> T single(Work<T> work) throws ApiException {
-        try (Connection connection = this.dataSource.getConnection()) {
-            if (!connection.getAutoCommit()) {
-                connection.setAutoCommit(true);
-            }
-            return work.run(connection);
-        } catch (SQLException e) {
-            throw new ApiException("PostgreSQL error on domain '" + this.domainName + "': " + e.getMessage(), e);
-        }
-    }
-
-    private <T> T transactional(Work<T> work, boolean snapshot) throws ApiException {
-        try (Connection connection = this.dataSource.getConnection()) {
-            boolean autoCommit = connection.getAutoCommit();
-            connection.setAutoCommit(false);
-            try {
-                if (snapshot) {
-                    try (Statement statement = connection.createStatement()) {
-                        statement.execute(SNAPSHOT);
-                    }
-                }
-                T result = work.run(connection);
-                connection.commit();
-                return result;
-            } catch (SQLException | RuntimeException e) {
-                connection.rollback();
-                throw e;
-            } finally {
-                connection.setAutoCommit(autoCommit);
-            }
-        } catch (SQLException e) {
-            throw new ApiException("PostgreSQL error on domain '" + this.domainName + "': " + e.getMessage(), e);
-        }
-    }
 }

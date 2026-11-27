@@ -210,6 +210,11 @@ public final class PgDialect implements ISqlDialect {
     }
 
     @Override
+    public Optional<String> snapshotStatement() {
+        return Optional.of("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY");
+    }
+
+    @Override
     public Object json(String json) throws SQLException {
         PGobject object = new PGobject();
         object.setType(JSONB);
