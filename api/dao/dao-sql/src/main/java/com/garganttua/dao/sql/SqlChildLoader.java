@@ -187,7 +187,7 @@ public final class SqlChildLoader {
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     Object parent = child.nested() ? (Object) rs.getLong(scopeIndex(child)) : rs.getString(scopeIndex(child));
-                    byParent.computeIfAbsent(parent, k -> new ArrayList<>()).add(row(SqlCells.of(rs), child));
+                    byParent.computeIfAbsent(parent, k -> new ArrayList<>()).add(row(this.dialect.cells(rs), child));
                 }
             }
         } catch (SQLException e) {

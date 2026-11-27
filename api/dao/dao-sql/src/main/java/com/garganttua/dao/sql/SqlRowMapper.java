@@ -61,8 +61,8 @@ public final class SqlRowMapper {
      * @param firstIndex the 1-based index of the first cell of the plan in the result set
      * @throws ApiException when a cell cannot be read or set
      */
-    public void fill(SqlLoadedRow row, SqlRowPlan plan, ResultSet rs, int firstIndex) throws ApiException {
-        SqlRowPlan.Decoded read = plan.decode(SqlCells.of(rs), firstIndex, row.references());
+    public void fill(SqlLoadedRow row, SqlRowPlan plan, SqlCells rs, int firstIndex) throws ApiException {
+        SqlRowPlan.Decoded read = plan.decode(rs, firstIndex, row.references());
         plan.presenceByDottedPath(read, row.presence());
         plan.assign(row.instance(), read);
     }

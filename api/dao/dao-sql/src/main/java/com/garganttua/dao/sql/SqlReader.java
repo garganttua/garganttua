@@ -149,7 +149,7 @@ public final class SqlReader {
         SqlRowPlan plan = mapper.plan(dtoClass, selected);
         int idIndex = 1 + indexOfId(selected);
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            bindPage(statement, bind(statement, query.params()), query);
+            bindPage(statement, bind(table.dialect(), statement, query.params()), query);
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     rows.add(row(rs, plan, idIndex));
@@ -203,7 +203,7 @@ public final class SqlReader {
         String sql = "SELECT count(*) FROM " + SqlNaming.quote(table.name()) + " " + SqlQuery.ALIAS
                 + " WHERE " + query.where();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            bind(statement, query.params());
+            bind(table.dialect(), statement, query.params());
             try (ResultSet rs = statement.executeQuery()) {
                 // count(*) without GROUP BY always yields exactly one row.
                 return rs.next() ? rs.getLong(1) : 0L;
@@ -263,6 +263,9 @@ public final class SqlReader {
             main.append(" LIMIT ?");
         }
         if (query.offset() != null) {
+            if (query.limit() == null) {
+                main.append(table.dialect().unboundedLimit());
+            }
             main.append(" OFFSET ?");
         }
         return aggregated.isEmpty() ? main.toString() : withAggregates(main.toString(), aggregated);
@@ -355,7 +358,7 @@ public final class SqlReader {
 
     private SqlLoadedRow row(ResultSet rs, SqlRowPlan plan, int idIndex) throws ApiException, SQLException {
         SqlLoadedRow row = new SqlLoadedRow(rs.getString(idIndex), plan.instantiate());
-        mapper.fill(row, plan, rs, 1);
+        mapper.fill(row, plan, table.dialect().cells(rs), 1);
         return row;
     }
 
@@ -368,10 +371,10 @@ public final class SqlReader {
         throw new IllegalStateException("the id column is always selected");
     }
 
-    private static int bind(PreparedStatement statement, List<Object> params) throws SQLException {
+    private static int bind(ISqlDialect dialect, PreparedStatement statement, List<Object> params) throws SQLException {
         int index = 1;
         for (Object param : params) {
-            statement.setObject(index, param);
+            statement.setObject(index, dialect.parameter(param));
             index++;
         }
         return index;

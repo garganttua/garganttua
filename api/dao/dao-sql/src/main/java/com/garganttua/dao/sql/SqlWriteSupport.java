@@ -119,9 +119,9 @@ public final class SqlWriteSupport {
             throws SQLException, ApiException {
         refuseNul(dialect, column, jdbcValue);
         if (column.kind() == SqlColumnKind.GEOMETRY) {
-            statement.setObject(index, jdbcValue, Types.VARCHAR);
+            statement.setObject(index, dialect.parameter(jdbcValue), Types.VARCHAR);
         } else {
-            statement.setObject(index, jdbcValue);
+            statement.setObject(index, dialect.parameter(jdbcValue));
         }
     }
 

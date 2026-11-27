@@ -2,6 +2,7 @@ package com.garganttua.dao.postgresql;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -22,6 +23,7 @@ import com.garganttua.api.commons.filter.IFilter;
 import com.garganttua.dao.sql.ISqlDialect;
 import com.garganttua.dao.sql.ISqlListDigests;
 import com.garganttua.dao.sql.SqlBsonOrder;
+import com.garganttua.dao.sql.SqlCells;
 import com.garganttua.dao.sql.SqlCondition;
 import com.garganttua.dao.sql.SqlFragment;
 import com.garganttua.dao.sql.SqlOperand;
@@ -297,6 +299,51 @@ public final class PgDialect implements ISqlDialect {
     @Override
     public boolean lateral() {
         return true;
+    }
+
+    @Override
+    public void prepareConnection(Connection connection) {
+        // Nothing per connection: PostgreSQL's functions live in the database.
+    }
+
+    @Override
+    public void beginTransaction(Connection connection, boolean write) {
+        // READ COMMITTED by default; a snapshot read raises it with snapshotStatement().
+    }
+
+    @Override
+    public Object parameter(Object value) {
+        return value;
+    }
+
+    @Override
+    public SqlCells cells(ResultSet rs) {
+        return SqlCells.of(rs);
+    }
+
+    @Override
+    public String scalarValue(String ref, SqlColumn column) {
+        return ref;
+    }
+
+    @Override
+    public String unboundedLimit() {
+        return "";
+    }
+
+    @Override
+    public String ddlType(String logicalType) {
+        return logicalType;
+    }
+
+    @Override
+    public String childIdentity() {
+        return "BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE";
+    }
+
+    @Override
+    public String childKey(String columns, boolean identity) {
+        return "PRIMARY KEY (" + columns + ")";
     }
 
     @Override

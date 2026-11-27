@@ -1,6 +1,7 @@
 package com.garganttua.dao.sql;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collection;
 import java.util.List;
@@ -133,6 +134,54 @@ public interface ISqlDialect {
 
     /** {@return the name of the element column of {@link #jsonArrayAny}'s array traversal} */
     String jsonElementColumn();
+
+    // ------------------------------------------------------------------
+    // Connections, values and storage
+    // ------------------------------------------------------------------
+
+    /**
+     * Readies a connection just taken from the data source, before the DAO uses it — the functions and settings the
+     * database needs per connection.
+     *
+     * @param connection the connection
+     * @throws SQLException when it cannot be readied
+     */
+    void prepareConnection(Connection connection) throws SQLException;
+
+    /**
+     * Sets how the transaction about to open locks — called before auto-commit is turned off.
+     *
+     * @param connection the connection
+     * @param write      whether the transaction writes
+     * @throws SQLException when it cannot be set
+     */
+    void beginTransaction(Connection connection, boolean write) throws SQLException;
+
+    /** {@return {@code value} — already what {@link SqlValues#toJdbc} gives — as this database's driver binds it} */
+    Object parameter(Object value);
+
+    /** {@return the cells of the current row of {@code rs}, read as this database stores them} */
+    SqlCells cells(ResultSet rs);
+
+    /** {@return the column {@code ref} as the value it compares and sorts by} */
+    String scalarValue(String ref, SqlColumn column);
+
+    /** {@return the clause that stands for "no limit" before an {@code OFFSET}, or "" when OFFSET goes alone} */
+    String unboundedLimit();
+
+    /** {@return the column type this database declares for the logical type {@code logicalType}} */
+    String ddlType(String logicalType);
+
+    /** {@return the declaration of a child table's generated row identifier, after its name} */
+    String childIdentity();
+
+    /**
+     * {@return the constraint keying a child row by its scope and position}
+     *
+     * @param columns  the quoted scope and position columns, comma separated
+     * @param identity whether the table has the generated identifier of {@link #childIdentity()}
+     */
+    String childKey(String columns, boolean identity);
 
     /** {@return a geometry column read back as its GeoJSON text} */
     String geometryAsGeoJson(String ref);

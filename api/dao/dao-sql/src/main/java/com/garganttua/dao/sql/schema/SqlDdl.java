@@ -64,7 +64,7 @@ public final class SqlDdl {
     public static String createMain(SqlTable table) {
         StringJoiner columns = new StringJoiner(", ");
         for (SqlColumn column : table.columns()) {
-            String definition = SqlNaming.quote(column.name()) + " " + column.sqlType();
+            String definition = SqlNaming.quote(column.name()) + " " + table.dialect().ddlType(column.sqlType());
             if (column.kind() == SqlColumnKind.ID) {
                 definition += " PRIMARY KEY";
             }
@@ -90,7 +90,7 @@ public final class SqlDdl {
     public static String createChild(SqlTable table, SqlChildTable child) {
         StringJoiner columns = new StringJoiner(", ");
         if (child.hasChildren()) {
-            columns.add(SqlNaming.quote(SqlChildTable.ID) + " BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE");
+            columns.add(SqlNaming.quote(SqlChildTable.ID) + " " + table.dialect().childIdentity());
         }
         columns.add(SqlNaming.quote(SqlChildTable.OWNER) + " TEXT NOT NULL REFERENCES "
                 + SqlNaming.quote(table.name()) + " (" + SqlNaming.quote(table.id().name()) + ") ON DELETE CASCADE");
@@ -105,13 +105,14 @@ public final class SqlDdl {
         } else {
             position = SqlChildTable.KEY;
             String keyType = SqlTypes.sqlTypeOf(child.keyType()).orElse(SqlTypes.TEXT);
-            columns.add(SqlNaming.quote(SqlChildTable.KEY) + " " + keyType + " NOT NULL");
+            columns.add(SqlNaming.quote(SqlChildTable.KEY) + " " + table.dialect().ddlType(keyType) + " NOT NULL");
         }
         for (SqlColumn column : child.valueColumns()) {
-            columns.add(SqlNaming.quote(column.name()) + " " + column.sqlType());
+            columns.add(SqlNaming.quote(column.name()) + " " + table.dialect().ddlType(column.sqlType()));
         }
         String scope = child.nested() ? SqlChildTable.PARENT : SqlChildTable.OWNER;
-        columns.add("PRIMARY KEY (" + SqlNaming.quote(scope) + ", " + SqlNaming.quote(position) + ")");
+        columns.add(table.dialect().childKey(SqlNaming.quote(scope) + ", " + SqlNaming.quote(position),
+                child.hasChildren()));
         return "CREATE TABLE IF NOT EXISTS " + SqlNaming.quote(child.name()) + " (" + columns + ")";
     }
 }

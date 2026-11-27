@@ -87,7 +87,7 @@ public record SqlOperand(String alias, SqlColumn column, List<String> jsonPath, 
      */
     public SqlFragment expr(boolean numeric) {
         if (!isJsonPath()) {
-            return SqlFragment.of(qualifiedColumn());
+            return SqlFragment.of(dialect.scalarValue(qualifiedColumn(), column));
         }
         if (numeric) {
             return jsonRead(JsonType.NUMBER);

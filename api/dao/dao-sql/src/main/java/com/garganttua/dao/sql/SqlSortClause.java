@@ -142,7 +142,7 @@ public final class SqlSortClause {
         if (SqlBsonOrder.rank(column).isEmpty()) {
             throw new SqlBsonOrder(table).unsortable(column);
         }
-        String ref = SqlBsonOrder.ref(SqlQuery.ALIAS, column);
+        String ref = table.dialect().scalarValue(SqlBsonOrder.ref(SqlQuery.ALIAS, column), column);
         String dir = direction(ascending);
         if (SqlBsonOrder.floating(column)) {
             return List.of(table.dialect().notNaN(ref) + dir, ref + dir);

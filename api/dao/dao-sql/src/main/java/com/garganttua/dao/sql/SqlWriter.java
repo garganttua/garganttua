@@ -141,7 +141,7 @@ public final class SqlWriter {
         }
         Map<SqlChildTable, String> stored = new LinkedHashMap<>();
         try (PreparedStatement statement = connection.prepareStatement(digestsSql)) {
-            statement.setObject(1, id);
+            statement.setObject(1, table.dialect().parameter(id));
             try (ResultSet rs = statement.executeQuery()) {
                 if (rs.next()) {
                     int index = 2;
@@ -182,7 +182,7 @@ public final class SqlWriter {
         Object id = idOf(dto, "delete");
         int deleted;
         try (PreparedStatement statement = connection.prepareStatement(deleteSql)) {
-            statement.setObject(1, id);
+            statement.setObject(1, table.dialect().parameter(id));
             deleted = statement.executeUpdate();
         } catch (SQLException e) {
             throw new ApiException("Failed to delete entity " + id + " from table '" + table.name() + "': "

@@ -209,6 +209,9 @@ public final class SqlJdbcDecoder {
             return number;
         }
         if (type.represents(Boolean.class) || type.represents(boolean.class)) {
+            if (raw instanceof Number n) {
+                return n.longValue() != 0;
+            }
             return raw instanceof Boolean b ? b : Boolean.valueOf(raw.toString().trim());
         }
         if (type.represents(UUID.class)) {

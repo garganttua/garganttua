@@ -233,6 +233,7 @@ public abstract class AbstractSqlDao implements IDao {
 
     private <T> T single(Work<T> work) throws ApiException {
         try (Connection connection = this.dataSource.getConnection()) {
+            this.dialect.prepareConnection(connection);
             if (!connection.getAutoCommit()) {
                 connection.setAutoCommit(true);
             }
@@ -245,7 +246,9 @@ public abstract class AbstractSqlDao implements IDao {
 
     private <T> T transactional(Work<T> work, boolean snapshot) throws ApiException {
         try (Connection connection = this.dataSource.getConnection()) {
+            this.dialect.prepareConnection(connection);
             boolean autoCommit = connection.getAutoCommit();
+            this.dialect.beginTransaction(connection, !snapshot);
             connection.setAutoCommit(false);
             try {
                 Optional<String> opening = snapshot ? this.dialect.snapshotStatement() : Optional.empty();

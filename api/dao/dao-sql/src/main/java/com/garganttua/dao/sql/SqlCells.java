@@ -44,7 +44,7 @@ public interface SqlCells {
     long integer(int index) throws SQLException;
 
     /** The cells of the current row of a result set. */
-    static SqlCells of(ResultSet rs) {
+    public static SqlCells of(ResultSet rs) {
         return new SqlCells() {
             @Override
             public String text(int index) throws SQLException {
@@ -123,7 +123,7 @@ public interface SqlCells {
         @Override
         public Boolean bool(int index) {
             String text = cell(index);
-            return text == null ? null : Boolean.valueOf("true".equals(text) || "t".equals(text));
+            return text == null ? null : Boolean.valueOf("true".equals(text) || "t".equals(text) || "1".equals(text));
         }
 
         @Override
